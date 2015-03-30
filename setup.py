@@ -6,7 +6,6 @@ from oioswift import __version__
 setup(
     name='oioswift',
     version=__version__,
-    version='',
     author='OpenIO',
     author_email='support@openio.io',
     description='OpenIO Swift Gateway',
