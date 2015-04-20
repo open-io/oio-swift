@@ -26,7 +26,7 @@ from oiopy import exceptions
 
 from oioswift.utils import get_listing_content_type
 from oioswift.proxy.controllers.base import Controller, clear_info_cache, \
-    delay_denial, cors_validation, _set_info_cache
+    delay_denial, cors_validation, _set_info_cache, get_container_info
 
 
 def extract_sysmeta(raw):
@@ -95,8 +95,7 @@ class ContainerController(Controller):
     @cors_validation
     def GET(self, req):
         """Handler for HTTP GET requests."""
-        if not self.account_info(self.account_name, req):
-            return HTTPNotFound(request=req)
+        info = get_container_info(req.environ, self.app)
         storage = self.app.storage
 
         marker = req.params.get("marker", None)
@@ -152,12 +151,6 @@ class ContainerController(Controller):
         resp = Response(status=200, body=result_list, headers=headers)
         resp.content_type = req_format
 
-        try:
-            _set_info_cache(self.app, req.environ, self.account_name,
-                            self.container_name, resp)
-        except ValueError:
-            pass
-
         if 'swift.authorize' in req.environ:
             req.acl = resp.headers.get('x-container-read')
             aresp = req.environ['swift.authorize'](req)
@@ -174,8 +167,6 @@ class ContainerController(Controller):
     @cors_validation
     def HEAD(self, req):
         """Handler for HTTP HEAD requests."""
-        if not self.account_info(self.account_name, req):
-            return HTTPNotFound(request=req)
         storage = self.app.storage
         try:
             meta = storage.get_container_metadata(self.container_name)
@@ -268,7 +259,7 @@ class ContainerController(Controller):
                          self.account_name, self.container_name)
         storage = self.app.storage
         try:
-            storage.delete_container(self.container_name)
+            storage.delete(self.container_name)
         except exceptions.ContainerNotEmpty:
             return HTTPConflict(request=req)
         except exceptions.NoSuchContainer:
