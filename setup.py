@@ -10,22 +10,19 @@ setup(
     author_email='support@openio.io',
     description='OpenIO Swift Gateway',
     url='https://github.com/open-io/oio-swift',
-    license='AGPLv3',
+    license='Apache License (2.0)',
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Programming Language :: Python :: 2.7',
-        'License :: OSI Approved :: GNU Affero General Public License v3',
+        'License :: OSI Approved :: Apache Software License',
         'Intended Audience :: Information Technology',
         'Operating System :: OS Independent',
     ],
-    packages=['oioswift', 'oioswift.controller', 'oioswift.filter'],
+    packages=['oioswift', 'oioswift.proxy', 'oioswift.proxy.controllers'],
     entry_points={
         'paste.app_factory': [
             'main=oioswift.server:app_factory'
         ],
-        'paste.filter_factory': [
-            'fakeauth=oioswift.filter.fakeauth:filter_factory'
-        ]
     },
-    install_requires=['WebOb', 'PasteDeploy', 'oiopy']
+    install_requires=['swift>=2.2.0', 'oiopy']
 )

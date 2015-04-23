@@ -1,88 +1,94 @@
 # Copyright (C) 2015 OpenIO SAS
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as
-# published by the Free Software Foundation, either version 3 of the
-# License, or (at your option) any later version.
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-from urllib import quote
-from uuid import uuid4
-from datetime import datetime
-import time
-
-from webob import exc
-
+from swift.common.swob import HTTPNotAcceptable
 
 _format_map = {"xml": 'application/xml', "json": 'application/json',
                "plain": 'text/plain'}
 
 
 def get_listing_content_type(req):
-    req_format = req.GET.get('format')
+    req_format = req.params.get('format')
     if req_format:
         req.accept = _format_map.get(req_format.lower(),
                                      _format_map.get('plain'))
     req_format = req.accept.best_match(
         ['text/plain', 'application/json', 'application/xml', 'text/xml'])
     if not req_format:
-        raise exc.HTTPNotAcceptable()
+        raise HTTPNotAcceptable()
     return req_format
 
 
-def dateiso_from_timestamp(timestamp):
-    return datetime.fromtimestamp(timestamp).isoformat()
+def _mixed_join(iterable, sentinel):
+    """concatenate any string type in an intelligent way."""
+    iterator = iter(iterable)
+    first_item = next(iterator, sentinel)
+    if isinstance(first_item, bytes):
+        return first_item + b''.join(iterator)
+    return first_item + u''.join(iterator)
 
 
-_true_values = {'true', '1', 'yes', 'on', 't', 'y'}
+class IterO(object):
+    def __init__(self, gen):
+        self.gen = gen
+        self.closed = False
+        self.pos = 0
+        self.sentinel = ''
+        self.buf = None
 
+    def _buf_append(self, string):
+        if not self.buf:
+            self.buf = string
+        else:
+            self.buf += string
 
-def config_true_value(value):
-    return value is True or \
-           (isinstance(value, basestring) and value.lower() in _true_values)
+    def close(self):
+        if not self.closed:
+            self.closed = True
+            if hasattr(self.gen, 'close'):
+                self.gen.close()
 
+    def read(self, n=-1):
+        if self.closed:
+            raise ValueError('Closed file')
+        if n < 0:
+            self._buf_append(_mixed_join(self.buf, self.sentinel))
+            result = self.buf[self.pos:]
+            self.pos += len(result)
+            return result
+        new_pos = self.pos + n
+        buf = []
+        try:
+            tmp_end_pos = 0 if self.buf is None else len(self.buf)
+            while new_pos > tmp_end_pos or (self.buf is None and not buf):
+                item = next(self.gen)
+                tmp_end_pos += len(item)
+                buf.append(item)
+        except StopIteration:
+            pass
+        if buf:
+            self._buf_append(_mixed_join(buf, self.sentinel))
 
-"""
-function taken from
-https://github.com/openstack/swift/blob/master/swift/common/utils.py
-"""
-def split_path(path, minsegs=1, maxsegs=None, inc_trailing=False):
-    if not maxsegs:
-        maxsegs = minsegs
-    if minsegs > maxsegs:
-        raise ValueError('minsegs > maxsegs: %d > %d' % (minsegs, maxsegs))
-    if inc_trailing:
-        segs = path.split('/', maxsegs)
-        minsegs += 1
-        maxsegs += 1
-        count = len(segs)
-        if segs[0] or count < minsegs or count > maxsegs or '' in segs[
-                                                                  1:minsegs]:
-            raise ValueError('Invalid path: %s' % quote(path))
-    else:
-        minsegs += 1
-        maxsegs += 1
-        segs = path.split('/', maxsegs)
-        count = len(segs)
-        if (segs[0] or count < minsegs or count > maxsegs + 1 or
-                    '' in segs[1:minsegs] or
-                (count == maxsegs + 1 and segs[maxsegs])):
-            raise ValueError('Invalid path: %s' % quote(path))
-    segs = segs[1:maxsegs]
-    segs.extend([None] * (maxsegs - 1 - len(segs)))
-    return segs
+        if self.buf is None:
+            return self.sentinel
 
-
-def generate_tx_id():
-    return 'tx%s-%010x' % (uuid4().hex[:21], time.time())
-
-
-
+        new_pos = max(0, new_pos)
+        try:
+            return self.buf[self.pos:new_pos]
+        finally:
+            self.pos = min(new_pos, len(self.buf))
 
 
 

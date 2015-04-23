@@ -7,12 +7,12 @@ Features
 --------
 Included:
 *   Basic operations on objects and containers
-*   Basic Fakeauth authentication
+*   Authentication support
+*   Metadata support
+*   Swift Middleware support
 
 Incoming:
-*   Metadata support
 *   Account support
-*   Authentication support
 
 Installation
 ------------
@@ -37,7 +37,7 @@ From GitHub:
 Configuration
 -------------
 
-The SDS Swift Gateway uses _PasteDeploy_ for configuration.
+The SDS Swift Gateway uses the OpenStack Swift Proxy.
 
 There is a sample configuration in `conf/default.cfg`.
 
@@ -48,9 +48,7 @@ Configuration items:
 Run
 ---
         
-Run with gunicorn:
-
-    gunicorn -b $(ip):$(port) -w $(numworkers) --paste ${config_path}
+Use the proxy-server launch script from Swift. 
 
 Alternatively you can simply use:
     
