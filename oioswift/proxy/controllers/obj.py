@@ -97,8 +97,8 @@ class ObjectController(Controller):
 
         storage = self.app.storage
         try:
-            meta = storage.get_object_metadata(self.container_name,
-                                               self.object_name)
+            meta = storage.get_object_metadata(self.account_name,
+                    self.container_name, self.object_name)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer,
                 exceptions.OioException):
             return HTTPNotFound(request=req)
@@ -127,9 +127,8 @@ class ObjectController(Controller):
 
         storage = self.app.storage
         try:
-            meta, stream = storage.fetch_object(self.container_name,
-                                                self.object_name,
-                                                with_meta=True)
+            meta, stream = storage.fetch_object(self.account_name,
+                self.container_name, self.object_name, with_meta=True)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer,
                 exceptions.OioException):
             return HTTPNotFound(request=req)
@@ -188,12 +187,12 @@ class ObjectController(Controller):
                     meta["user.meta." + k[14:]] = v
             try:
                 if not meta:
-                    storage.delete_object_metadata(self.container_name,
-                                                   self.object_name, [])
+                    storage.delete_object_metadata(self.account_name,
+                        self.container_name, self.object_name, [])
                 else:
-                    storage.set_object_metadata(self.container_name,
-                                                self.object_name,
-                                                meta, clear=True)
+                    storage.set_object_metadata(self.account_name,
+                            self.container_name, self.object_name,
+                            meta, clear=True)
             except exceptions.OioException:
                 return HTTPServerError()
             resp = HTTPNoContent(request=req)
@@ -348,11 +347,9 @@ class ObjectController(Controller):
         if content_length is None:
             content_length = 0
         try:
-            storage.create_object(self.container_name,
-                                  obj_name=self.object_name,
-                                  file_or_path=stream,
-                                  content_length=content_length,
-                                  content_type=content_type)
+            storage.create_object(self.account_name, self.container_name,
+                    obj_name=self.object_name, file_or_path=stream,
+                    content_length=content_length, content_type=content_type)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         except exceptions.ClientReadTimeout:
@@ -397,7 +394,8 @@ class ObjectController(Controller):
         storage = self.app.storage
 
         try:
-            storage.delete_object(self.container_name, self.object_name)
+            storage.delete_object(self.account_name, self.container_name,
+                    self.object_name)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
         resp = HTTPNoContent(request=req)

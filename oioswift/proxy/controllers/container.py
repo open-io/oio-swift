@@ -106,9 +106,9 @@ class ContainerController(Controller):
 
         try:
             object_list = storage. \
-                list_container_objects(self.container_name, prefix=prefix,
-                                       limit=limit, delimiter=delimiter,
-                                       marker=marker, end_marker=end_marker)
+                list_container_objects(self.account_name, self.container_name,
+                        prefix=prefix, limit=limit, delimiter=delimiter,
+                        marker=marker, end_marker=end_marker)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         except exceptions.OioException:
@@ -169,7 +169,8 @@ class ContainerController(Controller):
         """Handler for HTTP HEAD requests."""
         storage = self.app.storage
         try:
-            meta = storage.get_container_metadata(self.container_name)
+            meta = storage.get_container_metadata(self.account_name,
+                    self.container_name)
             headers = {}
             headers['X-Container-Object-Count'] = '0'
             headers['X-Container-Bytes-Used'] = meta.get('sys.m2.usage', '0')
@@ -216,7 +217,7 @@ class ContainerController(Controller):
 
         storage = self.app.storage
         try:
-            storage.create(self.container_name)
+            storage.create(self.account_name, self.container_name)
         except exceptions.OioException:
             return HTTPServerError(request=req)
         resp = HTTPCreated(request=req)
@@ -244,7 +245,8 @@ class ContainerController(Controller):
                 meta["user.meta." + k[17:]] = v
 
         try:
-            storage.set_container_metadata(self.container_name, meta)
+            storage.set_container_metadata(self.account_name,
+                    self.container_name, meta)
         except exceptions.NoSuchContainer:
             self.PUT(req)
         except exceptions.OioException:
@@ -259,7 +261,7 @@ class ContainerController(Controller):
                          self.account_name, self.container_name)
         storage = self.app.storage
         try:
-            storage.delete(self.container_name)
+            storage.delete(self.account_name, self.container_name)
         except exceptions.ContainerNotEmpty:
             return HTTPConflict(request=req)
         except exceptions.NoSuchContainer:
