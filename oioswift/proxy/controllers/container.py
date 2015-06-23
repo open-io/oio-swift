@@ -15,18 +15,22 @@
 
 from urllib import unquote
 import json
+from xml.etree.cElementTree import Element, SubElement, tostring
 
-from swift.common.utils import public, Timestamp
+from swift.common.utils import public, Timestamp, \
+    override_bytes_from_content_type
 from swift.common.constraints import check_metadata
 from swift.common import constraints
 from swift.common.storage_policy import POLICIES
 from swift.common.swob import Response, HTTPBadRequest, HTTPNotFound, \
-    HTTPServerError, HTTPNoContent, HTTPConflict, HTTPCreated
+    HTTPServerError, HTTPNoContent, HTTPConflict, HTTPCreated, \
+    HTTPPreconditionFailed
+from swift.common.request_helpers import is_sys_or_user_meta, get_param
 from oiopy import exceptions
 
 from oioswift.utils import get_listing_content_type
 from oioswift.proxy.controllers.base import Controller, clear_info_cache, \
-    delay_denial, cors_validation, _set_info_cache, get_container_info
+    delay_denial, cors_validation, _set_info_cache
 
 
 def extract_sysmeta(raw):
@@ -35,6 +39,18 @@ def extract_sysmeta(raw):
         k, v = el.split('=')
         sysmeta[k] = v
     return sysmeta
+
+
+def gen_resp_headers(info):
+    headers = {}
+    headers.update({
+        'X-Container-Object-Count': info.get('object_count', 0),
+        'X-Container-Bytes-Used': info.get('bytes_used', 0),
+        'X-Timestamp': Timestamp(info.get('created_at', 0)).normal,
+        'X-PUT-Timestamp': Timestamp(
+            info.get('put_timestamp', 0)).normal,
+    })
+    return headers
 
 
 class ContainerController(Controller):
@@ -95,61 +111,14 @@ class ContainerController(Controller):
     @cors_validation
     def GET(self, req):
         """Handler for HTTP GET requests."""
-        info = get_container_info(req.environ, self.app)
-        storage = self.app.storage
-
-        marker = req.params.get("marker", None)
-        limit = req.params.get("limit", None)
-        end_marker = req.params.get("end_marker", None)
-        prefix = req.params.get("prefix", None)
-        delimiter = req.params.get("delimiter", None)
-
-        try:
-            object_list = storage. \
-                list_container_objects(self.account_name, self.container_name,
-                        prefix=prefix, limit=limit, delimiter=delimiter,
-                        marker=marker, end_marker=end_marker)
-        except exceptions.NoSuchContainer:
+        if not self.account_info(self.account_name, req):
+            if 'swift.authorize' in req.environ:
+                aresp = req.environ['swift.authorize'](req)
+                if aresp:
+                    return aresp
             return HTTPNotFound(request=req)
-        except exceptions.OioException:
-            return HTTPServerError(request=req)
 
-        req_format = get_listing_content_type(req)
-
-        if req_format.endswith('/xml'):
-            out = ['<?xml version="1.0" encoding="UTF-8"?>',
-                   '<container name="%s">' % self.container_name]
-            for obj in object_list:
-                out.append('<object>')
-                out.append('<name>%s</name>' % obj.name)
-                out.append('<bytes>%s</bytes>' % obj.size)
-                out.append('<hash>%s</hash>' % obj.hash)
-                sysmeta = extract_sysmeta(obj.system_metadata)
-                out.append('<content_type>%s</content_type>' % sysmeta[
-                    "mime-type"])
-                last_modified = Timestamp(obj.ctime).isoformat
-                out.append('<last_modified>%s</last_modified>' % last_modified)
-                out.append('</object>')
-            out.append('</container>')
-            result_list = "\n".join(out)
-        elif req_format == 'application/json':
-            out = []
-            for obj in object_list:
-                last_modified = Timestamp(obj.ctime).isoformat
-                sysmeta = extract_sysmeta(obj.system_metadata)
-                out.append({"name": obj.name, "bytes": obj.size,
-                            "content_type": sysmeta["mime-type"],
-                            "last_modified": last_modified,
-                            "hash": obj.hash})
-            result_list = json.dumps(out)
-        else:
-            result_list = "\n".join(obj.name for obj in object_list) + '\n'
-
-        headers = {'X-Container-Object-Count': '0',
-                   'X-Container-Meta-Name': self.container_name
-        }
-        resp = Response(status=200, body=result_list, headers=headers)
-        resp.content_type = req_format
+        resp = self.get_container_list_resp(req)
 
         if 'swift.authorize' in req.environ:
             req.acl = resp.headers.get('x-container-read')
@@ -162,6 +131,105 @@ class ContainerController(Controller):
                     del resp.headers[key]
         return resp
 
+    def get_container_list_resp(self, req):
+        storage = self.app.storage
+
+        path = get_param(req, 'path')
+        prefix = get_param(req, 'prefix')
+        delimiter = get_param(req, 'delimiter')
+        if delimiter and (len(delimiter) > 1 or ord(delimiter) > 254):
+            # delimiters can be made more flexible later
+            return HTTPPreconditionFailed(body='Bad delimiter')
+        marker = get_param(req, 'marker', '')
+        end_marker = get_param(req, 'end_marker')
+        limit = constraints.CONTAINER_LISTING_LIMIT
+        given_limit = get_param(req, 'limit')
+        if given_limit and given_limit.isdigit():
+            limit = int(given_limit)
+            if limit > constraints.CONTAINER_LISTING_LIMIT:
+                return HTTPPreconditionFailed(
+                    request=req,
+                    body='Maximum limit is %d'
+                         % constraints.CONTAINER_LISTING_LIMIT)
+
+        if path is not None:
+            prefix = path
+            if path:
+                prefix = path.rstrip('/') + '/'
+            delimiter = '/'
+
+        out_content_type = get_listing_content_type(req)
+
+        try:
+            result_list = storage. \
+                object_list(self.account_name, self.container_name,
+                            prefix=prefix, limit=limit, delimiter=delimiter,
+                            marker=marker, end_marker=end_marker)
+            # TODO get container info
+            info = {}
+            resp_headers = gen_resp_headers(info)
+            resp = self.create_listing(req, out_content_type, resp_headers,
+                                       info, result_list,
+                                       self.container_name)
+        except exceptions.NoSuchContainer:
+            return HTTPNotFound(request=req)
+        return resp
+
+    def create_listing(self, req, out_content_type, resp_headers,
+                       metadata, result_list, container):
+        container_list = result_list['objects']
+        for p in result_list.get('prefixes', []):
+            record = {'name': p,
+                      'subdir': True}
+            container_list.append(record)
+        for (k, v) in metadata.iteritems():
+            if v and (k.lower() in self.pass_through_headers or
+                          is_sys_or_user_meta('container', k)):
+                resp_headers[k] = v
+        ret = Response(request=req, headers=resp_headers,
+                       content_type=out_content_type, charset='utf-8')
+        if out_content_type == 'application/json':
+            ret.body = json.dumps([self.update_data_record(record)
+                                   for record in container_list])
+        elif out_content_type.endswith('/xml'):
+            doc = Element('container', name=container.decode('utf-8'))
+            for obj in container_list:
+                record = self.update_data_record(obj)
+                if 'subdir' in record:
+                    name = record['subdir'].decode('utf-8')
+                    sub = SubElement(doc, 'subdir', name=name)
+                    SubElement(sub, 'name').text = name
+                else:
+                    obj_element = SubElement(doc, 'object')
+                    for field in ["name", "hash", "bytes", "content_type",
+                                  "last_modified"]:
+                        SubElement(obj_element, field).text = str(
+                            record.pop(field)).decode('utf-8')
+                    for field in sorted(record):
+                        SubElement(obj_element, field).text = str(
+                            record[field]).decode('utf-8')
+            ret.body = tostring(doc, encoding='UTF-8').replace(
+                "<?xml version='1.0' encoding='UTF-8'?>",
+                '<?xml version="1.0" encoding="UTF-8"?>', 1)
+        else:
+            if not container_list:
+                return HTTPNoContent(request=req, headers=resp_headers)
+            ret.body = '\n'.join(rec[0] for rec in container_list) + '\n'
+        return ret
+
+    def update_data_record(self, record):
+        if 'subdir' in record:
+            return {'subdir': record['name']}
+
+        sysmeta = extract_sysmeta(record.get('system_metadata', None))
+        response = {'name': record['name'],
+                    'bytes': record['size'],
+                    'hash': record['hash'],
+                    'last_modified': Timestamp(record['ctime']).isoformat,
+                    'content_type': sysmeta.get('mime-type',
+                                                'application/octet-stream')}
+        override_bytes_from_content_type(response)
+        return response
     @public
     @delay_denial
     @cors_validation
@@ -169,15 +237,15 @@ class ContainerController(Controller):
         """Handler for HTTP HEAD requests."""
         storage = self.app.storage
         try:
-            meta = storage.get_container_metadata(self.account_name,
-                    self.container_name)
+            meta = storage.container_show(self.account_name,
+                                          self.container_name)
             headers = {}
             headers['X-Container-Object-Count'] = '0'
             headers['X-Container-Bytes-Used'] = meta.get('sys.m2.usage', '0')
             headers['Content-Type'] = 'text/plain; charset=utf-8'
             for k, v in meta.iteritems():
-                if k.startswith("user.meta."):
-                    headers['X-Container-Meta-' + k[10:]] = v
+                if k.startswith("user."):
+                    headers[k[5:]] = v
             resp = HTTPNoContent(headers=headers)
         except exceptions.NoSuchContainer:
             resp = HTTPNotFound(request=req)
@@ -217,7 +285,7 @@ class ContainerController(Controller):
 
         storage = self.app.storage
         try:
-            storage.create(self.account_name, self.container_name)
+            storage.container_create(self.account_name, self.container_name)
         except exceptions.OioException:
             return HTTPServerError(request=req)
         resp = HTTPCreated(request=req)
@@ -235,23 +303,23 @@ class ContainerController(Controller):
             for key in self.app.swift_owner_headers:
                 req.headers.pop(key, None)
 
+        headers = self.generate_request_headers(req, transfer=True)
         clear_info_cache(self.app, req.environ,
                          self.account_name, self.container_name)
 
         storage = self.app.storage
-        meta = {}
-        for k, v in req.headers.iteritems():
-            if k.startswith("X-Container-Meta-"):
-                meta["user.meta." + k[17:]] = v
+        metadata = {}
+        metadata.update(("user.%s" % k, v) for k, v in req.headers.iteritems()
+                        if k.lower() in self.pass_through_headers or
+                        is_sys_or_user_meta('container', k))
 
         try:
-            storage.set_container_metadata(self.account_name,
-                    self.container_name, meta)
+            storage.container_update(self.account_name, self.container_name,
+                                     metadata, headers=headers)
+            resp = HTTPNoContent(request=req)
         except exceptions.NoSuchContainer:
-            self.PUT(req)
-        except exceptions.OioException:
-            return HTTPServerError(request=req)
-        return HTTPNoContent(request=req)
+            resp = self.PUT(req)
+        return resp
 
     @public
     @cors_validation
@@ -261,7 +329,7 @@ class ContainerController(Controller):
                          self.account_name, self.container_name)
         storage = self.app.storage
         try:
-            storage.delete(self.account_name, self.container_name)
+            storage.container_delete(self.account_name, self.container_name)
         except exceptions.ContainerNotEmpty:
             return HTTPConflict(request=req)
         except exceptions.NoSuchContainer:

@@ -33,11 +33,14 @@ from swift.proxy.controllers import InfoController
 from swift.common.swob import HTTPBadRequest, HTTPForbidden, \
     HTTPMethodNotAllowed, HTTPNotFound, HTTPPreconditionFailed, \
     HTTPServerError, HTTPException, Request
-from oiopy.object_storage import StorageAPI
+from oiopy.object_storage import ObjectStorageAPI
 
 from oioswift.proxy.controllers.container import ContainerController
 from oioswift.proxy.controllers.account import AccountController
 from oioswift.proxy.controllers.obj import ObjectController
+
+
+
 
 
 
@@ -80,7 +83,7 @@ class Application(object):
 
         self.sds_proxy_url = conf.get('sds_proxy_url', 'http://127.0.0.1:6000')
         self.sds_namespace = conf.get('sds_namespace', 'OPENIO')
-        self.storage = StorageAPI(self.sds_proxy_url, self.sds_namespace)
+        self.storage = ObjectStorageAPI(self.sds_namespace, self.sds_proxy_url)
 
         swift_dir = conf.get('swift_dir', '/etc/swift')
         self.swift_dir = swift_dir
