@@ -55,6 +55,7 @@ def account_listing_response(account, req, response_content_type,
         info = {'containers': 0,
                 'objects': 0,
                 'bytes': 0,
+                'metadata': {},
                 'ctime': now}
     if listing is None:
         listing = []
