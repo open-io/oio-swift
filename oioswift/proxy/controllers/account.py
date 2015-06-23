@@ -14,19 +14,87 @@
 # limitations under the License.
 
 from urllib import unquote
-import json
+import time
+from xml.sax import saxutils
 
 from swift.common.request_helpers import get_listing_content_type
 from swift.common.middleware.acl import parse_acl, format_acl
-from swift.common.utils import public
+from swift.common.utils import public, Timestamp, json
 from swift.common.constraints import check_metadata
 from swift.common import constraints
 from swift.common.swob import HTTPBadRequest, HTTPMethodNotAllowed
-from swift.common.request_helpers import get_sys_meta_prefix
-from swift.common.swob import HTTPNoContent, HTTPOk
+from swift.common.request_helpers import get_sys_meta_prefix, get_param, \
+    is_sys_or_user_meta
+from swift.common.swob import HTTPNoContent, HTTPOk, HTTPPreconditionFailed, \
+    HTTPNotFound, HTTPCreated, HTTPAccepted
+from oiopy import exceptions
 
 from oioswift.proxy.controllers.base import _set_info_cache
 from oioswift.proxy.controllers.base import Controller, clear_info_cache
+
+
+def get_response_headers(info):
+    resp_headers = {
+        'X-Account-Container-Count': info['containers'],
+        'X-Account-Object-Count': info['objects'],
+        'X-Account-Bytes-Used': info['bytes'],
+        'X-Timestamp': Timestamp(info['ctime']).normal,
+    }
+
+    for k, v in info['metadata'].iteritems():
+        if v != '':
+            resp_headers[k] = v
+
+    return resp_headers
+
+
+def account_listing_response(account, req, response_content_type,
+                             info=None, listing=None):
+    if info is None:
+        now = Timestamp(time.time()).internal
+        info = {'containers': 0,
+                'objects': 0,
+                'bytes': 0,
+                'ctime': now}
+    if listing is None:
+        listing = []
+
+    resp_headers = get_response_headers(info)
+
+    if response_content_type == 'application/json':
+        data = []
+        for (name, object_count, bytes_used, is_subdir) in listing:
+            if is_subdir:
+                data.append({'subdir': name})
+            else:
+                data.append({'name': name, 'count': object_count,
+                             'bytes': bytes_used})
+        account_list = json.dumps(data)
+    elif response_content_type.endswith('/xml'):
+        output_list = ['<?xml version="1.0" encoding="UTF-8"?>',
+                       '<account name=%s>' % saxutils.quoteattr(account)]
+        for (name, object_count, bytes_used, is_subdir) in listing:
+            if is_subdir:
+                output_list.append(
+                    '<subdir name=%s />' % saxutils.quoteattr(name))
+            else:
+                item = '<container><name>%s</name><count>%s</count>' \
+                       '<bytes>%s</bytes></container>' % \
+                       (saxutils.escape(name), object_count, bytes_used)
+                output_list.append(item)
+        output_list.append('</account>')
+        account_list = '\n'.join(output_list)
+    else:
+        if not listing:
+            resp = HTTPNoContent(request=req, headers=resp_headers)
+            resp.content_type = response_content_type
+            resp.charset = 'utf-8'
+            return resp
+        account_list = '\n'.join(r[0] for r in listing) + '\n'
+    ret = HTTPOk(body=account_list, request=req, headers=resp_headers)
+    ret.content_type = response_content_type
+    ret.charset = 'utf-8'
+    return ret
 
 
 class AccountController(Controller):
@@ -51,31 +119,8 @@ class AccountController(Controller):
                     version=2, acl_dict=acl_dict)
 
     @public
-    def HEAD(self, req):
-        if len(self.account_name) > constraints.MAX_ACCOUNT_NAME_LENGTH:
-            resp = HTTPBadRequest(request=req)
-            resp.body = 'Account name length of %d longer than %d' % \
-                        (len(self.account_name),
-                         constraints.MAX_ACCOUNT_NAME_LENGTH)
-            return resp
-
-        headers = {}
-        headers['x-account-container-count'] = '1'
-        headers['x-account-object-count'] = '0'
-        headers['x-account-bytes-used'] = '0'
-        headers['x-account-meta-temp-url-key'] = 'e'
-        headers['x-account-sysmeta-core-access-control'] = '{' \
-                                                           '"admin":[' \
-                                                           '"test:tester"]}'
-
-        resp = HTTPOk(request=req, headers=headers)
-        _set_info_cache(self.app, req.environ, self.account_name, None, resp)
-
-        return resp
-
-    @public
     def GET(self, req):
-        """Handler for HTTP GET/HEAD requests."""
+        """Handler for HTTP GET requests."""
         if len(self.account_name) > constraints.MAX_ACCOUNT_NAME_LENGTH:
             resp = HTTPBadRequest(request=req)
             resp.body = 'Account name length of %d longer than %d' % \
@@ -83,51 +128,39 @@ class AccountController(Controller):
                          constraints.MAX_ACCOUNT_NAME_LENGTH)
             return resp
 
-        if req.params.get("marker", "") != "":
-            container_list = []
-        else:
-            container_list = [("test", 0, 0)]
+        prefix = get_param(req, 'prefix')
+        delimiter = get_param(req, 'prefix')
+        if delimiter and (len(delimiter) > 1 or ord(delimiter) > 254):
+            return HTTPPreconditionFailed(body='Bad delimiter')
+        limit = constraints.ACCOUNT_LISTING_LIMIT
+        given_limit = get_param(req, 'limit')
+        if given_limit and given_limit.isdigit():
+            limit = int(given_limit)
+            if limit > constraints.ACCOUNT_LISTING_LIMIT:
+                return HTTPPreconditionFailed(
+                    request=req,
+                    body='Maximum limit is %d' %
+                         constraints.ACCOUNT_LISTING_LIMIT)
+        marker = get_param(req, 'marker')
+        end_marker = get_param(req, 'end_marker')
 
-        headers = {}
-        headers['x-account-container-count'] = '1'
-        headers['x-account-object-count'] = '0'
-        headers['x-account-bytes-used'] = '0'
-        headers['x-account-meta-temp-url-key'] = 'e'
-        headers['x-account-sysmeta-core-access-control'] = '{' \
-                                                           '"admin":[' \
-                                                           '"test:tester"]}'
+        try:
+            listing, info = self.app.storage.container_list(
+                self.account_name, limit=limit, marker=marker,
+                end_marker=end_marker, prefix=prefix,
+                delimiter=delimiter)
+            resp = account_listing_response(self.account_name, req,
+                                            get_listing_content_type(req),
+                                            info=info,
+                                            listing=listing)
+        except exceptions.NotFound:
+            if self.app.account_autocreate:
+                resp = account_listing_response(self.account_name, req,
+                                                get_listing_content_type(req))
+            else:
+                resp = HTTPNotFound(request=req)
 
-        resp = HTTPOk(request=req, headers=headers)
         _set_info_cache(self.app, req.environ, self.account_name, None, resp)
-
-        if not len(container_list):
-            return HTTPNoContent(request=req)
-
-        req_format = get_listing_content_type(req)
-        if req_format.endswith('/xml'):
-            out = ['<?xml version="1.0" encoding="UTF-8"?>',
-                   '<account name="%s">' % self.account_name]
-            for (name, count, total_bytes) in container_list:
-                out.append('<container>')
-                out.append('<name>%s</name>' % name)
-                out.append('<count>%s</count>' % count)
-                out.append('<bytes>%s</bytes>' % total_bytes)
-                out.append('</container>')
-            out.append('</account>')
-            result_list = "\n".join(out)
-        elif req_format == 'application/json':
-            out = []
-            for (name, count, total_bytes) in container_list:
-                out.append({"name": name, "count": count,
-                            "bytes": total_bytes})
-            result_list = json.dumps(out)
-        else:
-            output = ''
-            for (name, count, total_bytes) in container_list:
-                output += '\n%s\n' % name
-            result_list = output
-
-        resp.body = result_list
 
         if req.environ.get('swift_owner'):
             self.add_acls_from_sys_metadata(resp)
@@ -135,6 +168,38 @@ class AccountController(Controller):
             for header in self.app.swift_owner_headers:
                 resp.headers.pop(header, None)
         return resp
+
+    @public
+    def HEAD(self, req):
+        """HTTP HEAD request handler."""
+        if len(self.account_name) > constraints.MAX_ACCOUNT_NAME_LENGTH:
+            resp = HTTPBadRequest(request=req)
+            resp.body = 'Account name length of %d longer than %d' % \
+                        (len(self.account_name),
+                         constraints.MAX_ACCOUNT_NAME_LENGTH)
+            return resp
+
+        try:
+            info = self.app.storage.account_show(self.account_name)
+            resp = account_listing_response(self.account_name, req,
+                                            get_listing_content_type(req),
+                                            info=info)
+        except exceptions.NotFound:
+            if self.app.account_autocreate:
+                resp = account_listing_response(self.account_name, req,
+                                                get_listing_content_type(req))
+            else:
+                resp = HTTPNotFound(request=req)
+
+        _set_info_cache(self.app, req.environ, self.account_name, None, resp)
+
+        if req.environ.get('swift_owner'):
+            self.add_acls_from_sys_metadata(resp)
+        else:
+            for header in self.app.swift_owner_headers:
+                resp.headers.pop(header, None)
+        return resp
+
 
     @public
     def PUT(self, req):
@@ -152,13 +217,23 @@ class AccountController(Controller):
                         (len(self.account_name),
                          constraints.MAX_ACCOUNT_NAME_LENGTH)
             return resp
-        account_partition, accounts = \
-            self.app.account_ring.get_nodes(self.account_name)
+
         headers = self.generate_request_headers(req, transfer=True)
         clear_info_cache(self.app, req.environ, self.account_name)
-        resp = self.make_requests(
-            req, self.app.account_ring, account_partition, 'PUT',
-            req.swift_entity_path, [headers] * len(accounts))
+
+        created = self.app.storage.account_create(self.account_name,
+                                                  headers=headers)
+
+        metadata = {}
+        metadata.update((k, v) for k, v in req.headers.iteritems()
+                        if is_sys_or_user_meta('account', k))
+        if metadata:
+            self.app.storage.account_update(self.account_name, metadata)
+
+        if created:
+            resp = HTTPCreated(request=req)
+        else:
+            resp = HTTPAccepted(request=req)
         self.add_acls_from_sys_metadata(resp)
         return resp
 
@@ -174,8 +249,30 @@ class AccountController(Controller):
         error_response = check_metadata(req, 'account')
         if error_response:
             return error_response
-
+        headers = self.generate_request_headers(req, transfer=True)
         clear_info_cache(self.app, req.environ, self.account_name)
+
+        metadata = {}
+        metadata.update((k, v) for k, v in req.headers.iteritems()
+                        if is_sys_or_user_meta('account', k))
+        try:
+            self.app.storage.account_update(self.account_name, metadata,
+                                            headers=headers)
+        except exceptions.NotFound:
+            if self.app.account_autocreate:
+                try:
+                    self.app.storage.account_create(self.account_name)
+                    self.app.logger.info('autocreate account %r' %
+                                         self.account_name)
+                    clear_info_cache(self.app, req.environ, self.account_name)
+                    if metadata:
+                        self.app.storage.account_update(self.account_name,
+                                                        metadata,
+                                                        headers=headers)
+                except exceptions.ClientException:
+                    self.app.logger.warning('Could not autocreate account %r' %
+                                            self.account_name)
+
         resp = HTTPNoContent(request=req)
         self.add_acls_from_sys_metadata(resp)
         return resp
@@ -192,6 +289,8 @@ class AccountController(Controller):
             return HTTPMethodNotAllowed(
                 request=req,
                 headers={'Allow': ', '.join(self.allowed_methods)})
+        headers = self.generate_request_headers(req)
         clear_info_cache(self.app, req.environ, self.account_name)
+        # TODO delete account
         resp = HTTPNoContent(request=req)
         return resp

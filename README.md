@@ -10,9 +10,7 @@ Included:
 *   Authentication support
 *   Metadata support
 *   Swift Middleware support
-
-Incoming:
-*   Account support
+*   Partial account support
 
 Installation
 ------------

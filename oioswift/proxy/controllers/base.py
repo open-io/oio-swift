@@ -13,15 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 import functools
 import inspect
 from urllib import quote
 
+import os
 from swift.common.wsgi import make_pre_authed_env
-from swift.common.utils import public, split_path, list_from_csv
+from swift.common.utils import public, split_path, list_from_csv, Timestamp
 from swift.common.http import is_success, HTTP_OK, HTTP_NOT_FOUND, \
     HTTP_UNAUTHORIZED
-from swift.common.swob import Request, Response
+from swift.common.swob import Request, Response, HeaderKeyDict
 from swift.common.request_helpers import strip_sys_meta_prefix, \
     strip_user_meta_prefix, is_user_meta, is_sys_meta, is_sys_or_user_meta
 
@@ -599,6 +601,31 @@ class Controller(object):
                            if k.lower() in self.pass_through_headers or
                            is_sys_or_user_meta(st, k))
 
+    def generate_request_headers(self, orig_req=None, additional=None,
+                                 transfer=False):
+        """
+        Create a list of headers to be used in backend requets
+        :param orig_req: the original request sent by the client to the proxy
+        :param additional: additional headers to send to the backend
+        :param transfer: If True, transfer headers from original client request
+        :returns: a dictionary of headers
+        """
+        # Use the additional headers first so they don't overwrite the headers
+        # we require.
+        headers = HeaderKeyDict(additional) if additional else HeaderKeyDict()
+        if transfer:
+            self.transfer_headers(orig_req.headers, headers)
+        headers.setdefault('x-timestamp', Timestamp(time.time()).internal)
+        if orig_req:
+            referer = orig_req.as_referer()
+        else:
+            referer = ''
+        headers['x-trans-id'] = self.trans_id
+        headers['connection'] = 'close'
+        headers['user-agent'] = 'proxy-server %s' % os.getpid()
+        headers['referer'] = referer
+        return headers
+
     def account_info(self, account, req=None):
         """
         Get account information, and also verify that the account exists.
@@ -661,6 +688,25 @@ class Controller(object):
         if self.app.cors_allow_origin:
             allowed_origins.update(self.app.cors_allow_origin)
         return origin in allowed_origins or '*' in allowed_origins
+
+    @public
+    def GET(self, req):
+        """
+        Handler for HTTP GET requests.
+        :param req: The client request
+        :returns: the response to the client
+        """
+        return self.GETorHEAD(req)
+
+    @public
+    def HEAD(self, req):
+        """
+        Handler for HTTP HEAD requests.
+        :param req: The client request
+        :returns: the response to the client
+        """
+        return self.GETorHEAD(req)
+
 
     @public
     def OPTIONS(self, req):

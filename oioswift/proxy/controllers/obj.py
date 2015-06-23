@@ -28,15 +28,13 @@ from swift.common import constraints
 from swift.common.http import HTTP_CREATED, HTTP_MULTIPLE_CHOICES
 from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPPreconditionFailed, HTTPRequestEntityTooLarge, HTTPRequestTimeout, \
-    HTTPServerError, Request, \
-    HTTPClientDisconnect, HTTPOk, HTTPCreated, HTTPNoContent
+    Request, HTTPCreated, HTTPNoContent, Response
 from swift.common.request_helpers import is_sys_or_user_meta, is_sys_meta, \
-    remove_items, copy_header_subset
+    is_user_meta, remove_items, copy_header_subset
 from oiopy import exceptions
 
 from oioswift.proxy.controllers.base import _set_info_cache, \
     _set_object_info_cache, Controller, delay_denial, cors_validation
-
 from oioswift.utils import IterO
 
 
@@ -50,18 +48,6 @@ def copy_headers_into(from_r, to_r):
     for k, v in from_r.headers.items():
         if is_sys_or_user_meta('object', k) or k.lower() in pass_headers:
             to_r.headers[k] = v
-
-
-def _make_object_headers(meta):
-    headers = {}
-    headers['Content-Type'] = meta.get('mime-type')
-    headers['ETag'] = meta.get('hash')
-    headers['Last-Modified'] = Timestamp(meta.get('ctime')).isoformat
-    headers['Content-Length'] = meta.get('length')
-    for k, v in meta.iteritems():
-        if k.startswith('user.meta.'):
-            headers['X-Object-Meta-' + k[10:]] = v
-    return headers
 
 
 def check_content_type(req):
@@ -78,6 +64,10 @@ class ObjectController(Controller):
     """WSGI controller for object requests."""
     server_type = 'Object'
 
+    allowed_headers = {'content-disposition', 'content-encoding',
+                       'x-delete-at', 'x-object-manifest',
+                       'x-static-large-object'}
+
     def __init__(self, app, account_name, container_name, object_name,
                  **kwargs):
         Controller.__init__(self, app)
@@ -85,26 +75,22 @@ class ObjectController(Controller):
         self.container_name = unquote(container_name)
         self.object_name = unquote(object_name)
 
+
     @public
     @cors_validation
     @delay_denial
     def HEAD(self, req):
         """Handle HTTP GET or HEAD requests."""
+        container_info = self.container_info(self.account_name,
+                                             self.container_name, req)
+        req.acl = container_info['read_acl']
+
         if 'swift.authorize' in req.environ:
             aresp = req.environ['swift.authorize'](req)
             if aresp:
                 return aresp
 
-        storage = self.app.storage
-        try:
-            meta = storage.get_object_metadata(self.container_name,
-                                               self.object_name)
-        except (exceptions.NoSuchObject, exceptions.NoSuchContainer,
-                exceptions.OioException):
-            return HTTPNotFound(request=req)
-
-        headers = _make_object_headers(meta)
-        resp = HTTPOk(request=req, headers=headers)
+        resp = self.get_object_head_resp(req)
         _set_info_cache(self.app, req.environ, self.account_name,
                         self.container_name, resp)
         _set_object_info_cache(self.app, req.environ, self.account_name,
@@ -115,27 +101,35 @@ class ObjectController(Controller):
 
         return resp
 
+    def get_object_head_resp(self, req):
+        storage = self.app.storage
+        try:
+            metadata = storage.object_show(self.account_name,
+                                           self.container_name,
+                                           self.object_name)
+        except exceptions.NotFound:
+            return HTTPNotFound(request=req)
+
+        resp = self.make_object_response(req, metadata)
+        return resp
+
+
     @public
     @cors_validation
     @delay_denial
     def GET(self, req):
         """Handler for HTTP GET requests."""
+        container_info = self.container_info(self.account_name,
+                                             self.container_name, req)
+        req.acl = container_info['read_acl']
+
         if 'swift.authorize' in req.environ:
             aresp = req.environ['swift.authorize'](req)
             if aresp:
                 return aresp
 
-        storage = self.app.storage
-        try:
-            meta, stream = storage.fetch_object(self.container_name,
-                                                self.object_name,
-                                                with_meta=True)
-        except (exceptions.NoSuchObject, exceptions.NoSuchContainer,
-                exceptions.OioException):
-            return HTTPNotFound(request=req)
+        resp = self.get_object_fetch_resp(req)
 
-        headers = _make_object_headers(meta)
-        resp = HTTPOk(request=req, headers=headers, app_iter=stream)
         _set_info_cache(self.app, req.environ, self.account_name,
                         self.container_name, resp)
         _set_object_info_cache(self.app, req.environ, self.account_name,
@@ -144,6 +138,45 @@ class ObjectController(Controller):
             resp.content_type = clean_content_type(
                 resp.headers['content-type'])
 
+        return resp
+
+    def get_object_fetch_resp(self, req):
+        storage = self.app.storage
+        try:
+            metadata, stream = storage.object_fetch(self.account_name,
+                                                    self.container_name,
+                                                    self.object_name)
+        except exceptions.NotFound:
+            return HTTPNotFound(request=req)
+        resp = self.make_object_response(req, metadata)
+        resp.app_iter = stream
+        return resp
+
+    def make_object_response(self, req, metadata):
+        conditional_etag = None
+        if 'X-Backend-Etag-Is-At' in req.headers:
+            conditional_etag = metadata.get(
+                req.headers['X-Backend-Etag-Is-At'])
+
+        resp = Response(request=req, conditional_response=True,
+                        conditional_etag=conditional_etag)
+
+        resp.headers['Content-Type'] = metadata.get(
+            'mime-type', 'application/octet-stream')
+        for k, v in metadata.iteritems():
+            if k.startswith("user."):
+                meta = k[5:]
+                if is_sys_or_user_meta('object', meta) or \
+                                meta.lower() in self.allowed_headers:
+                    resp.headers[meta] = v
+        resp.etag = metadata['hash']
+        ts = Timestamp(metadata['ctime'])
+        resp.last_modified = math.ceil(float(ts))
+        resp.content_length = int(metadata['length'])
+        try:
+            resp.content_encoding = metadata['encoding']
+        except KeyError:
+            pass
         return resp
 
     @public
@@ -175,28 +208,31 @@ class ObjectController(Controller):
             error_response = check_metadata(req, 'object')
             if error_response:
                 return error_response
-
+            container_info = self.container_info(self.account_name,
+                                                 self.container_name, req)
+            req.acl = container_info['write_acl']
             if 'swift.authorize' in req.environ:
                 aresp = req.environ['swift.authorize'](req)
                 if aresp:
                     return aresp
 
             storage = self.app.storage
-            meta = {}
-            for k, v in req.headers.iteritems():
-                if k.startswith("X-Object-Meta-"):
-                    meta["user.meta." + k[14:]] = v
+            metadata = {}
+            metadata.update(
+                ("user.%s" % k, v) for k, v in req.headers.iteritems()
+                if is_user_meta('object', k))
+            for header_key in self.allowed_headers:
+                if header_key in req.headers:
+                    headers_caps = header_key.title()
+                    metadata[headers_caps] = req.headers[header_key]
+
             try:
-                if not meta:
-                    storage.delete_object_metadata(self.container_name,
-                                                   self.object_name, [])
-                else:
-                    storage.set_object_metadata(self.container_name,
-                                                self.object_name,
-                                                meta, clear=True)
-            except exceptions.OioException:
-                return HTTPServerError()
-            resp = HTTPNoContent(request=req)
+                storage.object_update(self.account_name,
+                                      self.container_name, self.object_name,
+                                      metadata, clear=True)
+            except exceptions.NotFound:
+                return HTTPNotFound(request=req)
+            resp = HTTPAccepted(request=req)
             return resp
 
     def _config_obj_expiration(self, req):
@@ -348,7 +384,7 @@ class ObjectController(Controller):
         if content_length is None:
             content_length = 0
         try:
-            storage.create_object(self.container_name,
+            storage.object_create(self.account_name, self.container_name,
                                   obj_name=self.object_name,
                                   file_or_path=stream,
                                   content_length=content_length,
@@ -357,8 +393,6 @@ class ObjectController(Controller):
             return HTTPNotFound(request=req)
         except exceptions.ClientReadTimeout:
             return HTTPRequestTimeout(request=req)
-        except exceptions.OioException:
-            return HTTPClientDisconnect(request=req)
         resp = HTTPCreated(request=req)
         if source_header:
             acct, path = source_header.split('/', 3)[2:4]
@@ -397,7 +431,8 @@ class ObjectController(Controller):
         storage = self.app.storage
 
         try:
-            storage.delete_object(self.container_name, self.object_name)
+            storage.object_delete(self.account_name, self.container_name,
+                                  self.object_name)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
         resp = HTTPNoContent(request=req)
