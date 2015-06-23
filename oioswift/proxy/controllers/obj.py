@@ -107,7 +107,7 @@ class ObjectController(Controller):
             metadata = storage.object_show(self.account_name,
                                            self.container_name,
                                            self.object_name)
-        except exceptions.NotFound:
+        except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
 
         resp = self.make_object_response(req, metadata)
@@ -146,7 +146,7 @@ class ObjectController(Controller):
             metadata, stream = storage.object_fetch(self.account_name,
                                                     self.container_name,
                                                     self.object_name)
-        except exceptions.NotFound:
+        except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
         resp = self.make_object_response(req, metadata)
         resp.app_iter = stream
@@ -230,7 +230,7 @@ class ObjectController(Controller):
                 storage.object_update(self.account_name,
                                       self.container_name, self.object_name,
                                       metadata, clear=True)
-            except exceptions.NotFound:
+            except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
                 return HTTPNotFound(request=req)
             resp = HTTPAccepted(request=req)
             return resp
