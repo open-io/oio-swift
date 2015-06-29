@@ -26,6 +26,7 @@ from swift.common.http import is_success, HTTP_OK, HTTP_NOT_FOUND, \
 from swift.common.swob import Request, Response, HeaderKeyDict
 from swift.common.request_helpers import strip_sys_meta_prefix, \
     strip_user_meta_prefix, is_user_meta, is_sys_meta, is_sys_or_user_meta
+from oiopy import exceptions
 
 
 def update_headers(response, headers):
@@ -178,7 +179,7 @@ def cors_validation(func):
         req = a[1]
 
         # The logic here was interpreted from
-        #    http://www.w3.org/TR/cors/#resource-requests
+        # http://www.w3.org/TR/cors/#resource-requests
 
         # Is this a CORS request?
         req_origin = req.headers.get('Origin', None)
@@ -707,6 +708,13 @@ class Controller(object):
         """
         return self.GETorHEAD(req)
 
+    def autocreate_account(self, req, account):
+        try:
+            self.app.storage.account_create(account)
+            self.app.logger.info('autocreate account %r' % account)
+            clear_info_cache(self.app, req.environ, account)
+        except exceptions.OioException:
+            self.app.logger.warning('Could not autocreate account %r' % account)
 
     @public
     def OPTIONS(self, req):
