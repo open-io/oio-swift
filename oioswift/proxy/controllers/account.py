@@ -55,6 +55,7 @@ def account_listing_response(account, req, response_content_type,
         info = {'containers': 0,
                 'objects': 0,
                 'bytes': 0,
+                'metadata': {},
                 'ctime': now}
     if listing is None:
         listing = []
@@ -128,6 +129,18 @@ class AccountController(Controller):
                          constraints.MAX_ACCOUNT_NAME_LENGTH)
             return resp
 
+        resp = self.get_account_listing_resp(req)
+
+        _set_info_cache(self.app, req.environ, self.account_name, None, resp)
+
+        if req.environ.get('swift_owner'):
+            self.add_acls_from_sys_metadata(resp)
+        else:
+            for header in self.app.swift_owner_headers:
+                resp.headers.pop(header, None)
+        return resp
+
+    def get_account_listing_resp(self, req):
         prefix = get_param(req, 'prefix')
         delimiter = get_param(req, 'prefix')
         if delimiter and (len(delimiter) > 1 or ord(delimiter) > 254):
@@ -160,13 +173,6 @@ class AccountController(Controller):
             else:
                 resp = HTTPNotFound(request=req)
 
-        _set_info_cache(self.app, req.environ, self.account_name, None, resp)
-
-        if req.environ.get('swift_owner'):
-            self.add_acls_from_sys_metadata(resp)
-        else:
-            for header in self.app.swift_owner_headers:
-                resp.headers.pop(header, None)
         return resp
 
     @public
@@ -179,6 +185,18 @@ class AccountController(Controller):
                          constraints.MAX_ACCOUNT_NAME_LENGTH)
             return resp
 
+        resp = self.get_account_head_resp(req)
+
+        _set_info_cache(self.app, req.environ, self.account_name, None, resp)
+
+        if req.environ.get('swift_owner'):
+            self.add_acls_from_sys_metadata(resp)
+        else:
+            for header in self.app.swift_owner_headers:
+                resp.headers.pop(header, None)
+        return resp
+
+    def get_account_head_resp(self, req):
         try:
             info = self.app.storage.account_show(self.account_name)
             resp = account_listing_response(self.account_name, req,
@@ -191,13 +209,6 @@ class AccountController(Controller):
             else:
                 resp = HTTPNotFound(request=req)
 
-        _set_info_cache(self.app, req.environ, self.account_name, None, resp)
-
-        if req.environ.get('swift_owner'):
-            self.add_acls_from_sys_metadata(resp)
-        else:
-            for header in self.app.swift_owner_headers:
-                resp.headers.pop(header, None)
         return resp
 
 
@@ -218,15 +229,19 @@ class AccountController(Controller):
                          constraints.MAX_ACCOUNT_NAME_LENGTH)
             return resp
 
-        headers = self.generate_request_headers(req, transfer=True)
+        resp = self.get_account_put_resp(req)
         clear_info_cache(self.app, req.environ, self.account_name)
+        self.add_acls_from_sys_metadata(resp)
+        return resp
 
+    def get_account_put_resp(self, req):
+        headers = self.generate_request_headers(req, transfer=True)
         created = self.app.storage.account_create(self.account_name,
                                                   headers=headers)
-
         metadata = {}
         metadata.update((k, v) for k, v in req.headers.iteritems()
                         if is_sys_or_user_meta('account', k))
+
         if metadata:
             self.app.storage.account_update(self.account_name, metadata)
 
@@ -234,7 +249,6 @@ class AccountController(Controller):
             resp = HTTPCreated(request=req)
         else:
             resp = HTTPAccepted(request=req)
-        self.add_acls_from_sys_metadata(resp)
         return resp
 
     @public
@@ -249,8 +263,14 @@ class AccountController(Controller):
         error_response = check_metadata(req, 'account')
         if error_response:
             return error_response
-        headers = self.generate_request_headers(req, transfer=True)
+
         clear_info_cache(self.app, req.environ, self.account_name)
+        resp = self.get_account_post_resp(req)
+        self.add_acls_from_sys_metadata(resp)
+        return resp
+
+    def get_account_post_resp(self, req):
+        headers = self.generate_request_headers(req, transfer=True)
 
         metadata = {}
         metadata.update((k, v) for k, v in req.headers.iteritems()
@@ -258,23 +278,16 @@ class AccountController(Controller):
         try:
             self.app.storage.account_update(self.account_name, metadata,
                                             headers=headers)
+            return HTTPNoContent(request=req)
         except exceptions.NotFound:
             if self.app.account_autocreate:
-                try:
-                    self.app.storage.account_create(self.account_name)
-                    self.app.logger.info('autocreate account %r' %
-                                         self.account_name)
-                    clear_info_cache(self.app, req.environ, self.account_name)
-                    if metadata:
-                        self.app.storage.account_update(self.account_name,
-                                                        metadata,
-                                                        headers=headers)
-                except exceptions.ClientException:
-                    self.app.logger.warning('Could not autocreate account %r' %
-                                            self.account_name)
-
-        resp = HTTPNoContent(request=req)
-        self.add_acls_from_sys_metadata(resp)
+                self.autocreate_account(req, self.account_name)
+                if metadata:
+                    self.app.storage.account_update(self.account_name,
+                                                    metadata, headers=headers)
+                resp = HTTPNotFound(request=req)
+            else:
+                resp = HTTPNotFound(request=req)
         return resp
 
     @public

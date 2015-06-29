@@ -36,7 +36,7 @@ from oioswift.proxy.controllers.base import Controller, clear_info_cache, \
 def extract_sysmeta(raw):
     sysmeta = {}
     for el in raw.split(';'):
-        k, v = el.split('=')
+        k, v = el.split('=', 1)
         sysmeta[k] = v
     return sysmeta
 
@@ -119,7 +119,8 @@ class ContainerController(Controller):
             return HTTPNotFound(request=req)
 
         resp = self.get_container_list_resp(req)
-
+        _set_info_cache(self.app, req.environ, self.account_name,
+                        self.container_name, resp)
         if 'swift.authorize' in req.environ:
             req.acl = resp.headers.get('x-container-read')
             aresp = req.environ['swift.authorize'](req)
@@ -230,11 +231,34 @@ class ContainerController(Controller):
                                                 'application/octet-stream')}
         override_bytes_from_content_type(response)
         return response
+
     @public
     @delay_denial
     @cors_validation
     def HEAD(self, req):
         """Handler for HTTP HEAD requests."""
+        if not self.account_info(self.account_name, req):
+            if 'swift.authorize' in req.environ:
+                aresp = req.environ['swift.authorize'](req)
+                if aresp:
+                    return aresp
+            return HTTPNotFound(request=req)
+
+        resp = self.get_container_head_resp(req)
+        _set_info_cache(self.app, req.environ, self.account_name,
+                        self.container_name, resp)
+        if 'swift.authorize' in req.environ:
+            req.acl = resp.headers.get('x-container-read')
+            aresp = req.environ['swift.authorize'](req)
+            if aresp:
+                return aresp
+        if not req.environ.get('swift_owner', False):
+            for key in self.app.swift_owner_headers:
+                if key in resp.headers:
+                    del resp.headers[key]
+        return resp
+
+    def get_container_head_resp(self, req):
         storage = self.app.storage
         try:
             meta = storage.container_show(self.account_name,
@@ -249,17 +273,7 @@ class ContainerController(Controller):
             resp = HTTPNoContent(headers=headers)
         except exceptions.NoSuchContainer:
             resp = HTTPNotFound(request=req)
-        _set_info_cache(self.app, req.environ, self.account_name,
-                        self.container_name, resp)
-        if 'swift.authorize' in req.environ:
-            req.acl = resp.headers.get('x-container-read')
-            aresp = req.environ['swift.authorize'](req)
-            if aresp:
-                return aresp
-        if not req.environ.get('swift_owner', False):
-            for key in self.app.swift_owner_headers:
-                if key in resp.headers:
-                    del resp.headers[key]
+
         return resp
 
     @public
@@ -279,6 +293,7 @@ class ContainerController(Controller):
                         (len(self.container_name),
                          constraints.MAX_CONTAINER_NAME_LENGTH)
             return resp
+        container_count = self.account_info(self.account_name, req)
 
         clear_info_cache(self.app, req.environ,
                          self.account_name, self.container_name)
