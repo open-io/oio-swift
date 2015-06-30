@@ -285,7 +285,7 @@ class AccountController(Controller):
                 if metadata:
                     self.app.storage.account_update(self.account_name,
                                                     metadata, headers=headers)
-                resp = HTTPNotFound(request=req)
+                resp = HTTPNoContent(request=req)
             else:
                 resp = HTTPNotFound(request=req)
         return resp
