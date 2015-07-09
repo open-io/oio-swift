@@ -215,7 +215,7 @@ class ContainerController(Controller):
         else:
             if not container_list:
                 return HTTPNoContent(request=req, headers=resp_headers)
-            ret.body = '\n'.join(rec[0] for rec in container_list) + '\n'
+            ret.body = '\n'.join(rec['name'] for rec in container_list) + '\n'
         return ret
 
     def update_data_record(self, record):
