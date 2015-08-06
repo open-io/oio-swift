@@ -148,11 +148,10 @@ class ObjectController(Controller):
                                                     self.object_name)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
-        resp = self.make_object_response(req, metadata)
-        resp.app_iter = stream
+        resp = self.make_object_response(req, metadata, stream)
         return resp
 
-    def make_object_response(self, req, metadata):
+    def make_object_response(self, req, metadata, stream=None):
         conditional_etag = None
         if 'X-Backend-Etag-Is-At' in req.headers:
             conditional_etag = metadata.get(
@@ -172,6 +171,8 @@ class ObjectController(Controller):
         resp.etag = metadata['hash']
         ts = Timestamp(metadata['ctime'])
         resp.last_modified = math.ceil(float(ts))
+        if stream:
+            resp.app_iter = stream
         resp.content_length = int(metadata['length'])
         try:
             resp.content_encoding = metadata['encoding']
