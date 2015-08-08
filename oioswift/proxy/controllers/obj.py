@@ -385,7 +385,7 @@ class ObjectController(Controller):
         if content_length is None:
             content_length = 0
         try:
-            storage.object_create(self.account_name, self.container_name,
+            chunks, size, checksum = storage.object_create(self.account_name, self.container_name,
                                   obj_name=self.object_name,
                                   file_or_path=stream,
                                   content_length=content_length,
@@ -394,7 +394,7 @@ class ObjectController(Controller):
             return HTTPNotFound(request=req)
         except exceptions.ClientReadTimeout:
             return HTTPRequestTimeout(request=req)
-        resp = HTTPCreated(request=req)
+        resp = HTTPCreated(request=req, etag=checksum)
         if source_header:
             acct, path = source_header.split('/', 3)[2:4]
             resp.headers['X-Copied-From-Account'] = quote(acct)
