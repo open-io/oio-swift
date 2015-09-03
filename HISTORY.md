@@ -1,7 +1,17 @@
 Release History
 ===============
 
-0.3 (2015-06-23)
+0.4.0 (2015-09-04)
+------------------
+
+* Better ETag/Hash handling
+
+0.3.1 (2015-07-01)
+------------------
+
+* Account metadata fixes
+
+0.3.0 (2015-06-23)
 ------------------
 
 * Partial account support
