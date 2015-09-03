@@ -168,7 +168,7 @@ class ObjectController(Controller):
                 if is_sys_or_user_meta('object', meta) or \
                                 meta.lower() in self.allowed_headers:
                     resp.headers[meta] = v
-        resp.etag = metadata['hash']
+        resp.etag = metadata['hash'].lower()
         ts = Timestamp(metadata['ctime'])
         resp.last_modified = math.ceil(float(ts))
         if stream:
