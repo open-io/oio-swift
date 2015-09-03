@@ -225,7 +225,7 @@ class ContainerController(Controller):
         sysmeta = extract_sysmeta(record.get('system_metadata', None))
         response = {'name': record['name'],
                     'bytes': record['size'],
-                    'hash': record['hash'],
+                    'hash': record['hash'].lower(),
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': sysmeta.get('mime-type',
                                                 'application/octet-stream')}
