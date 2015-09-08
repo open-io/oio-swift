@@ -162,16 +162,18 @@ class ContainerController(Controller):
         out_content_type = get_listing_content_type(req)
 
         try:
-            result_list = storage. \
+            metadata, result_list = storage. \
                 object_list(self.account_name, self.container_name,
                             prefix=prefix, limit=limit, delimiter=delimiter,
-                            marker=marker, end_marker=end_marker)
+                            marker=marker, end_marker=end_marker,
+                            include_metadata=True)
             # TODO get container info
             info = {}
             resp_headers = gen_resp_headers(info)
-            resp = self.create_listing(req, out_content_type, resp_headers,
-                                       info, result_list,
-                                       self.container_name)
+            info.update(metadata)
+            resp = self.create_listing(
+                req, out_content_type, resp_headers, info, result_list,
+                self.container_name)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         return resp
@@ -264,6 +266,7 @@ class ContainerController(Controller):
             meta = storage.container_show(self.account_name,
                                           self.container_name)
             headers = {}
+            # TODO object count
             headers['X-Container-Object-Count'] = '0'
             headers['X-Container-Bytes-Used'] = meta.get('sys.m2.usage', '0')
             headers['Content-Type'] = 'text/plain; charset=utf-8'
@@ -275,6 +278,15 @@ class ContainerController(Controller):
             resp = HTTPNotFound(request=req)
 
         return resp
+
+    def load_container_metadata(self, headers, prefix='user.'):
+        metadata = {}
+        metadata.update(
+            ("%s%s" % (prefix, k.lower()), v)
+            for k, v in headers.iteritems()
+            if k.lower() in self.pass_through_headers or
+            is_sys_or_user_meta('container', k))
+        return metadata
 
     @public
     @cors_validation
@@ -299,8 +311,13 @@ class ContainerController(Controller):
                          self.account_name, self.container_name)
 
         storage = self.app.storage
+
+        headers = self.generate_request_headers(req, transfer=True)
+        metadata = self.load_container_metadata(headers, '')
+
         try:
-            storage.container_create(self.account_name, self.container_name)
+            storage.container_create(
+                self.account_name, self.container_name, metadata=metadata)
         except exceptions.OioException:
             return HTTPServerError(request=req)
         resp = HTTPCreated(request=req)
@@ -323,14 +340,12 @@ class ContainerController(Controller):
                          self.account_name, self.container_name)
 
         storage = self.app.storage
-        metadata = {}
-        metadata.update(("user.%s" % k, v) for k, v in req.headers.iteritems()
-                        if k.lower() in self.pass_through_headers or
-                        is_sys_or_user_meta('container', k))
+
+        metadata = self.load_container_metadata(headers)
 
         try:
-            storage.container_update(self.account_name, self.container_name,
-                                     metadata, headers=headers)
+            storage.container_set_properties(
+                self.account_name, self.container_name, metadata)
             resp = HTTPNoContent(request=req)
         except exceptions.NoSuchContainer:
             resp = self.PUT(req)

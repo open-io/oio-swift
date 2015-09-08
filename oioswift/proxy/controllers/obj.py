@@ -162,12 +162,12 @@ class ObjectController(Controller):
 
         resp.headers['Content-Type'] = metadata.get(
             'mime-type', 'application/octet-stream')
-        for k, v in metadata.iteritems():
-            if k.startswith("user."):
-                meta = k[5:]
-                if is_sys_or_user_meta('object', meta) or \
-                                meta.lower() in self.allowed_headers:
-                    resp.headers[meta] = v
+        properties = metadata.get('properties')
+        if properties:
+            for k, v in properties.iteritems():
+                if is_sys_or_user_meta('object', k) or \
+                        k.lower() in self.allowed_headers:
+                            resp.headers[k] = v
         resp.etag = metadata['hash'].lower()
         ts = Timestamp(metadata['ctime'])
         resp.last_modified = math.ceil(float(ts))
@@ -179,6 +179,18 @@ class ObjectController(Controller):
         except KeyError:
             pass
         return resp
+
+    def load_object_metadata(self, headers):
+        metadata = {}
+        metadata.update(
+            (k.lower(), v) for k, v in headers.iteritems()
+            if is_user_meta('object', k))
+        for header_key in self.allowed_headers:
+            if header_key in headers:
+                headers_lower = header_key.lower()
+                metadata[headers_lower] = headers[header_key]
+        print metadata
+        return metadata
 
     @public
     @cors_validation
@@ -218,14 +230,9 @@ class ObjectController(Controller):
                     return aresp
 
             storage = self.app.storage
-            metadata = {}
-            metadata.update(
-                ("user.%s" % k, v) for k, v in req.headers.iteritems()
-                if is_user_meta('object', k))
-            for header_key in self.allowed_headers:
-                if header_key in req.headers:
-                    headers_caps = header_key.title()
-                    metadata[headers_caps] = req.headers[header_key]
+
+            headers = self.generate_request_headers(req, transfer=True)
+            metadata = self.load_object_metadata(headers)
 
             try:
                 storage.object_update(self.account_name,
@@ -384,12 +391,15 @@ class ObjectController(Controller):
 
         if content_length is None:
             content_length = 0
+
+        headers = self.generate_request_headers(req, transfer=True)
+        metadata = self.load_object_metadata(headers)
         try:
-            chunks, size, checksum = storage.object_create(self.account_name, self.container_name,
-                                  obj_name=self.object_name,
-                                  file_or_path=stream,
-                                  content_length=content_length,
-                                  content_type=content_type)
+            chunks, size, checksum = storage.object_create(
+                self.account_name, self.container_name,
+                obj_name=self.object_name, file_or_path=stream,
+                content_length=content_length, content_type=content_type,
+                metadata=metadata)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         except exceptions.ClientReadTimeout:
