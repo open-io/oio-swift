@@ -111,7 +111,7 @@ class ContainerController(Controller):
     @cors_validation
     def GET(self, req):
         """Handler for HTTP GET requests."""
-        if not self.account_info(self.account_name, req):
+        if self.account_info(self.account_name, req) is None:
             if 'swift.authorize' in req.environ:
                 aresp = req.environ['swift.authorize'](req)
                 if aresp:
@@ -239,7 +239,7 @@ class ContainerController(Controller):
     @cors_validation
     def HEAD(self, req):
         """Handler for HTTP HEAD requests."""
-        if not self.account_info(self.account_name, req):
+        if self.account_info(self.account_name, req) is None:
             if 'swift.authorize' in req.environ:
                 aresp = req.environ['swift.authorize'](req)
                 if aresp:
