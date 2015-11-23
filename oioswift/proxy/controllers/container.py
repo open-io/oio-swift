@@ -33,14 +33,6 @@ from oioswift.proxy.controllers.base import Controller, clear_info_cache, \
     delay_denial, cors_validation, _set_info_cache
 
 
-def extract_sysmeta(raw):
-    sysmeta = {}
-    for el in raw.split(';'):
-        k, v = el.split('=', 1)
-        sysmeta[k] = v
-    return sysmeta
-
-
 def gen_resp_headers(info):
     headers = {}
     headers.update({
@@ -224,12 +216,11 @@ class ContainerController(Controller):
         if 'subdir' in record:
             return {'subdir': record['name']}
 
-        sysmeta = extract_sysmeta(record.get('system_metadata', None))
         response = {'name': record['name'],
                     'bytes': record['size'],
                     'hash': record['hash'].lower(),
                     'last_modified': Timestamp(record['ctime']).isoformat,
-                    'content_type': sysmeta.get('mime-type',
+                    'content_type': record.get('mime-type',
                                                 'application/octet-stream')}
         override_bytes_from_content_type(response)
         return response
