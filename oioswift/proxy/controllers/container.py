@@ -13,24 +13,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from urllib import unquote
 import json
 from xml.etree.cElementTree import Element, SubElement, tostring
 
 from swift.common.utils import public, Timestamp, \
     override_bytes_from_content_type
 from swift.common.constraints import check_metadata
+from swift.common.utils import config_true_value
 from swift.common import constraints
-from swift.common.storage_policy import POLICIES
 from swift.common.swob import Response, HTTPBadRequest, HTTPNotFound, \
-    HTTPServerError, HTTPNoContent, HTTPConflict, HTTPCreated, \
-    HTTPPreconditionFailed
+    HTTPNoContent, HTTPConflict, HTTPPreconditionFailed, HTTPForbidden, \
+    HTTPCreated
+from swift.common.http import is_success, HTTP_ACCEPTED
 from swift.common.request_helpers import is_sys_or_user_meta, get_param
+from swift.proxy.controllers.container import ContainerController \
+        as SwiftContainerController
+from swift.proxy.controllers.base import clear_info_cache, \
+    delay_denial, cors_validation, _set_info_cache
+
 from oiopy import exceptions
 
+from oioswift.common.storage_policy import POLICIES
 from oioswift.utils import get_listing_content_type
-from oioswift.proxy.controllers.base import Controller, clear_info_cache, \
-    delay_denial, cors_validation, _set_info_cache
 
 
 def gen_resp_headers(info):
@@ -45,64 +49,12 @@ def gen_resp_headers(info):
     return headers
 
 
-class ContainerController(Controller):
-    """WSGI controller for container requests"""
-    server_type = 'Container'
+class ContainerController(SwiftContainerController):
 
-    # Ensure these are all lowercase
-    pass_through_headers = ['x-container-read', 'x-container-write',
-                            'x-container-sync-key', 'x-container-sync-to',
-                            'x-versions-location']
+    save_headers = ['x-container-read', 'x-container-write',
+                    'x-container-sync-key', 'x-container-sync-to']
 
-    def __init__(self, app, account_name, container_name, **kwargs):
-        Controller.__init__(self, app)
-        self.account_name = unquote(account_name)
-        self.container_name = unquote(container_name)
-
-    def _x_remove_headers(self):
-        st = self.server_type.lower()
-        return ['x-remove-%s-read' % st,
-                'x-remove-%s-write' % st,
-                'x-remove-versions-location']
-
-    def _convert_policy_to_index(self, req):
-        """
-        Helper method to convert a policy name (from a request from a client)
-        to a policy index (for a request to a backend).
-
-        :param req: incoming request
-        """
-        policy_name = req.headers.get('X-Storage-Policy')
-        if not policy_name:
-            return
-        policy = POLICIES.get_by_name(policy_name)
-        if not policy:
-            raise HTTPBadRequest(request=req,
-                                 content_type="text/plain",
-                                 body=("Invalid %s '%s'"
-                                       % ('X-Storage-Policy', policy_name)))
-        if policy.is_deprecated:
-            body = 'Storage Policy %r is deprecated' % (policy.name)
-            raise HTTPBadRequest(request=req, body=body)
-        return int(policy)
-
-    def clean_acls(self, req):
-        if 'swift.clean_acl' in req.environ:
-            for header in ('x-container-read', 'x-container-write'):
-                if header in req.headers:
-                    try:
-                        req.headers[header] = \
-                            req.environ['swift.clean_acl'](header,
-                                                           req.headers[header])
-                    except ValueError as err:
-                        return HTTPBadRequest(request=req, body=str(err))
-        return None
-
-    @public
-    @delay_denial
-    @cors_validation
-    def GET(self, req):
-        """Handler for HTTP GET requests."""
+    def GETorHEAD(self, req):
         if self.account_info(self.account_name, req) is None:
             if 'swift.authorize' in req.environ:
                 aresp = req.environ['swift.authorize'](req)
@@ -110,9 +62,13 @@ class ContainerController(Controller):
                     return aresp
             return HTTPNotFound(request=req)
 
-        resp = self.get_container_list_resp(req)
+        if req.method == 'GET':
+            resp = self.get_container_list_resp(req)
+        else:
+            resp = self.get_container_head_resp(req)
         _set_info_cache(self.app, req.environ, self.account_name,
                         self.container_name, resp)
+        resp = self.convert_policy(resp)
         if 'swift.authorize' in req.environ:
             req.acl = resp.headers.get('x-container-read')
             aresp = req.environ['swift.authorize'](req)
@@ -122,6 +78,20 @@ class ContainerController(Controller):
             for key in self.app.swift_owner_headers:
                 if key in resp.headers:
                     del resp.headers[key]
+        return resp
+
+    def convert_policy(self, resp):
+        if 'X-Backend-Storage-Policy-Index' in resp.headers and \
+                is_success(resp.status_int):
+                    policy = POLICIES.get_by_index(
+                        resp.headers['X-Backend-Storage-Policy-Index'])
+                    if policy:
+                        resp.headers['X-Storage-Policy'] = policy.name
+                    else:
+                        self.app.logger.error(
+                            'Could not translate %s (%r) from %r to policy',
+                            'X-Backend-Storage-Policy-Index',
+                            resp.headers['X-Backend-Storage-Policy-Index'])
         return resp
 
     def get_container_list_resp(self, req):
@@ -137,6 +107,7 @@ class ContainerController(Controller):
         end_marker = get_param(req, 'end_marker')
         limit = constraints.CONTAINER_LISTING_LIMIT
         given_limit = get_param(req, 'limit')
+        reverse = config_true_value(get_param(req, 'reverse'))
         if given_limit and given_limit.isdigit():
             limit = int(given_limit)
             if limit > constraints.CONTAINER_LISTING_LIMIT:
@@ -145,6 +116,7 @@ class ContainerController(Controller):
                     body='Maximum limit is %d'
                          % constraints.CONTAINER_LISTING_LIMIT)
 
+        out_content_type = get_listing_content_type(req)
         if path is not None:
             prefix = path
             if path:
@@ -178,14 +150,14 @@ class ContainerController(Controller):
                       'subdir': True}
             container_list.append(record)
         for (k, v) in metadata.iteritems():
-            if v and (k.lower() in self.pass_through_headers or
-                          is_sys_or_user_meta('container', k)):
+            if v and (k.lower() in self.save_headers or
+                      is_sys_or_user_meta('container', k)):
                 resp_headers[k] = v
         ret = Response(request=req, headers=resp_headers,
                        content_type=out_content_type, charset='utf-8')
         if out_content_type == 'application/json':
-            ret.body = json.dumps([self.update_data_record(record)
-                                   for record in container_list])
+            ret.body = json.dumps([self.update_data_record(r)
+                                   for r in container_list])
         elif out_content_type.endswith('/xml'):
             doc = Element('container', name=container.decode('utf-8'))
             for obj in container_list:
@@ -220,64 +192,83 @@ class ContainerController(Controller):
                     'bytes': record['size'],
                     'hash': record['hash'].lower(),
                     'last_modified': Timestamp(record['ctime']).isoformat,
-                    'content_type': record.get('mime-type',
-                                                'application/octet-stream')}
+                    'content_type': record.get(
+                        'mime-type', 'application/octet-stream')}
         override_bytes_from_content_type(response)
         return response
 
     @public
     @delay_denial
     @cors_validation
+    def GET(self, req):
+        """Handler for HTTP GET requests."""
+        return self.GETorHEAD(req)
+
+    @public
+    @delay_denial
+    @cors_validation
     def HEAD(self, req):
         """Handler for HTTP HEAD requests."""
-        if self.account_info(self.account_name, req) is None:
-            if 'swift.authorize' in req.environ:
-                aresp = req.environ['swift.authorize'](req)
-                if aresp:
-                    return aresp
-            return HTTPNotFound(request=req)
-
-        resp = self.get_container_head_resp(req)
-        _set_info_cache(self.app, req.environ, self.account_name,
-                        self.container_name, resp)
-        if 'swift.authorize' in req.environ:
-            req.acl = resp.headers.get('x-container-read')
-            aresp = req.environ['swift.authorize'](req)
-            if aresp:
-                return aresp
-        if not req.environ.get('swift_owner', False):
-            for key in self.app.swift_owner_headers:
-                if key in resp.headers:
-                    del resp.headers[key]
-        return resp
+        return self.GETorHEAD(req)
 
     def get_container_head_resp(self, req):
+        out_content_type = get_listing_content_type(req)
+        info = {}
+        headers = gen_resp_headers(info)
         storage = self.app.storage
         try:
             meta = storage.container_show(self.account_name,
                                           self.container_name)
-            headers = {}
             # TODO object count
             headers['X-Container-Object-Count'] = '0'
             headers['X-Container-Bytes-Used'] = meta.get('sys.m2.usage', '0')
             headers['Content-Type'] = 'text/plain; charset=utf-8'
-            for k, v in meta.iteritems():
-                if k.startswith("user."):
-                    headers[k[5:]] = v
-            resp = HTTPNoContent(headers=headers)
+            user_meta = {}
+            user_meta.update(
+                (k[5:], v)
+                for k, v in meta.iteritems()
+                if k.startswith("user.")
+            )
+            headers.update(
+                (key, value)
+                for key, value in user_meta.iteritems()
+                if value != '' and
+                (key.lower() in self.save_headers or
+                 is_sys_or_user_meta('container', key)))
+            headers['Content-Type'] = out_content_type
+            resp = HTTPNoContent(request=req, headers=headers, charset='utf-8')
         except exceptions.NoSuchContainer:
-            resp = HTTPNotFound(request=req)
+            resp = HTTPNotFound(request=req, headers=headers)
 
         return resp
 
     def load_container_metadata(self, headers, prefix='user.'):
         metadata = {}
         metadata.update(
-            ("%s%s" % (prefix, k.lower()), v)
+            ("%s%s" % (prefix, k), v)
             for k, v in headers.iteritems()
             if k.lower() in self.pass_through_headers or
             is_sys_or_user_meta('container', k))
         return metadata
+
+    def _convert_policy(self, req):
+        policy_name = req.headers.get('X-Storage-Policy')
+        if not policy_name:
+            return
+        policy = POLICIES.get_by_name(policy_name)
+        if not policy:
+            msg = "Invalid X-Storage-Policy '%s'" % policy_name
+            raise HTTPBadRequest(
+                request=req, content_type='text/plain', body=msg)
+        return policy
+
+    def get_container_create_resp(self, req, headers):
+        metadata = self.load_container_metadata(headers)
+        # TODO container update metadata
+        storage = self.app.storage
+        storage.container_create(
+            self.account_name, self.container_name, metadata=metadata)
+        return HTTPCreated(request=req)
 
     @public
     @cors_validation
@@ -287,6 +278,7 @@ class ContainerController(Controller):
             self.clean_acls(req) or check_metadata(req, 'container')
         if error_response:
             return error_response
+        policy_index = self._convert_policy_to_index(req)
         if not req.environ.get('swift_owner'):
             for key in self.app.swift_owner_headers:
                 req.headers.pop(key, None)
@@ -296,22 +288,31 @@ class ContainerController(Controller):
                         (len(self.container_name),
                          constraints.MAX_CONTAINER_NAME_LENGTH)
             return resp
-        container_count = self.account_info(self.account_name, req)
+        account_partition, accounts, container_count = \
+            self.account_info(self.account_name, req)
 
-        clear_info_cache(self.app, req.environ,
-                         self.account_name, self.container_name)
-
-        storage = self.app.storage
+        if not accounts and self.app.account_autocreate:
+            self.autocreate_account(req, self.account_name)
+            account_partition, accounts, container_count = \
+                self.account_info(self.account_name, req)
+        if not accounts:
+            return HTTPNotFound(request=req)
+        if self.app.max_containers_per_account > 0 and \
+                container_count >= self.app.max_containers_per_account and \
+                self.account_name not in self.app.max_containers_whitelist:
+            container_info = \
+                self.container_info(self.account_name, self.container_name,
+                                    req)
+            if not is_success(container_info.get('status')):
+                resp = HTTPForbidden(request=req)
+                resp.body = 'Reached container limit of %s' % \
+                    self.app.max_containers_per_account
+                return resp
 
         headers = self.generate_request_headers(req, transfer=True)
-        metadata = self.load_container_metadata(headers, '')
-
-        try:
-            storage.container_create(
-                self.account_name, self.container_name, metadata=metadata)
-        except exceptions.OioException:
-            return HTTPServerError(request=req)
-        resp = HTTPCreated(request=req)
+        clear_info_cache(self.app, req.environ, self.account_name,
+                         self.container_name)
+        resp = self.get_container_create_resp(req, headers)
         return resp
 
     @public
@@ -325,11 +326,19 @@ class ContainerController(Controller):
         if not req.environ.get('swift_owner'):
             for key in self.app.swift_owner_headers:
                 req.headers.pop(key, None)
+        account_partition, accounts, container_count = \
+            self.account_info(self.account_name, req)
+        if not accounts:
+            return HTTPNotFound(request=req)
 
         headers = self.generate_request_headers(req, transfer=True)
         clear_info_cache(self.app, req.environ,
                          self.account_name, self.container_name)
 
+        resp = self.get_container_post_resp(req, headers)
+        return resp
+
+    def get_container_post_resp(self, req, headers):
         storage = self.app.storage
 
         metadata = self.load_container_metadata(headers)
@@ -342,12 +351,7 @@ class ContainerController(Controller):
             resp = self.PUT(req)
         return resp
 
-    @public
-    @cors_validation
-    def DELETE(self, req):
-        """HTTP DELETE request handler."""
-        clear_info_cache(self.app, req.environ,
-                         self.account_name, self.container_name)
+    def get_container_delete_resp(self, req, headers):
         storage = self.app.storage
         try:
             storage.container_delete(self.account_name, self.container_name)
@@ -356,4 +360,20 @@ class ContainerController(Controller):
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         resp = HTTPNoContent(request=req)
+        return resp
+
+    @public
+    @cors_validation
+    def DELETE(self, req):
+        """HTTP DELETE request handler."""
+        account_partition, accounts, container_count = \
+            self.account_info(self.account_name, req)
+        if not accounts:
+            return HTTPNotFound(request=req)
+        headers = self.generate_request_headers(req, transfer=True)
+        clear_info_cache(self.app, req.environ,
+                         self.account_name, self.container_name)
+        resp = self.get_container_delete_resp(req, headers)
+        if resp.status_int == HTTP_ACCEPTED:
+            return HTTPNotFound(request=req)
         return resp

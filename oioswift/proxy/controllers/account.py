@@ -13,24 +13,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from urllib import unquote
 import time
 from xml.sax import saxutils
 
 from swift.common.request_helpers import get_listing_content_type
-from swift.common.middleware.acl import parse_acl, format_acl
 from swift.common.utils import public, Timestamp, json
 from swift.common.constraints import check_metadata
 from swift.common import constraints
 from swift.common.swob import HTTPBadRequest, HTTPMethodNotAllowed
-from swift.common.request_helpers import get_sys_meta_prefix, get_param, \
-    is_sys_or_user_meta
+from swift.common.request_helpers import get_param, is_sys_or_user_meta
 from swift.common.swob import HTTPNoContent, HTTPOk, HTTPPreconditionFailed, \
     HTTPNotFound, HTTPCreated, HTTPAccepted
-from oiopy import exceptions
+from swift.proxy.controllers.account import AccountController \
+        as SwiftAccountController
+from swift.proxy.controllers.base import _set_info_cache, clear_info_cache
 
-from oioswift.proxy.controllers.base import _set_info_cache
-from oioswift.proxy.controllers.base import Controller, clear_info_cache
+from oiopy import exceptions
 
 
 def get_response_headers(info):
@@ -98,27 +96,7 @@ def account_listing_response(account, req, response_content_type,
     return ret
 
 
-class AccountController(Controller):
-    """WSGI controller for account requests"""
-    server_type = 'Account'
-
-    def __init__(self, app, account_name, **kwargs):
-        Controller.__init__(self, app)
-        self.account_name = unquote(account_name)
-        if not self.app.allow_account_management:
-            self.allowed_methods.remove('PUT')
-            self.allowed_methods.remove('DELETE')
-
-    def add_acls_from_sys_metadata(self, resp):
-        if resp.environ['REQUEST_METHOD'] in ('HEAD', 'GET', 'PUT', 'POST'):
-            prefix = get_sys_meta_prefix('account') + 'core-'
-            name = 'access-control'
-            (extname, intname) = ('x-account-' + name, prefix + name)
-            acl_dict = parse_acl(version=2, data=resp.headers.pop(intname))
-            if acl_dict:  # treat empty dict as empty header
-                resp.headers[extname] = format_acl(
-                    version=2, acl_dict=acl_dict)
-
+class AccountController(SwiftAccountController):
     @public
     def GET(self, req):
         """Handler for HTTP GET requests."""
@@ -211,7 +189,6 @@ class AccountController(Controller):
 
         return resp
 
-
     @public
     def PUT(self, req):
         """HTTP PUT request handler."""
@@ -229,18 +206,18 @@ class AccountController(Controller):
                          constraints.MAX_ACCOUNT_NAME_LENGTH)
             return resp
 
-        resp = self.get_account_put_resp(req)
+        headers = self.generate_request_headers(req, transfer=True)
         clear_info_cache(self.app, req.environ, self.account_name)
+        resp = self.get_account_put_resp(req, headers)
         self.add_acls_from_sys_metadata(resp)
         return resp
 
-    def get_account_put_resp(self, req):
-        headers = self.generate_request_headers(req, transfer=True)
-        created = self.app.storage.account_create(self.account_name,
-                                                  headers=headers)
+    def get_account_put_resp(self, req, headers):
+        created = self.app.storage.account_create(self.account_name)
         metadata = {}
-        metadata.update((k, v) for k, v in req.headers.iteritems()
-                        if is_sys_or_user_meta('account', k))
+        metadata.update((key, value)
+                        for key, value in req.headers.items()
+                        if is_sys_or_user_meta('account', key))
 
         if metadata:
             self.app.storage.account_update(self.account_name, metadata)
@@ -264,38 +241,35 @@ class AccountController(Controller):
         if error_response:
             return error_response
 
+        headers = self.generate_request_headers(req, transfer=True)
         clear_info_cache(self.app, req.environ, self.account_name)
-        resp = self.get_account_post_resp(req)
+        resp = self.get_account_post_resp(req, headers)
         self.add_acls_from_sys_metadata(resp)
         return resp
 
-    def get_account_post_resp(self, req):
-        headers = self.generate_request_headers(req, transfer=True)
-
+    def get_account_post_resp(self, req, headers):
         metadata = {}
-        metadata.update((k, v) for k, v in req.headers.iteritems()
-                        if is_sys_or_user_meta('account', k))
+        metadata.update((key, value)
+                        for key, value in req.headers.items()
+                        if is_sys_or_user_meta('account', key))
         try:
-            self.app.storage.account_update(self.account_name, metadata,
-                                            headers=headers)
+            self.app.storage.account_update(self.account_name, metadata)
             return HTTPNoContent(request=req)
         except exceptions.NotFound:
             if self.app.account_autocreate:
                 self.autocreate_account(req, self.account_name)
                 if metadata:
-                    self.app.storage.account_update(self.account_name,
-                                                    metadata, headers=headers)
+                    self.app.storage.account_update(
+                            self.account_name, metadata, headers=headers)
                 resp = HTTPNoContent(request=req)
             else:
                 resp = HTTPNotFound(request=req)
+        self.add_acls_from_sys_metadata(resp)
         return resp
 
     @public
     def DELETE(self, req):
         """HTTP DELETE request handler."""
-        # Extra safety in case someone typos a query string for an
-        # account-level DELETE request that was really meant to be caught by
-        # some middleware.
         if req.query_string:
             return HTTPBadRequest(request=req)
         if not self.app.allow_account_management:
@@ -304,6 +278,9 @@ class AccountController(Controller):
                 headers={'Allow': ', '.join(self.allowed_methods)})
         headers = self.generate_request_headers(req)
         clear_info_cache(self.app, req.environ, self.account_name)
-        # TODO delete account
-        resp = HTTPNoContent(request=req)
+        resp = self.get_account_delete_resp(req, headers)
         return resp
+
+    def get_account_delete_resp(self, req, headers):
+        # TODO perform delete
+        return HTTPNoContent(request=req)
