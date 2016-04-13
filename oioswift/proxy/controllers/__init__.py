@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oioswift.proxy.controllers.base import Controller
+from swift.proxy.controllers.base import Controller
 from oioswift.proxy.controllers.obj import ObjectController
 from oioswift.proxy.controllers.account import AccountController
 from oioswift.proxy.controllers.container import ContainerController
