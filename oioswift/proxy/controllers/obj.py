@@ -1,4 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
+# Copyright (c) 2016 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,7 +41,7 @@ from swift.proxy.controllers.obj import BaseObjectController as \
         BaseObjectController
 
 from oioswift.common.storage_policy import POLICIES
-from oiopy import exceptions
+from oio.common import exceptions
 from oioswift.utils import IterO
 
 

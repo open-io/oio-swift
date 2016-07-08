@@ -24,5 +24,5 @@ setup(
             'main=oioswift.server:app_factory'
         ],
     },
-    install_requires=['swift>=2.7.0', 'oiopy>=0.7.2']
+    install_requires=['swift>=2.7.0', 'oio>=2.0.0']
 )

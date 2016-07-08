@@ -1,4 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
+# Copyright (c) 2016 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +32,7 @@ from swift.proxy.controllers.container import ContainerController \
 from swift.proxy.controllers.base import clear_info_cache, \
     delay_denial, cors_validation, _set_info_cache
 
-from oiopy import exceptions
+from oio.common import exceptions
 
 from oioswift.common.storage_policy import POLICIES
 from oioswift.utils import get_listing_content_type

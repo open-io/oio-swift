@@ -1,4 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
+# Copyright (c) 2016 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +29,7 @@ from swift.proxy.controllers.account import AccountController \
         as SwiftAccountController
 from swift.proxy.controllers.base import _set_info_cache, clear_info_cache
 
-from oiopy import exceptions
+from oio.common import exceptions
 
 
 def get_response_headers(info):

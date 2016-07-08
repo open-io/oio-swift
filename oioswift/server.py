@@ -18,7 +18,7 @@ from oioswift.common.ring import FakeRing
 from oioswift.proxy.controllers.container import ContainerController
 from oioswift.proxy.controllers.account import AccountController
 from oioswift.proxy.controllers.obj import ObjectControllerRouter
-from oiopy.object_storage import ObjectStorageAPI
+from oio.api.object_storage import ObjectStorageAPI
 from swift.proxy.server import Application as SwiftApplication
 import swift.common.utils
 import swift.proxy.server
