@@ -30,7 +30,7 @@ from swift.common.http import HTTP_CREATED, HTTP_MULTIPLE_CHOICES
 from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPPreconditionFailed, HTTPRequestEntityTooLarge, HTTPRequestTimeout, \
     HTTPUnprocessableEntity, HTTPClientDisconnect, Request, HTTPCreated, \
-    HTTPNoContent, Response, HTTPInternalServerError
+    HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator
 from swift.common.request_helpers import is_sys_or_user_meta, is_sys_meta, \
     is_user_meta, remove_items, copy_header_subset
 from swift.proxy.controllers.base import _set_object_info_cache, \
@@ -42,12 +42,42 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 
 from oioswift.common.storage_policy import POLICIES
 from oio.common import exceptions
+from oio.common.http import ranges_from_http_header
 from oioswift.utils import IterO
 
 
 class ObjectControllerRouter(object):
     def __getitem__(self, policy):
         return ObjectController
+
+
+class StreamRangeIterator(object):
+    def __init__(self, stream):
+        self.stream = stream
+
+    def app_iter_range(self, _start, _stop):
+        # This will be called when there is only one range,
+        # no need to check the number of bytes
+        return self.stream
+
+    def _chunked_app_iter_range(self, start, stop):
+        # The stream generator give us one "chunk" per range,
+        # and as we are called once for each range, we must
+        # simulate end-of-stream by generating StopIteration
+        for dat in self.stream:
+            yield dat
+            raise StopIteration
+
+    def app_iter_ranges(self, ranges, content_type,
+                        boundary, content_size,
+                        *_args, **_kwargs):
+        for chunk in multi_range_iterator(
+                ranges, content_type, boundary, content_size,
+                self._chunked_app_iter_range):
+            yield chunk
+
+    def __iter__(self):
+        return self.stream
 
 
 class ObjectController(BaseObjectController):
@@ -111,16 +141,21 @@ class ObjectController(BaseObjectController):
 
     def get_object_fetch_resp(self, req):
         storage = self.app.storage
+        if req.headers.get('Range'):
+            ranges = ranges_from_http_header(req.headers.get('Range'))
+        else:
+            ranges = None
         try:
             metadata, stream = storage.object_fetch(self.account_name,
                                                     self.container_name,
-                                                    self.object_name)
+                                                    self.object_name,
+                                                    ranges=ranges)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
-        resp = self.make_object_response(req, metadata, stream)
+        resp = self.make_object_response(req, metadata, stream, ranges=ranges)
         return resp
 
-    def make_object_response(self, req, metadata, stream=None):
+    def make_object_response(self, req, metadata, stream=None, ranges=None):
         conditional_etag = None
         if 'X-Backend-Etag-Is-At' in req.headers:
             conditional_etag = metadata.get(
@@ -141,7 +176,11 @@ class ObjectController(BaseObjectController):
         ts = Timestamp(metadata['ctime'])
         resp.last_modified = math.ceil(float(ts))
         if stream:
-            resp.app_iter = stream
+            if ranges:
+                resp.app_iter = StreamRangeIterator(stream)
+            else:
+                resp.app_iter = stream
+
         resp.content_length = int(metadata['length'])
         try:
             resp.content_encoding = metadata['encoding']
