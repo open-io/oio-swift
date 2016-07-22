@@ -6,11 +6,10 @@ OpenIO SDS Swift Gateway.
 Features
 --------
 Included:
-*   Basic operations on objects and containers
+*   Operations on objects, containers and accounts
 *   Authentication support
 *   Metadata support
 *   Swift Middleware support
-*   Partial account support
 
 Installation
 ------------
@@ -24,6 +23,8 @@ You can install directly from trunk on GitHub:
 Download and install from source by running:
 
     python setup.py install
+
+Note that at least swift 2.7.0 is required.
     
 Updates
 -------
@@ -40,7 +41,7 @@ The SDS Swift Gateway uses the OpenStack Swift Proxy.
 There is a sample configuration in `conf/default.cfg`.
 
 Configuration items:
-*   `sds_namespace` - the SDS Namespace to serve. Example: `NS`
+*   `sds_namespace` - the SDS Namespace to serve. Example: `OPENIO`
 *   `sds_proxy_url` - the URL of the SDS proxy. Example: `http://127.0.0.1:6000`
     
 Run

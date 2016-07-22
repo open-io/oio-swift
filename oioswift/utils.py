@@ -89,6 +89,3 @@ class IterO(object):
             return self.buf[self.pos:new_pos]
         finally:
             self.pos = min(new_pos, len(self.buf))
-
-
-

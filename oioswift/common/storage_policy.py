@@ -1,3 +1,5 @@
+# Copyright (c) 2016 OpenIO SAS
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -11,14 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from swift.proxy.controllers.base import Controller
-from oioswift.proxy.controllers.obj import ObjectController
-from oioswift.proxy.controllers.account import AccountController
-from oioswift.proxy.controllers.container import ContainerController
+from swift.common import storage_policy
 
-__all__ = [
-    'AccountController',
-    'ContainerController',
-    'Controller',
-    'ObjectController',
+default_policies = [
+    storage_policy.StoragePolicy(0, 'Policy-0', True)
 ]
+
+POLICIES = storage_policy.StoragePolicyCollection(default_policies)

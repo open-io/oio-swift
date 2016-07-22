@@ -1,9 +1,7 @@
-import os
-from paste.deploy import loadapp
-import eventlet
-from eventlet import wsgi
+import sys
+from swift.common.utils import parse_options
+from swift.common.wsgi import run_wsgi
 
-config_path = os.environ.get('OIOSWIFT_CONFIG', 'conf/default.cfg')
-app = loadapp('config:%s' % config_path, relative_to='.')
-
-wsgi.server(eventlet.listen(('', 5000)), app, None)
+if __name__ == '__main__':
+    conf_file, options = parse_options()
+    sys.exit(run_wsgi(conf_file, 'proxy-server', **options))
