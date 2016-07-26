@@ -18,7 +18,11 @@ setup(
         'Intended Audience :: Information Technology',
         'Operating System :: OS Independent',
     ],
-    packages=['oioswift', 'oioswift.proxy', 'oioswift.proxy.controllers'],
+    packages=[
+        'oioswift',
+        'oioswift.common',
+        'oioswift.proxy',
+        'oioswift.proxy.controllers'],
     entry_points={
         'paste.app_factory': [
             'main=oioswift.server:app_factory'
