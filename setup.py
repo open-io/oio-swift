@@ -25,7 +25,10 @@ setup(
         'oioswift.proxy.controllers'],
     entry_points={
         'paste.app_factory': [
-            'main=oioswift.server:app_factory'
+            'main=oioswift.server:app_factory',
+        ],
+        'paste.filter_factory': [
+            'autocontainer=oioswift.autocontainer:filter_factory',
         ],
     },
     install_requires=['swift>=2.7.0', 'oio>=2.0.0']
