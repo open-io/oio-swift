@@ -14,35 +14,8 @@
 # limitations under the License.
 
 from urlparse import parse_qs
-from itertools import takewhile
 from swift.common.utils import split_path
-
-
-# Python's int() raises an exception if the string has non-digit
-# characters at the end, while libc's strtoll just stops parsing.
-def strtoll(val, base=10):
-    """Mimics libc's strtoll function"""
-    return int("".join(takewhile(str.isdigit, val)), base)
-
-
-# TODO: move that in oio-sds/oio and make a CLI
-class AutocontainerBuilder(object):
-    def __init__(self, offset=0, size=None, mask=0xFFFFFFFFFF0000FF,
-                 base=16, con_format="%016X", **_kwargs):
-        self.offset = offset
-        self.size = size
-        self.mask = mask
-        self.base = base
-        self.format = con_format
-
-    def __call__(self, path):
-        if self.size:
-            flat_path = path[self.offset:self.offset+self.size]
-        else:
-            flat_path = path[self.offset:]
-        flat_path = flat_path.replace("/", "")
-        int_part = strtoll(flat_path)
-        return self.format % (int_part & self.mask)
+from oio.common.autocontainer import AutocontainerBuilder
 
 
 class AutocontainerMiddleware(object):

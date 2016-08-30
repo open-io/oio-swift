@@ -326,12 +326,8 @@ class ObjectController(BaseObjectController):
         else:
             expect = False
 
-        content_length = req.content_length
         content_type = req.headers.get('content-type', 'octet/stream')
         storage = self.app.storage
-
-        if content_length is None:
-            content_length = 0
 
         metadata = self.load_object_metadata(headers)
         # TODO actually support if-none-match
@@ -339,7 +335,7 @@ class ObjectController(BaseObjectController):
             chunks, size, checksum = storage.object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
-                content_length=content_length, content_type=content_type,
+                content_type=content_type,
                 etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
