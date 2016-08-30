@@ -15,12 +15,7 @@
 
 from urlparse import parse_qs
 from swift.common.utils import split_path
-try:
-    from oio.common.autocontainer import AutocontainerBuilder
-# TODO: remove this from next release
-except ImportError:
-    print "Using local autocontainer implementation"
-    from oioswift.autocontainer_local import AutocontainerBuilder
+from oio.common.autocontainer import AutocontainerBuilder
 
 
 class AutocontainerMiddleware(object):
