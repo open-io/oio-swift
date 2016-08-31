@@ -1,6 +1,14 @@
 Release History
 ===============
 
+0.6.0 (2016-08-31)
+------------------
+
+* Implement autocontainers
+* Support streamed uploads
+* Support range downloads
+
+
 0.5.0 (2015-12-01)
 ------------------
 
