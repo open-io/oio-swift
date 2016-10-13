@@ -165,7 +165,7 @@ class ObjectController(BaseObjectController):
                         conditional_etag=conditional_etag)
 
         resp.headers['Content-Type'] = metadata.get(
-            'mime-type', 'application/octet-stream')
+            'mime_type', 'application/octet-stream')
         properties = metadata.get('properties')
         if properties:
             for k, v in properties.iteritems():
@@ -335,7 +335,7 @@ class ObjectController(BaseObjectController):
             chunks, size, checksum = storage.object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
-                content_type=content_type,
+                mime_type=content_type,
                 etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)

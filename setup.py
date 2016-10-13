@@ -31,5 +31,5 @@ setup(
             'autocontainer=oioswift.autocontainer:filter_factory',
         ],
     },
-    install_requires=['swift>=2.7.0', 'oio>=3.0.0.0b2']
+    install_requires=['swift>=2.7.0', 'oio>=3.0.0.0c1']
 )
