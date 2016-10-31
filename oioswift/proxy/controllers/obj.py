@@ -42,6 +42,7 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 
 from oioswift.common.storage_policy import POLICIES
 from oio.common import exceptions
+from oio.common.utils import quote as oio_quote
 from oio.common.http import ranges_from_http_header
 from oioswift.utils import IterO
 
@@ -171,7 +172,7 @@ class ObjectController(BaseObjectController):
             for k, v in properties.iteritems():
                 if is_sys_or_user_meta('object', k) or \
                         k.lower() in self.allowed_headers:
-                            resp.headers[k] = v
+                            resp.headers[str(k)] = oio_quote(v)
         resp.headers['etag'] = metadata['hash'].lower()
         ts = Timestamp(metadata['ctime'])
         resp.last_modified = math.ceil(float(ts))
