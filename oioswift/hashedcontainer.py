@@ -16,7 +16,23 @@
 from urlparse import parse_qs
 from swift.common.utils import split_path
 from swift.common.swob import HTTPBadRequest
+from oio.common.exceptions import ConfigurationException
+# TODO(jfs): currently in oio.cli, need to adapt as sson as it has been
+#            factorized
 from oio.cli.clientmanager import ClientManager
+
+
+def _bool_value(s, default):
+    if s is None:
+        return False
+    all_false = ['false', 'no', 'off', 'disabled']
+    all_true = ['true', 'yes', 'on', 'enabled']
+    s = str(s).lower()
+    if s in all_false:
+        return False
+    if s in all_true:
+        return True
+    return default
 
 
 class HashedcontainerMiddleware(object):
@@ -25,7 +41,8 @@ class HashedcontainerMiddleware(object):
     BYPASS_HEADER = "X-bypass-autocontainer"
     TRUE_VALUES = ["true", "yes", "1"]
 
-    def __init__(self, app, ns, acct, proxy, *_args, **_kwargs):
+    def __init__(self, app, ns, acct, proxy,
+                 strip_v1=False, account_first=False):
         self.app = app
         self.account = acct
         self.bypass_header_key = ("HTTP_" +
@@ -35,6 +52,8 @@ class HashedcontainerMiddleware(object):
             "proxyd_url": proxy,
         })
         self.con_builder = climgr.get_flatns_manager()
+        self.strip_v1 = strip_v1
+        self.account_first = account_first
 
     def should_bypass(self, env):
         """Should we bypass this filter?"""
@@ -47,13 +66,21 @@ class HashedcontainerMiddleware(object):
             return self.app(env, start_response)
 
         path = env.get('PATH_INFO')
-        version, obj = split_path(path, 1, 2, True)
-        if version != 'v1':
-            # TODO(jfs) Let someone return an error, someone who knows how
-            return self.app(env, start_response)
+        account = self.account
+        obj = path
+
+        if self.strip_v1:
+            version, tail = split_path(obj, 1, 2, True)
+            if version == 'v1':
+                obj = '/' + tail
+
+        if self.account_first:
+            account, tail = split_path(obj, 1, 2, True)
+            obj = '/' + tail
 
         container = self.con_builder(obj)
-        path = "/v1/%s/%s/%s" % (self.account, container, obj)
+        obj = obj.strip('/')
+        path = "/v1/%s/%s/%s" % (account, container, obj)
         env['PATH_INFO'] = path
         return self.app(env, start_response)
 
@@ -67,12 +94,17 @@ def filter_factory(global_conf, **local_config):
     proxy = conf.get('sds_proxy_url')
 
     if ns is None:
-        raise Exception('No OIO-SDS namespace configured')
+        raise ConfigurationException('No OIO-SDS namespace configured')
     if acct is None:
-        raise Exception('No OIO-SDS account configured')
+        raise ConfigurationException('No OIO-SDS account configured')
     if proxy is None:
-        raise Exception('No OIO-SDS proxy URL configured')
+        raise ConfigurationException('No OIO-SDS proxy URL configured')
+
+    strip_v1 = _bool_value(local_config.get('strip_v1'), False)
+    account_first = _bool_value(local_config.get('account_first'), False)
 
     def factory(app):
-        return HashedcontainerMiddleware(app, ns, acct, proxy)
+        return HashedcontainerMiddleware(app, ns, acct, proxy,
+                                         strip_v1=strip_v1,
+                                         account_first=account_first)
     return factory
