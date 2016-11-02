@@ -32,5 +32,5 @@ setup(
             'hashedcontainer=oioswift.hashedcontainer:filter_factory',
         ],
     },
-    install_requires=['swift>=2.7.0', 'oio>=3.0.0.0c1']
+    install_requires=['swift>=2.7.0', 'oio>=3.1.0.0b0']
 )
