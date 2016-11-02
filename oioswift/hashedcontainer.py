@@ -15,21 +15,26 @@
 
 from urlparse import parse_qs
 from swift.common.utils import split_path
-from oio.common.autocontainer import AutocontainerBuilder
+from swift.common.swob import HTTPBadRequest
+from oio.cli.clientmanager import ClientManager
 
 
-class AutocontainerMiddleware(object):
+class HashedcontainerMiddleware(object):
 
     BYPASS_QS = "bypass-autocontainer"
     BYPASS_HEADER = "X-bypass-autocontainer"
     TRUE_VALUES = ["true", "yes", "1"]
 
-    def __init__(self, app, default_account=None, *_args, **kwargs):
+    def __init__(self, app, ns, acct, proxy, *_args, **_kwargs):
         self.app = app
-        self.default_account = default_account
-        self.con_builder = AutocontainerBuilder(**kwargs)
+        self.account = acct
         self.bypass_header_key = ("HTTP_" +
                                   self.BYPASS_HEADER.upper().replace('-', '_'))
+        climgr = ClientManager({
+            "namespace": ns,
+            "proxyd_url": proxy,
+        })
+        self.con_builder = climgr.get_flatns_manager()
 
     def should_bypass(self, env):
         """Should we bypass this filter?"""
@@ -41,38 +46,33 @@ class AutocontainerMiddleware(object):
         if self.should_bypass(env):
             return self.app(env, start_response)
 
-        if self.default_account:
-            obj = env.get('PATH_INFO').strip('/')
-            acc = self.default_account
-        else:
-            acc, obj = split_path(env.get('PATH_INFO'), 1, 2, True)
+        path = env.get('PATH_INFO')
+        version, obj = split_path(path, 1, 2, True)
+        if version != 'v1':
+            # TODO(jfs) Let someone return an error, someone who knows how
+            return self.app(env, start_response)
 
-        con = self.con_builder(obj)
-        path = "/v1/%s/%s/%s" % (acc, con, obj)
+        container = self.con_builder(obj)
+        path = "/v1/%s/%s/%s" % (self.account, container, obj)
         env['PATH_INFO'] = path
         return self.app(env, start_response)
 
 
-def filter_factory(global_config, **local_config):
+def filter_factory(global_conf, **local_config):
     conf = global_conf.copy()
     conf.update(local_config)
 
-    default_account = conf.get('sds_default_account')
-    # TODO(jfs): remove this block in further releases
-    if not default_account:
-        default_account = conf.get('default_account')
+    ns = conf.get('sds_namespace')
+    acct = conf.get('sds_default_account')
+    proxy = conf.get('sds_proxy_url')
 
-    # Some options are too specific to be generalized
-    offset = int(local_config.get('offset', 0))
-    size = local_config.get('size')
-    if size is not None:
-        size = int(size)
-    base = int(local_config.get('base', 16))
-    mask = int(local_config.get('mask', 0xFFFFFFFFFF0000FF), 16)
-    con_format = local_config.get('format', "%016X")
+    if ns is None:
+        raise Exception('No OIO-SDS namespace configured')
+    if acct is None:
+        raise Exception('No OIO-SDS account configured')
+    if proxy is None:
+        raise Exception('No OIO-SDS proxy URL configured')
 
     def factory(app):
-        return AutocontainerMiddleware(app, default_account=default_account,
-                                       offset=offset, size=size, mask=mask,
-                                       base=base, con_format=con_format)
+        return HashedcontainerMiddleware(app, ns, acct, proxy)
     return factory
