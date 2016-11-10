@@ -43,7 +43,7 @@ class AutocontainerMiddleware(object):
 
         if self.default_account:
             # Remove leading '/' to be consistent with split_path()
-            obj = env.get('PATH_INFO').lstrip('/')
+            obj = env.get('PATH_INFO')[1:]
             acc = self.default_account
         else:
             acc, obj = split_path(env.get('PATH_INFO'), 1, 2, True)

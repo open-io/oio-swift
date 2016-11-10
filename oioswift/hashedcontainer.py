@@ -68,7 +68,7 @@ class HashedcontainerMiddleware(object):
         path = env.get('PATH_INFO')
         account = self.account
         # Remove leading '/' to be consistent with split_path()
-        obj = path.lstrip('/')
+        obj = path[1:]
 
         if self.strip_v1:
             version, tail = split_path(path, 1, 2, True)
