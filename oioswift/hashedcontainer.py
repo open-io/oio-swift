@@ -67,19 +67,19 @@ class HashedcontainerMiddleware(object):
 
         path = env.get('PATH_INFO')
         account = self.account
-        obj = path
+        # Remove leading '/' to be consistent with split_path()
+        obj = path.lstrip('/')
 
         if self.strip_v1:
-            version, tail = split_path(obj, 1, 2, True)
+            version, tail = split_path(path, 1, 2, True)
             if version == 'v1':
-                obj = '/' + tail
+                obj = tail
 
         if self.account_first:
-            account, tail = split_path(obj, 1, 2, True)
-            obj = '/' + tail
+            account, tail = split_path(path, 1, 2, True)
+            obj = tail
 
         container = self.con_builder(obj)
-        obj = obj.strip('/')
         path = "/v1/%s/%s/%s" % (account, container, obj)
         env['PATH_INFO'] = path
         return self.app(env, start_response)
