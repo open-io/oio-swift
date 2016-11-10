@@ -42,7 +42,8 @@ class AutocontainerMiddleware(object):
             return self.app(env, start_response)
 
         if self.default_account:
-            obj = env.get('PATH_INFO').strip('/')
+            # Remove leading '/' to be consistent with split_path()
+            obj = env.get('PATH_INFO').lstrip('/')
             acc = self.default_account
         else:
             acc, obj = split_path(env.get('PATH_INFO'), 1, 2, True)
@@ -54,7 +55,7 @@ class AutocontainerMiddleware(object):
 
 
 def filter_factory(global_config, **local_config):
-    conf = global_conf.copy()
+    conf = global_config.copy()
     conf.update(local_config)
 
     default_account = conf.get('sds_default_account')
