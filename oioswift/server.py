@@ -50,10 +50,16 @@ class Application(SwiftApplication):
                                   container_ring=container_ring)
         if conf is None:
             conf = {}
-        self.sds_namespace = conf.get('sds_namespace', 'OPENIO')
-        self.sds_proxy_url = conf.get('sds_proxy_url', 'http://127.0.0.1:6000')
+        sds_conf = {k[4:]: v
+                    for k, v in conf.iteritems()
+                    if k.startswith("sds_")}
+        # Mandatory, raises KeyError
+        sds_namespace = sds_conf['namespace']
+        sds_conf.pop('namespace')  # removed to avoid unpacking conflict
+        # Loaded by ObjectStorageAPI if None
+        sds_proxy_url = sds_conf.get('proxy_url')
         self.storage = storage or \
-            ObjectStorageAPI(self.sds_namespace, self.sds_proxy_url, **conf)
+            ObjectStorageAPI(sds_namespace, sds_proxy_url, **sds_conf)
 
 
 def app_factory(global_conf, **local_conf):
