@@ -53,7 +53,7 @@ class Application(SwiftApplication):
         self.sds_namespace = conf.get('sds_namespace', 'OPENIO')
         self.sds_proxy_url = conf.get('sds_proxy_url', 'http://127.0.0.1:6000')
         self.storage = storage or \
-            ObjectStorageAPI(self.sds_namespace, self.sds_proxy_url)
+            ObjectStorageAPI(self.sds_namespace, self.sds_proxy_url, **conf)
 
 
 def app_factory(global_conf, **local_conf):
