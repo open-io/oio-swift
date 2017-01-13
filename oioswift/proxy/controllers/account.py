@@ -27,7 +27,7 @@ from swift.common.swob import HTTPNoContent, HTTPOk, HTTPPreconditionFailed, \
     HTTPNotFound, HTTPCreated, HTTPAccepted
 from swift.proxy.controllers.account import AccountController \
         as SwiftAccountController
-from swift.proxy.controllers.base import _set_info_cache, clear_info_cache
+from swift.proxy.controllers.base import set_info_cache, clear_info_cache
 
 from oio.common import exceptions
 
@@ -109,8 +109,7 @@ class AccountController(SwiftAccountController):
             return resp
 
         resp = self.get_account_listing_resp(req)
-
-        _set_info_cache(self.app, req.environ, self.account_name, None, resp)
+        set_info_cache(self.app, req.environ, self.account_name, None, resp)
 
         if req.environ.get('swift_owner'):
             self.add_acls_from_sys_metadata(resp)
@@ -145,13 +144,12 @@ class AccountController(SwiftAccountController):
                                             get_listing_content_type(req),
                                             info=info,
                                             listing=listing)
-        except exceptions.NotFound:
+        except exceptions.NoSuchAccount:
             if self.app.account_autocreate:
                 resp = account_listing_response(self.account_name, req,
                                                 get_listing_content_type(req))
             else:
                 resp = HTTPNotFound(request=req)
-
         return resp
 
     @public
@@ -166,7 +164,7 @@ class AccountController(SwiftAccountController):
 
         resp = self.get_account_head_resp(req)
 
-        _set_info_cache(self.app, req.environ, self.account_name, None, resp)
+        set_info_cache(self.app, req.environ, self.account_name, None, resp)
 
         if req.environ.get('swift_owner'):
             self.add_acls_from_sys_metadata(resp)
