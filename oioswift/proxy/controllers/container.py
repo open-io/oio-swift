@@ -20,7 +20,6 @@ from xml.etree.cElementTree import Element, SubElement, tostring
 from swift.common.utils import public, Timestamp, \
     override_bytes_from_content_type
 from swift.common.constraints import check_metadata
-from swift.common.utils import config_true_value
 from swift.common import constraints
 from swift.common.swob import Response, HTTPBadRequest, HTTPNotFound, \
     HTTPNoContent, HTTPConflict, HTTPPreconditionFailed, HTTPForbidden, \
@@ -86,7 +85,11 @@ class ContainerController(SwiftContainerController):
 
     def get_metadata_resp_headers(self, meta):
         headers = {}
-        system = meta['system']
+        try:
+            system = meta['system']
+        except KeyError:
+            # compatibility with oio-sds < 3.2
+            system = meta['properties']
         headers.update({
             'X-Container-Object-Count': system.get('sys.m2.objects', 0),
             'X-Container-Bytes-Used': system.get('sys.m2.usage', 0),
@@ -99,7 +102,6 @@ class ContainerController(SwiftContainerController):
                       is_sys_or_user_meta('container', k)):
                 headers[k] = v
         return headers
-
 
     def get_container_list_resp(self, req):
         storage = self.app.storage
@@ -114,7 +116,6 @@ class ContainerController(SwiftContainerController):
         end_marker = get_param(req, 'end_marker')
         limit = constraints.CONTAINER_LISTING_LIMIT
         given_limit = get_param(req, 'limit')
-        reverse = config_true_value(get_param(req, 'reverse'))
         if given_limit and given_limit.isdigit():
             limit = int(given_limit)
             if limit > constraints.CONTAINER_LISTING_LIMIT:
@@ -212,11 +213,10 @@ class ContainerController(SwiftContainerController):
 
     def get_container_head_resp(self, req):
         out_content_type = get_listing_content_type(req)
-        info = {}
         storage = self.app.storage
         try:
             meta = storage.container_get_properties(self.account_name,
-                                          self.container_name)
+                                                    self.container_name)
             headers = self.get_metadata_resp_headers(meta)
             headers['Content-Type'] = out_content_type
             resp = HTTPNoContent(request=req, headers=headers, charset='utf-8')
