@@ -30,24 +30,12 @@ from swift.common.request_helpers import is_sys_or_user_meta, get_param
 from swift.proxy.controllers.container import ContainerController \
         as SwiftContainerController
 from swift.proxy.controllers.base import clear_info_cache, \
-    delay_denial, cors_validation, _set_info_cache
+    delay_denial, cors_validation, set_info_cache
 
 from oio.common import exceptions
 
 from oioswift.common.storage_policy import POLICIES
 from oioswift.utils import get_listing_content_type
-
-
-def gen_resp_headers(info):
-    headers = {}
-    headers.update({
-        'X-Container-Object-Count': info.get('object_count', 0),
-        'X-Container-Bytes-Used': info.get('bytes_used', 0),
-        'X-Timestamp': Timestamp(info.get('created_at', 0)).normal,
-        'X-PUT-Timestamp': Timestamp(
-            info.get('put_timestamp', 0)).normal,
-    })
-    return headers
 
 
 class ContainerController(SwiftContainerController):
@@ -56,6 +44,7 @@ class ContainerController(SwiftContainerController):
                     'x-container-sync-key', 'x-container-sync-to']
 
     def GETorHEAD(self, req):
+        """Handler for HTTP GET/HEAD requests."""
         if self.account_info(self.account_name, req) is None:
             if 'swift.authorize' in req.environ:
                 aresp = req.environ['swift.authorize'](req)
@@ -67,8 +56,8 @@ class ContainerController(SwiftContainerController):
             resp = self.get_container_list_resp(req)
         else:
             resp = self.get_container_head_resp(req)
-        _set_info_cache(self.app, req.environ, self.account_name,
-                        self.container_name, resp)
+        set_info_cache(self.app, req.environ, self.account_name,
+                       self.container_name, resp)
         resp = self.convert_policy(resp)
         if 'swift.authorize' in req.environ:
             req.acl = resp.headers.get('x-container-read')
@@ -94,6 +83,23 @@ class ContainerController(SwiftContainerController):
                             'X-Backend-Storage-Policy-Index',
                             resp.headers['X-Backend-Storage-Policy-Index'])
         return resp
+
+    def get_metadata_resp_headers(self, meta):
+        headers = {}
+        system = meta['system']
+        headers.update({
+            'X-Container-Object-Count': system.get('sys.m2.objects', 0),
+            'X-Container-Bytes-Used': system.get('sys.m2.usage', 0),
+            'X-Timestamp': Timestamp(system.get('timestamp', 0)).normal,
+            'X-PUT-Timestamp': Timestamp(
+                system.get('put_timestamp', 0)).normal,
+        })
+        for (k, v) in meta['properties'].iteritems():
+            if v and (k.lower() in self.save_headers or
+                      is_sys_or_user_meta('container', k)):
+                headers[k] = v
+        return headers
+
 
     def get_container_list_resp(self, req):
         storage = self.app.storage
@@ -127,33 +133,25 @@ class ContainerController(SwiftContainerController):
         out_content_type = get_listing_content_type(req)
 
         try:
-            metadata, result_list = storage. \
-                object_list(self.account_name, self.container_name,
-                            prefix=prefix, limit=limit, delimiter=delimiter,
-                            marker=marker, end_marker=end_marker,
-                            include_metadata=True)
-            # TODO get container info
-            info = {}
-            resp_headers = gen_resp_headers(info)
-            info.update(metadata)
+            result = storage.object_list(
+                self.account_name, self.container_name, prefix=prefix,
+                limit=limit, delimiter=delimiter, marker=marker,
+                end_marker=end_marker)
+            resp_headers = self.get_metadata_resp_headers(result)
             resp = self.create_listing(
-                req, out_content_type, resp_headers, info, result_list,
+                req, out_content_type, resp_headers, result,
                 self.container_name)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         return resp
 
     def create_listing(self, req, out_content_type, resp_headers,
-                       metadata, result_list, container):
-        container_list = result_list['objects']
-        for p in result_list.get('prefixes', []):
+                       result, container):
+        container_list = result['objects']
+        for p in result.get('prefixes', []):
             record = {'name': p,
                       'subdir': True}
             container_list.append(record)
-        for (k, v) in metadata.iteritems():
-            if v and (k.lower() in self.save_headers or
-                      is_sys_or_user_meta('container', k)):
-                resp_headers[k] = v
         ret = Response(request=req, headers=resp_headers,
                        content_type=out_content_type, charset='utf-8')
         if out_content_type == 'application/json':
@@ -215,27 +213,11 @@ class ContainerController(SwiftContainerController):
     def get_container_head_resp(self, req):
         out_content_type = get_listing_content_type(req)
         info = {}
-        headers = gen_resp_headers(info)
         storage = self.app.storage
         try:
-            meta = storage.container_show(self.account_name,
+            meta = storage.container_get_properties(self.account_name,
                                           self.container_name)
-            # TODO object count
-            headers['X-Container-Object-Count'] = '0'
-            headers['X-Container-Bytes-Used'] = meta.get('sys.m2.usage', '0')
-            headers['Content-Type'] = 'text/plain; charset=utf-8'
-            user_meta = {}
-            user_meta.update(
-                (k[5:], v)
-                for k, v in meta.iteritems()
-                if k.startswith("user.")
-            )
-            headers.update(
-                (key, value)
-                for key, value in user_meta.iteritems()
-                if value != '' and
-                (key.lower() in self.save_headers or
-                 is_sys_or_user_meta('container', key)))
+            headers = self.get_metadata_resp_headers(meta)
             headers['Content-Type'] = out_content_type
             resp = HTTPNoContent(request=req, headers=headers, charset='utf-8')
         except exceptions.NoSuchContainer:
@@ -243,10 +225,10 @@ class ContainerController(SwiftContainerController):
 
         return resp
 
-    def load_container_metadata(self, headers, prefix='user.'):
+    def load_container_metadata(self, headers):
         metadata = {}
         metadata.update(
-            ("%s%s" % (prefix, k), v)
+            (k, v)
             for k, v in headers.iteritems()
             if k.lower() in self.pass_through_headers or
             is_sys_or_user_meta('container', k))
