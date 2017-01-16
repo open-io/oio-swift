@@ -49,7 +49,7 @@ class Application(SwiftApplication):
                                   account_ring=account_ring,
                                   container_ring=container_ring)
         if conf is None:
-            conf = {}
+            conf = dict()
         sds_conf = {k[4:]: v
                     for k, v in conf.iteritems()
                     if k.startswith("sds_")}
@@ -57,7 +57,7 @@ class Application(SwiftApplication):
         sds_namespace = sds_conf['namespace']
         sds_conf.pop('namespace')  # removed to avoid unpacking conflict
         # Loaded by ObjectStorageAPI if None
-        sds_proxy_url = sds_conf.get('proxy_url')
+        sds_proxy_url = sds_conf.pop('proxy_url', None)
         self.storage = storage or \
             ObjectStorageAPI(sds_namespace, sds_proxy_url, **sds_conf)
 
