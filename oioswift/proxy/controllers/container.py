@@ -131,13 +131,12 @@ class ContainerController(SwiftContainerController):
                 prefix = path.rstrip('/') + '/'
             delimiter = '/'
 
-        out_content_type = get_listing_content_type(req)
-
         try:
             result = storage.object_list(
                 self.account_name, self.container_name, prefix=prefix,
                 limit=limit, delimiter=delimiter, marker=marker,
                 end_marker=end_marker)
+
             resp_headers = self.get_metadata_resp_headers(result)
             resp = self.create_listing(
                 req, out_content_type, resp_headers, result,
