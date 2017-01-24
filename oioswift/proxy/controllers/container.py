@@ -210,13 +210,14 @@ class ContainerController(SwiftContainerController):
         return self.GETorHEAD(req)
 
     def get_container_head_resp(self, req):
+        headers = dict()
         out_content_type = get_listing_content_type(req)
+        headers['Content-Type'] = out_content_type
         storage = self.app.storage
         try:
             meta = storage.container_get_properties(self.account_name,
                                                     self.container_name)
-            headers = self.get_metadata_resp_headers(meta)
-            headers['Content-Type'] = out_content_type
+            headers.update(self.get_metadata_resp_headers(meta))
             resp = HTTPNoContent(request=req, headers=headers, charset='utf-8')
         except exceptions.NoSuchContainer:
             resp = HTTPNotFound(request=req, headers=headers)
