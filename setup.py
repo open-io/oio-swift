@@ -21,6 +21,7 @@ setup(
     packages=[
         'oioswift',
         'oioswift.common',
+        'oioswift.common.middleware',
         'oioswift.proxy',
         'oioswift.proxy.controllers'],
     entry_points={
