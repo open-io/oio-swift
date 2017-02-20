@@ -39,9 +39,9 @@ from swift.proxy.controllers.obj import check_content_type, copy_headers_into
 from swift.proxy.controllers.obj import BaseObjectController as \
         BaseObjectController
 
-from oioswift.common.storage_policy import POLICIES
 from oio.common import exceptions
-from oio.common.http import ranges_from_http_header
+from oio.common.http import ranges_from_http_header, quote
+from oio.common.green import ClientReadTimeout
 from oioswift.utils import IterO
 
 
@@ -107,7 +107,6 @@ class ObjectController(BaseObjectController):
 
         policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
                                        container_info['storage_policy'])
-        policy = POLICIES.get_by_index(policy_index)
         req.headers['X-Backend-Storage-Policy-Index'] = policy_index
         if 'swift.authorize' in req.environ:
             aresp = req.environ['swift.authorize'](req)
@@ -226,14 +225,11 @@ class ObjectController(BaseObjectController):
                 return error_response
             container_info = self.container_info(
                 self.account_name, self.container_name, req)
-            containers = container_info['nodes']
             req.acl = container_info['write_acl']
             if 'swift.authorize' in req.environ:
                 aresp = req.environ['swift.authorize'](req)
                 if aresp:
                     return aresp
-            # if not containers:
-            #     return HTTPNotFound(request=req)
 
             policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
                                            container_info['storage_policy'])
@@ -272,10 +268,6 @@ class ObjectController(BaseObjectController):
 
         container_info = self.container_info(
             self.account_name, self.container_name, req)
-        policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
-                                       container_info['storage_policy'])
-
-        containers = container_info['nodes']
 
         req.acl = container_info['write_acl']
         req.environ['swift_sync_key'] = container_info['sync_key']
@@ -284,9 +276,6 @@ class ObjectController(BaseObjectController):
             aresp = req.environ['swift.authorize'](req)
             if aresp:
                 return aresp
-
-        # if not containers:
-        #     return HTTPNotFound(request=req)
 
         self._update_content_type(req)
 
@@ -305,7 +294,8 @@ class ObjectController(BaseObjectController):
                 return error_response
         else:
             data_source = req.environ['wsgi.input']
-            update_response = lambda req, resp: resp
+
+            def update_response(req, resp): return resp
 
         headers = self._prepare_headers(req)
         resp = self._store_object(req, data_source, headers)
@@ -318,13 +308,6 @@ class ObjectController(BaseObjectController):
 
     def _store_object(self, req, data_source, headers):
         # TODO deal with stgpol
-        policy_index = req.headers.get('X-Backend-Storage-Policy-Index')
-        policy = POLICIES.get_by_index(policy_index)
-        if (req.content_length > 0) or req.is_chunked:
-            expect = True
-        else:
-            expect = False
-
         content_type = req.headers.get('content-type', 'octet/stream')
         storage = self.app.storage
 
@@ -338,7 +321,7 @@ class ObjectController(BaseObjectController):
                 etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
-        except exceptions.ClientReadTimeout as err:
+        except ClientReadTimeout as err:
             self.app.logger.warning(
                 _('ERROR Client read timeout (%ss)'), err.seconds)
             self.app.logger.increment('client_timeouts')
@@ -446,7 +429,8 @@ class ObjectController(BaseObjectController):
 
         if fresh_meta_flag or 'swift.post_as_copy' in sink_req.environ:
             # post-as-copy: ignore new sysmeta, copy existing sysmeta
-            condition = lambda k: is_sys_meta('object', k)
+            def condition(key):
+                return is_sys_meta('object', key)
             remove_items(sink_req.headers, condition)
             copy_header_subset(source_resp, sink_req, condition)
         else:
@@ -515,16 +499,12 @@ class ObjectController(BaseObjectController):
         policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
                                        container_info['storage_policy'])
         req.headers['X-Backend-Storage-Policy-Index'] = policy_index
-        containers = container_info['nodes']
         req.acl = container_info['write_acl']
         req.environ['swift_sync_key'] = container_info['sync_key']
         if 'swift.authorize' in req.environ:
             aresp = req.environ['swift.authorize'](req)
             if aresp:
                 return aresp
-
-        # if not containers:
-        #     return HTTPNotFound(request=req)
 
         self._update_x_timestamp(req)
 
