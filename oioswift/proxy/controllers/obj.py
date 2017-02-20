@@ -187,17 +187,6 @@ class ObjectController(BaseObjectController):
         resp.accept_ranges = 'bytes'
         return resp
 
-    def load_object_metadata(self, headers):
-        metadata = {}
-        metadata.update(
-            (k.lower(), v) for k, v in headers.iteritems()
-            if is_user_meta('object', k))
-        for header_key in self.allowed_headers:
-            if header_key in headers:
-                headers_lower = header_key.lower()
-                metadata[headers_lower] = headers[header_key]
-        return metadata
-
     @public
     @cors_validation
     @delay_denial
@@ -243,7 +232,13 @@ class ObjectController(BaseObjectController):
 
     def _post_object(self, req, headers, stgpol):
         # TODO do something with stgpol
-        metadata = self.load_object_metadata(headers)
+        metadata = {}
+        metadata.update(v for v in headers.items()
+                        if is_user_meta('object', v[0]))
+        for header_key in self.allowed_headers:
+            if header_key in headers:
+                header_caps = header_key.title()
+                metadata[header_caps] = headers[header_key]
 
         storage = self.app.storage
 
@@ -311,7 +306,14 @@ class ObjectController(BaseObjectController):
         content_type = req.headers.get('content-type', 'octet/stream')
         storage = self.app.storage
 
-        metadata = self.load_object_metadata(headers)
+        metadata = {}
+        metadata.update(v for v in headers.items()
+                        if is_sys_or_user_meta('object', v[0]))
+        for header_key in self.allowed_headers:
+            if header_key in headers:
+                header_caps = header_key.title()
+                metadata[header_caps] = headers[header_key]
+
         # TODO actually support if-none-match
         try:
             chunks, size, checksum = storage.object_create(
