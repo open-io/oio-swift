@@ -260,7 +260,6 @@ class ContainerController(SwiftContainerController):
             self.clean_acls(req) or check_metadata(req, 'container')
         if error_response:
             return error_response
-        policy_index = self._convert_policy_to_index(req)
         if not req.environ.get('swift_owner'):
             for key in self.app.swift_owner_headers:
                 req.headers.pop(key, None)
