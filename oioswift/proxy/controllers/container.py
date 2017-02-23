@@ -34,6 +34,7 @@ from swift.proxy.controllers.base import clear_info_cache, \
 from oio.common import exceptions
 
 from oioswift.common.storage_policy import POLICIES
+from oioswift.common.middleware.slo import OIO_SLO_ETAG_HEADER
 from oioswift.utils import get_listing_content_type
 
 
@@ -134,7 +135,7 @@ class ContainerController(SwiftContainerController):
             result = storage.object_list(
                 self.account_name, self.container_name, prefix=prefix,
                 limit=limit, delimiter=delimiter, marker=marker,
-                end_marker=end_marker)
+                end_marker=end_marker, properties=True)
 
             resp_headers = self.get_metadata_resp_headers(result)
             resp = self.create_listing(
@@ -180,6 +181,7 @@ class ContainerController(SwiftContainerController):
             if not container_list:
                 return HTTPNoContent(request=req, headers=resp_headers)
             ret.body = '\n'.join(rec['name'] for rec in container_list) + '\n'
+
         return ret
 
     def update_data_record(self, record):
@@ -192,6 +194,11 @@ class ContainerController(SwiftContainerController):
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': record.get(
                         'mime_type', 'application/octet-stream')}
+        # If the object we are describing is an slo manifest, there must be
+        # a property with the etag of the slo (not of the manifest).
+        if "properties" in record and\
+                OIO_SLO_ETAG_HEADER in record["properties"]:
+            response['hash'] = record["properties"][OIO_SLO_ETAG_HEADER]
         override_bytes_from_content_type(response)
         return response
 

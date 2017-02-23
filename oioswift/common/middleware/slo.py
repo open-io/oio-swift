@@ -1,9 +1,13 @@
+import json
 from hashlib import md5
+from binascii import unhexlify
 from swift.common.utils import config_true_value, \
     override_bytes_from_content_type
 from swift.common.middleware.slo import filter_factory as slo_filter_factory
-from swift.common.middleware.slo import SloGetContext
-from binascii import unhexlify
+from swift.common.middleware.slo import SloGetContext, SloPutContext
+
+
+OIO_SLO_ETAG_HEADER = "x-object-sysmeta-slo-etag"
 
 
 def get_or_head_response(self, req, resp_headers, resp_iter):
@@ -32,7 +36,32 @@ def get_or_head_response(self, req, resp_headers, resp_iter):
                 req, content_length, response_headers, segments)
 
 
+__slo_handle_slo_put = SloPutContext.handle_slo_put
+
+
+def handle_slo_put(self, req, start_response):
+    """
+    Modified version of `SloGetContext.handle_slo_put` that computes slo
+    etag the same way as Amazon S3 does.
+    """
+    slo_etag = md5()
+    req.body_file.seek(0)
+    # Unfortunately the req.body_file that contains the slo manifest has
+    # been modified by the calling function. We have to look for 'hash'
+    # instead of 'etag'.
+    for seg_dict in json.loads(req.body_file.read()):
+        slo_etag.update(unhexlify(seg_dict['hash']))
+    # This statement will create a system property that we can read
+    # during container listing to avoid reading the manifest object.
+    req.headers[OIO_SLO_ETAG_HEADER] = slo_etag.hexdigest()
+    self.slo_etag = slo_etag
+    req.body_file.seek(0)
+    return __slo_handle_slo_put(self, req, start_response)
+
+
 SloGetContext.get_or_head_response = get_or_head_response
+SloPutContext.handle_slo_put = handle_slo_put
+
 
 def filter_factory(global_conf, **local_conf):
     return slo_filter_factory(global_conf, **local_conf)
