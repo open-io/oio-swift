@@ -191,7 +191,7 @@ class ContainerController(SwiftContainerController):
                     'hash': record['hash'].lower(),
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': record.get(
-                        'mime-type', 'application/octet-stream')}
+                        'mime_type', 'application/octet-stream')}
         override_bytes_from_content_type(response)
         return response
 
