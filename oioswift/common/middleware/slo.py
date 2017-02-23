@@ -11,29 +11,29 @@ OIO_SLO_ETAG_HEADER = "x-object-sysmeta-slo-etag"
 
 
 def get_or_head_response(self, req, resp_headers, resp_iter):
-        segments = self._get_manifest_read(resp_iter)
+    segments = self._get_manifest_read(resp_iter)
 
-        etag = md5()
-        content_length = 0
-        for seg_dict in segments:
-            etag.update(unhexlify(seg_dict['hash']))
+    etag = md5()
+    content_length = 0
+    for seg_dict in segments:
+        etag.update(unhexlify(seg_dict['hash']))
 
-            if config_true_value(seg_dict.get('sub_slo')):
-                override_bytes_from_content_type(
-                    seg_dict, logger=self.slo.logger)
-            content_length += self._segment_length(seg_dict)
+        if config_true_value(seg_dict.get('sub_slo')):
+            override_bytes_from_content_type(
+                seg_dict, logger=self.slo.logger)
+        content_length += self._segment_length(seg_dict)
 
-        response_headers = [(h, v) for h, v in resp_headers
-                            if h.lower() not in ('etag', 'content-length')]
-        response_headers.append(('Content-Length', str(content_length)))
-        response_headers.append(
-            ('Etag', '"%s-%d"' % (etag.hexdigest(), len(segments))))
+    response_headers = [(h, v) for h, v in resp_headers
+                        if h.lower() not in ('etag', 'content-length')]
+    response_headers.append(('Content-Length', str(content_length)))
+    response_headers.append(
+        ('Etag', '"%s-%d"' % (etag.hexdigest(), len(segments))))
 
-        if req.method == 'HEAD':
-            return self._manifest_head_response(req, response_headers)
-        else:
-            return self._manifest_get_response(
-                req, content_length, response_headers, segments)
+    if req.method == 'HEAD':
+        return self._manifest_head_response(req, response_headers)
+    else:
+        return self._manifest_get_response(
+            req, content_length, response_headers, segments)
 
 
 __slo_handle_slo_put = SloPutContext.handle_slo_put
