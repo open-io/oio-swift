@@ -31,7 +31,7 @@ from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPUnprocessableEntity, HTTPClientDisconnect, Request, HTTPCreated, \
     HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator
 from swift.common.request_helpers import is_sys_or_user_meta, is_sys_meta, \
-    is_user_meta, remove_items, copy_header_subset
+    remove_items, copy_header_subset
 from swift.proxy.controllers.base import _set_object_info_cache, \
         delay_denial, cors_validation
 from swift.proxy.controllers.obj import check_content_type, copy_headers_into
@@ -191,7 +191,7 @@ class ObjectController(BaseObjectController):
         metadata = {}
         metadata.update(
             (k.lower(), v) for k, v in headers.iteritems()
-            if is_user_meta('object', k))
+            if is_sys_or_user_meta('object', k))
         for header_key in self.allowed_headers:
             if header_key in headers:
                 headers_lower = header_key.lower()
