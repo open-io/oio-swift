@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016 OpenIO SAS
+# Copyright (c) 2016-2017 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -516,8 +516,11 @@ class ObjectController(BaseObjectController):
         try:
             storage.object_delete(self.account_name, self.container_name,
                                   self.object_name)
-        except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
+        except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
+        except exceptions.NoSuchObject:
+            # Swift doesn't consider this case as an error
+            pass
         resp = HTTPNoContent(request=req)
         return resp
 
