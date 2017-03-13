@@ -90,12 +90,14 @@ class ContainerController(SwiftContainerController):
         except KeyError:
             # compatibility with oio-sds < 3.2
             system = meta['properties']
+        # sys.m2.ctime is microseconds
+        ctime = float(system.get('sys.m2.ctime', 0)) / 1000000.0
         headers.update({
             'X-Container-Object-Count': system.get('sys.m2.objects', 0),
             'X-Container-Bytes-Used': system.get('sys.m2.usage', 0),
-            'X-Timestamp': Timestamp(system.get('timestamp', 0)).normal,
-            'X-PUT-Timestamp': Timestamp(
-                system.get('put_timestamp', 0)).normal,
+            'X-Timestamp': Timestamp(ctime).normal,
+            # FIXME: save modification time somewhere
+            'X-PUT-Timestamp': Timestamp(ctime).normal,
         })
         for (k, v) in meta['properties'].iteritems():
             if v and (k.lower() in self.save_headers or
