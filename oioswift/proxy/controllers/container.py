@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016 OpenIO SAS
+# Copyright (c) 2016-2017 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -332,6 +332,8 @@ class ContainerController(SwiftContainerController):
         storage = self.app.storage
 
         metadata = self.load_container_metadata(headers)
+        if not metadata:
+            return self.PUT(req)
 
         try:
             storage.container_set_properties(
