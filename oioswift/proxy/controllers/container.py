@@ -34,7 +34,6 @@ from swift.proxy.controllers.base import clear_info_cache, \
 from oio.common import exceptions
 
 from oioswift.common.storage_policy import POLICIES
-from oioswift.common.middleware.slo import OIO_SLO_ETAG_HEADER
 from oioswift.utils import get_listing_content_type
 
 
@@ -196,11 +195,6 @@ class ContainerController(SwiftContainerController):
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': record.get(
                         'mime_type', 'application/octet-stream')}
-        # If the object we are describing is an slo manifest, there must be
-        # a property with the etag of the slo (not of the manifest).
-        if "properties" in record and\
-                OIO_SLO_ETAG_HEADER in record["properties"]:
-            response['hash'] = record["properties"][OIO_SLO_ETAG_HEADER]
         override_bytes_from_content_type(response)
         return response
 
