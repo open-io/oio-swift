@@ -144,7 +144,7 @@ class AccountController(SwiftAccountController):
                                             get_listing_content_type(req),
                                             info=info,
                                             listing=listing)
-        except exceptions.NoSuchAccount:
+        except (exceptions.NotFound, exceptions.NoSuchAccount):
             if self.app.account_autocreate:
                 resp = account_listing_response(self.account_name, req,
                                                 get_listing_content_type(req))
@@ -179,7 +179,7 @@ class AccountController(SwiftAccountController):
             resp = account_listing_response(self.account_name, req,
                                             get_listing_content_type(req),
                                             info=info)
-        except exceptions.NotFound:
+        except (exceptions.NotFound, exceptions.NoSuchAccount):
             if self.app.account_autocreate:
                 resp = account_listing_response(self.account_name, req,
                                                 get_listing_content_type(req))
@@ -254,7 +254,7 @@ class AccountController(SwiftAccountController):
         try:
             self.app.storage.account_update(self.account_name, metadata)
             return HTTPNoContent(request=req)
-        except exceptions.NotFound:
+        except (exceptions.NotFound, exceptions.NoSuchAccount):
             if self.app.account_autocreate:
                 self.autocreate_account(req, self.account_name)
                 if metadata:

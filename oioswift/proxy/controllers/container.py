@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016 OpenIO SAS
+# Copyright (c) 2016-2017 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -90,12 +90,14 @@ class ContainerController(SwiftContainerController):
         except KeyError:
             # compatibility with oio-sds < 3.2
             system = meta['properties']
+        # sys.m2.ctime is microseconds
+        ctime = float(system.get('sys.m2.ctime', 0)) / 1000000.0
         headers.update({
             'X-Container-Object-Count': system.get('sys.m2.objects', 0),
             'X-Container-Bytes-Used': system.get('sys.m2.usage', 0),
-            'X-Timestamp': Timestamp(system.get('timestamp', 0)).normal,
-            'X-PUT-Timestamp': Timestamp(
-                system.get('put_timestamp', 0)).normal,
+            'X-Timestamp': Timestamp(ctime).normal,
+            # FIXME: save modification time somewhere
+            'X-PUT-Timestamp': Timestamp(ctime).normal,
         })
         for (k, v) in meta['properties'].iteritems():
             if v and (k.lower() in self.save_headers or
@@ -135,7 +137,7 @@ class ContainerController(SwiftContainerController):
             result = storage.object_list(
                 self.account_name, self.container_name, prefix=prefix,
                 limit=limit, delimiter=delimiter, marker=marker,
-                end_marker=end_marker)
+                end_marker=end_marker, properties=True)
 
             resp_headers = self.get_metadata_resp_headers(result)
             resp = self.create_listing(
@@ -181,6 +183,7 @@ class ContainerController(SwiftContainerController):
             if not container_list:
                 return HTTPNoContent(request=req, headers=resp_headers)
             ret.body = '\n'.join(rec['name'] for rec in container_list) + '\n'
+
         return ret
 
     def update_data_record(self, record):
@@ -192,7 +195,7 @@ class ContainerController(SwiftContainerController):
                     'hash': record['hash'].lower(),
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': record.get(
-                        'mime-type', 'application/octet-stream')}
+                        'mime_type', 'application/octet-stream')}
         override_bytes_from_content_type(response)
         return response
 
@@ -211,13 +214,14 @@ class ContainerController(SwiftContainerController):
         return self.GETorHEAD(req)
 
     def get_container_head_resp(self, req):
+        headers = dict()
         out_content_type = get_listing_content_type(req)
+        headers['Content-Type'] = out_content_type
         storage = self.app.storage
         try:
             meta = storage.container_get_properties(self.account_name,
                                                     self.container_name)
-            headers = self.get_metadata_resp_headers(meta)
-            headers['Content-Type'] = out_content_type
+            headers.update(self.get_metadata_resp_headers(meta))
             resp = HTTPNoContent(request=req, headers=headers, charset='utf-8')
         except exceptions.NoSuchContainer:
             resp = HTTPNotFound(request=req, headers=headers)
@@ -260,7 +264,6 @@ class ContainerController(SwiftContainerController):
             self.clean_acls(req) or check_metadata(req, 'container')
         if error_response:
             return error_response
-        policy_index = self._convert_policy_to_index(req)
         if not req.environ.get('swift_owner'):
             for key in self.app.swift_owner_headers:
                 req.headers.pop(key, None)
@@ -324,6 +327,8 @@ class ContainerController(SwiftContainerController):
         storage = self.app.storage
 
         metadata = self.load_container_metadata(headers)
+        if not metadata:
+            return self.PUT(req)
 
         try:
             storage.container_set_properties(

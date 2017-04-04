@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016 OpenIO SAS
+# Copyright (c) 2016-2017 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,16 +21,12 @@ import math
 from swift import gettext_ as _
 from swift.common.utils import (
     clean_content_type, config_true_value, Timestamp, public)
-from swift.common.constraints import check_metadata, check_object_creation, \
-     check_account_format
-from swift.common import constraints
-from swift.common.http import HTTP_CREATED, HTTP_MULTIPLE_CHOICES
+from swift.common.constraints import check_metadata, check_object_creation
 from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
-    HTTPPreconditionFailed, HTTPRequestEntityTooLarge, HTTPRequestTimeout, \
-    HTTPUnprocessableEntity, HTTPClientDisconnect, Request, HTTPCreated, \
+    HTTPPreconditionFailed, HTTPRequestTimeout, \
+    HTTPUnprocessableEntity, HTTPClientDisconnect, HTTPCreated, \
     HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator
-from swift.common.request_helpers import is_sys_or_user_meta, is_sys_meta, \
-    is_user_meta, remove_items, copy_header_subset
+from swift.common.request_helpers import is_sys_or_user_meta
 from swift.proxy.controllers.base import set_object_info_cache, \
         delay_denial, cors_validation
 from swift.proxy.controllers.obj import check_content_type
@@ -38,10 +34,9 @@ from swift.proxy.controllers.obj import check_content_type
 from swift.proxy.controllers.obj import BaseObjectController as \
         BaseObjectController
 
-from oioswift.common.storage_policy import POLICIES
 from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
-from oioswift.utils import IterO
+from oio.common.green import ClientReadTimeout
 
 
 class ObjectControllerRouter(object):
@@ -104,7 +99,6 @@ class ObjectController(BaseObjectController):
         req.acl = container_info['read_acl']
         policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
                                        container_info['storage_policy'])
-        policy = POLICIES.get_by_index(policy_index)
         req.headers['X-Backend-Storage-Policy-Index'] = policy_index
         if 'swift.authorize' in req.environ:
             aresp = req.environ['swift.authorize'](req)
@@ -116,7 +110,7 @@ class ObjectController(BaseObjectController):
         else:
             resp = self.get_object_fetch_resp(req)
         set_object_info_cache(self.app, req.environ, self.account_name,
-                               self.container_name, self.object_name, resp)
+                              self.container_name, self.object_name, resp)
         if ';' in resp.headers.get('content-type', ''):
             resp.content_type = clean_content_type(
                 resp.headers['content-type'])
@@ -167,7 +161,7 @@ class ObjectController(BaseObjectController):
             for k, v in properties.iteritems():
                 if is_sys_or_user_meta('object', k) or \
                         k.lower() in self.allowed_headers:
-                            resp.headers[str(k)] = v
+                    resp.headers[str(k)] = v
         resp.headers['etag'] = metadata['hash'].lower()
         ts = Timestamp(metadata['ctime'])
         resp.last_modified = math.ceil(float(ts))
@@ -189,7 +183,7 @@ class ObjectController(BaseObjectController):
         metadata = {}
         metadata.update(
             (k.lower(), v) for k, v in headers.iteritems()
-            if is_user_meta('object', k))
+            if is_sys_or_user_meta('object', k))
         for header_key in self.allowed_headers:
             if header_key in headers:
                 headers_lower = header_key.lower()
@@ -203,14 +197,11 @@ class ObjectController(BaseObjectController):
         """HTTP POST request handler."""
         container_info = self.container_info(
             self.account_name, self.container_name, req)
-        containers = container_info['nodes']
         req.acl = container_info['write_acl']
         if 'swift.authorize' in req.environ:
             aresp = req.environ['swift.authorize'](req)
             if aresp:
                 return aresp
-        # if not containers:
-        #     return HTTPNotFound(request=req)
         error_response = check_metadata(req, 'object')
         if error_response:
             return error_response
@@ -251,10 +242,6 @@ class ObjectController(BaseObjectController):
                                   body='If-None-Match only supports *')
         container_info = self.container_info(
             self.account_name, self.container_name, req)
-        policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
-                                       container_info['storage_policy'])
-
-        containers = container_info['nodes']
 
         req.acl = container_info['write_acl']
         req.environ['swift_sync_key'] = container_info['sync_key']
@@ -265,10 +252,6 @@ class ObjectController(BaseObjectController):
             if aresp:
                 return aresp
 
-        # if not containers:
-        #     return HTTPNotFound(request=req)
-
-        # update content type if missing
         self._update_content_type(req)
 
         # check constraints on object name and request headers
@@ -292,13 +275,6 @@ class ObjectController(BaseObjectController):
 
     def _store_object(self, req, data_source, headers):
         # TODO deal with stgpol
-        policy_index = req.headers.get('X-Backend-Storage-Policy-Index')
-        policy = POLICIES.get_by_index(policy_index)
-        if (req.content_length > 0) or req.is_chunked:
-            expect = True
-        else:
-            expect = False
-
         content_type = req.headers.get('content-type', 'octet/stream')
         storage = self.app.storage
 
@@ -312,7 +288,7 @@ class ObjectController(BaseObjectController):
                 etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
-        except exceptions.ClientReadTimeout as err:
+        except ClientReadTimeout as err:
             self.app.logger.warning(
                 _('ERROR Client read timeout (%ss)'), err.seconds)
             self.app.logger.increment('client_timeouts')
@@ -376,16 +352,12 @@ class ObjectController(BaseObjectController):
         policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
                                        container_info['storage_policy'])
         req.headers['X-Backend-Storage-Policy-Index'] = policy_index
-        containers = container_info['nodes']
         req.acl = container_info['write_acl']
         req.environ['swift_sync_key'] = container_info['sync_key']
         if 'swift.authorize' in req.environ:
             aresp = req.environ['swift.authorize'](req)
             if aresp:
                 return aresp
-
-        # if not containers:
-        #     return HTTPNotFound(request=req)
 
         self._update_x_timestamp(req)
 
@@ -397,7 +369,10 @@ class ObjectController(BaseObjectController):
         try:
             storage.object_delete(self.account_name, self.container_name,
                                   self.object_name)
-        except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
+        except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
+        except exceptions.NoSuchObject:
+            # Swift doesn't consider this case as an error
+            pass
         resp = HTTPNoContent(request=req)
         return resp
