@@ -39,8 +39,9 @@ from oioswift.utils import get_listing_content_type
 
 class ContainerController(SwiftContainerController):
 
-    save_headers = ['x-container-read', 'x-container-write',
-                    'x-container-sync-key', 'x-container-sync-to']
+    pass_through_headers = ['x-container-read', 'x-container-write',
+                            'x-container-sync-key', 'x-container-sync-to',
+                            'x-versions-location']
 
     def GETorHEAD(self, req):
         if self.account_info(self.account_name, req) is None:
@@ -99,7 +100,7 @@ class ContainerController(SwiftContainerController):
             'X-PUT-Timestamp': Timestamp(ctime).normal,
         })
         for (k, v) in meta['properties'].iteritems():
-            if v and (k.lower() in self.save_headers or
+            if v and (k.lower() in self.pass_through_headers or
                       is_sys_or_user_meta('container', k)):
                 headers[k] = v
         return headers
@@ -251,9 +252,12 @@ class ContainerController(SwiftContainerController):
         metadata = self.load_container_metadata(headers)
         # TODO container update metadata
         storage = self.app.storage
-        storage.container_create(
-            self.account_name, self.container_name, metadata=metadata)
-        return HTTPCreated(request=req)
+        created = storage.container_create(
+            self.account_name, self.container_name, properties=metadata)
+        if created:
+            return HTTPCreated(request=req)
+        else:
+            return HTTPNoContent(request=req)
 
     @public
     @cors_validation
