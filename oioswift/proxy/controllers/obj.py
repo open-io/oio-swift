@@ -223,7 +223,7 @@ class ObjectController(BaseObjectController):
         storage = self.app.storage
 
         try:
-            storage.object_update(
+            storage.object_set_properties(
                 self.account_name, self.container_name, self.object_name,
                 metadata, clear=True)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
