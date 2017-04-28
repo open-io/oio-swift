@@ -136,10 +136,20 @@ class AccountController(SwiftAccountController):
         end_marker = get_param(req, 'end_marker')
 
         try:
-            listing, info = self.app.storage.container_list(
-                self.account_name, limit=limit, marker=marker,
-                end_marker=end_marker, prefix=prefix,
-                delimiter=delimiter)
+            info = None
+            if hasattr(self.app.storage, 'account'):
+                # Call directly AccountClient.container_list()
+                info = self.app.storage.account.container_list(
+                    self.account_name, limit=limit, marker=marker,
+                    end_marker=end_marker, prefix=prefix,
+                    delimiter=delimiter)
+                listing = info.pop('listing')
+            else:
+                # Legacy call to account service
+                listing, info = self.app.storage.container_list(
+                    self.account_name, limit=limit, marker=marker,
+                    end_marker=end_marker, prefix=prefix,
+                    delimiter=delimiter)
             resp = account_listing_response(self.account_name, req,
                                             get_listing_content_type(req),
                                             info=info,
