@@ -21,6 +21,7 @@ setup(
     packages=[
         'oioswift',
         'oioswift.common',
+        'oioswift.common.middleware',
         'oioswift.proxy',
         'oioswift.proxy.controllers'],
     entry_points={
@@ -30,7 +31,8 @@ setup(
         'paste.filter_factory': [
             'autocontainer=oioswift.autocontainer:filter_factory',
             'hashedcontainer=oioswift.hashedcontainer:filter_factory',
+            'versioned_writes=oioswift.common.middleware.versioned_writes:filter_factory',
         ],
     },
-    install_requires=['swift>=2.10.0', 'oio>=3.2.0']
+    install_requires=['swift>=2.10.0', 'oio>=3.3.0']
 )
