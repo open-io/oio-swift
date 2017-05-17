@@ -230,14 +230,23 @@ class ContainerController(SwiftContainerController):
 
         return resp
 
-    def load_container_metadata(self, headers):
-        metadata = {}
-        metadata.update(
-            (k, v)
-            for k, v in headers.iteritems()
+    def properties_from_headers(self, headers):
+        metadata = {
+            k: v
+            for k, v in headers.items()
             if k.lower() in self.pass_through_headers or
-            is_sys_or_user_meta('container', k))
-        return metadata
+            is_sys_or_user_meta('container', k)
+        }
+
+        system = dict()
+        # This header enables versioning
+        ver_loc = headers.get('X-Container-Sysmeta-Versions-Location')
+        if ver_loc is not None:
+            # When suspending versioning, header has empty string value
+            ver_val = "-1" if ver_loc else "1"
+            system['sys.m2.policy.version'] = ver_val
+
+        return metadata, system
 
     def _convert_policy(self, req):
         policy_name = req.headers.get('X-Storage-Policy')
@@ -251,11 +260,12 @@ class ContainerController(SwiftContainerController):
         return policy
 
     def get_container_create_resp(self, req, headers):
-        metadata = self.load_container_metadata(headers)
+        properties, system = self.properties_from_headers(headers)
         # TODO container update metadata
         storage = self.app.storage
         created = storage.container_create(
-            self.account_name, self.container_name, properties=metadata)
+            self.account_name, self.container_name,
+            properties=properties, system=system)
         if created:
             return HTTPCreated(request=req)
         else:
@@ -331,13 +341,14 @@ class ContainerController(SwiftContainerController):
     def get_container_post_resp(self, req, headers):
         storage = self.app.storage
 
-        metadata = self.load_container_metadata(headers)
-        if not metadata:
+        properties, system = self.properties_from_headers(headers)
+        if not properties:
             return self.PUT(req)
 
         try:
             storage.container_set_properties(
-                self.account_name, self.container_name, metadata)
+                self.account_name, self.container_name,
+                properties=properties, system=system)
             resp = HTTPNoContent(request=req)
         except exceptions.NoSuchContainer:
             resp = self.PUT(req)
