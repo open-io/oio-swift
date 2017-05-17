@@ -18,7 +18,7 @@ from six.moves.urllib.parse import parse_qs, urlencode
 from swift.common.middleware import versioned_writes as vw
 from swift.common.utils import config_true_value, json, \
     register_swift_info, split_path
-# from swift.proxy.controllers.base import get_container_info
+from swift.proxy.controllers.base import get_container_info
 
 
 VERSIONING_SUFFIX = '+versioning'
@@ -45,37 +45,34 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
             return container[:-len(VERSIONING_SUFFIX)]
         return container
 
-    def handle_container_request(self, env, start_response):
-        # TODO: use Request(env)
+    def handle_container_listing(self, env, start_response):
+        # This code may be clearer by using Request(env).get_response()
+        # instead of self._app_call(env)
         api_vers, account, container_name = split_path(
             env['PATH_INFO'], 3, 3, True)
+        sub_env = env.copy()
         listed_container = self.get_listed_container(container_name)
         if listed_container != container_name:
-            env['PATH_INFO'] = '/%s/%s/%s' % (api_vers, account,
-                                              listed_container)
-            qs = parse_qs(env.get('QUERY_STRING', ''))
+            # Check that container_name is actually the versioning
+            # container for listed_container
+            sub_env['PATH_INFO'] = '/%s/%s/%s' % (api_vers, account,
+                                                  listed_container)
+            info = get_container_info(sub_env, self.app,
+                                      swift_source='versioned_writes')
+            if info.get('sysmeta', {}).get('versions-location') != \
+                    container_name:
+                # We were wrong, do a standard listing
+                listed_container = container_name
+
+        if listed_container != container_name:
+            qs = parse_qs(sub_env.get('QUERY_STRING', ''))
             if 'marker' in qs:
                 marker, _ = swift3_split_object_name_version(qs['marker'][0])
                 qs['marker'] = [marker]
-            env['QUERY_STRING'] = urlencode(qs, True)
+            sub_env['QUERY_STRING'] = urlencode(qs, True)
 
-        resp = self._app_call(env)
-        if self._response_headers is None:
-            self._response_headers = []
-        mode = location = ''
-        for key, val in self._response_headers:
-            if key.lower() == vw.SYSMETA_VERSIONS_LOC:
-                location = val
-            elif key.lower() == vw.SYSMETA_VERSIONS_MODE:
-                mode = val
-
-        if location:
-            if mode == 'history':
-                self._response_headers.extend([
-                    (vw.CLIENT_HISTORY_LOC.title(), location)])
-            else:
-                self._response_headers.extend([
-                    (vw.CLIENT_VERSIONS_LOC.title(), location)])
+        resp = super(OioVersionedWritesContext, self).handle_container_request(
+            sub_env, lambda x, y, z: None)
 
         if listed_container != container_name and \
                 self._response_status == '200 OK':
@@ -91,6 +88,13 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
         start_response(self._response_status, self._response_headers,
                        self._response_exc_info)
         return resp
+
+    def handle_container_request(self, env, start_response):
+        method = env.get('REQUEST_METHOD')
+        if method in ('HEAD', 'GET'):
+            return self.handle_container_listing(env, start_response)
+        return super(OioVersionedWritesContext, self).handle_container_request(
+            env, start_response)
 
 
 vw.VersionedWritesContext = OioVersionedWritesContext
