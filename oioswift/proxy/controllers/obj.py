@@ -39,6 +39,9 @@ from oio.common.http import ranges_from_http_header
 from oio.common.green import SourceReadTimeout
 
 
+DELETE_MARKER_CONTENT_TYPE = 'application/x-deleted;swift_versions_deleted=1'
+
+
 class ObjectControllerRouter(object):
     def __getitem__(self, policy):
         return ObjectController
@@ -120,9 +123,9 @@ class ObjectController(BaseObjectController):
     def get_object_head_resp(self, req):
         storage = self.app.storage
         try:
-            metadata = storage.object_show(self.account_name,
-                                           self.container_name,
-                                           self.object_name)
+            metadata = storage.object_show(
+                self.account_name, self.container_name, self.object_name,
+                version=req.environ.get('oio_query', {}).get('version'))
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
 
@@ -136,10 +139,10 @@ class ObjectController(BaseObjectController):
         else:
             ranges = None
         try:
-            metadata, stream = storage.object_fetch(self.account_name,
-                                                    self.container_name,
-                                                    self.object_name,
-                                                    ranges=ranges)
+            metadata, stream = storage.object_fetch(
+                self.account_name, self.container_name, self.object_name,
+                ranges=ranges,
+                version=req.environ.get('oio_query', {}).get('version'))
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
         resp = self.make_object_response(req, metadata, stream, ranges=ranges)
@@ -154,8 +157,11 @@ class ObjectController(BaseObjectController):
         resp = Response(request=req, conditional_response=True,
                         conditional_etag=conditional_etag)
 
-        resp.headers['Content-Type'] = metadata.get(
-            'mime_type', 'application/octet-stream')
+        if config_true_value(metadata['deleted']):
+            resp.headers['Content-Type'] = DELETE_MARKER_CONTENT_TYPE
+        else:
+            resp.headers['Content-Type'] = metadata.get(
+                'mime_type', 'application/octet-stream')
         properties = metadata.get('properties')
         if properties:
             for k, v in properties.iteritems():
@@ -163,6 +169,7 @@ class ObjectController(BaseObjectController):
                         k.lower() in self.allowed_headers:
                     resp.headers[str(k)] = v
         resp.headers['etag'] = metadata['hash'].lower()
+        resp.headers['x-object-sysmeta-version-id'] = metadata['version']
         ts = Timestamp(metadata['ctime'])
         resp.last_modified = math.ceil(float(ts))
         if stream:
@@ -367,8 +374,9 @@ class ObjectController(BaseObjectController):
         storage = self.app.storage
 
         try:
-            storage.object_delete(self.account_name, self.container_name,
-                                  self.object_name)
+            storage.object_delete(
+                self.account_name, self.container_name, self.object_name,
+                version=req.environ.get('oio_query', {}).get('version'))
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         except exceptions.NoSuchObject:

@@ -133,12 +133,13 @@ class ContainerController(SwiftContainerController):
             if path:
                 prefix = path.rstrip('/') + '/'
             delimiter = '/'
-
+        opts = req.environ.get('oio_query', {})
         try:
             result = storage.object_list(
                 self.account_name, self.container_name, prefix=prefix,
                 limit=limit, delimiter=delimiter, marker=marker,
-                end_marker=end_marker, properties=True)
+                end_marker=end_marker, properties=True,
+                versions=opts.get('versions', False))
 
             resp_headers = self.get_metadata_resp_headers(result)
             resp = self.create_listing(
@@ -197,7 +198,7 @@ class ContainerController(SwiftContainerController):
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': record.get(
                         'mime_type', 'application/octet-stream'),
-                    'version': record['ver']}
+                    'version': record['version']}
         override_bytes_from_content_type(response)
         return response
 
