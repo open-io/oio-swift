@@ -21,6 +21,7 @@ from swift.common.utils import public, Timestamp, \
     override_bytes_from_content_type
 from swift.common.constraints import check_metadata
 from swift.common import constraints
+from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import Response, HTTPBadRequest, HTTPNotFound, \
     HTTPNoContent, HTTPConflict, HTTPPreconditionFailed, HTTPForbidden, \
     HTTPCreated
@@ -139,18 +140,19 @@ class ContainerController(SwiftContainerController):
                 self.account_name, self.container_name, prefix=prefix,
                 limit=limit, delimiter=delimiter, marker=marker,
                 end_marker=end_marker, properties=True,
-                versions=opts.get('versions', False))
+                versions=opts.get('versions', False),
+                deleted=opts.get('deleted', False))
 
             resp_headers = self.get_metadata_resp_headers(result)
             resp = self.create_listing(
                 req, out_content_type, resp_headers, result,
-                self.container_name)
+                self.container_name, **opts)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         return resp
 
     def create_listing(self, req, out_content_type, resp_headers,
-                       result, container):
+                       result, container, **kwargs):
         container_list = result['objects']
         for p in result.get('prefixes', []):
             record = {'name': p,
@@ -159,12 +161,14 @@ class ContainerController(SwiftContainerController):
         ret = Response(request=req, headers=resp_headers,
                        content_type=out_content_type, charset='utf-8')
         if out_content_type == 'application/json':
-            ret.body = json.dumps([self.update_data_record(r)
-                                   for r in container_list])
+            ret.body = json.dumps(
+                [self.update_data_record(r, kwargs.get('versions', False))
+                 for r in container_list])
         elif out_content_type.endswith('/xml'):
             doc = Element('container', name=container.decode('utf-8'))
             for obj in container_list:
-                record = self.update_data_record(obj)
+                record = self.update_data_record(
+                    obj, kwargs.get('versions', False))
                 if 'subdir' in record:
                     name = record['subdir'].decode('utf-8')
                     sub = SubElement(doc, 'subdir', name=name)
@@ -188,7 +192,7 @@ class ContainerController(SwiftContainerController):
 
         return ret
 
-    def update_data_record(self, record):
+    def update_data_record(self, record, versions=False):
         if 'subdir' in record:
             return {'subdir': record['name']}
 
@@ -197,8 +201,11 @@ class ContainerController(SwiftContainerController):
                     'hash': record['hash'].lower(),
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': record.get(
-                        'mime_type', 'application/octet-stream'),
-                    'version': record['version']}
+                        'mime_type', 'application/octet-stream')}
+        if record.get('deleted', False):
+            response['content_type'] = DELETE_MARKER_CONTENT_TYPE
+        if versions:
+            response['version'] = record.get('version', 'null')
         override_bytes_from_content_type(response)
         return response
 
