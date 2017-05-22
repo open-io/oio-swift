@@ -22,6 +22,7 @@ from swift import gettext_ as _
 from swift.common.utils import (
     clean_content_type, config_true_value, Timestamp, public)
 from swift.common.constraints import check_metadata, check_object_creation
+from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPPreconditionFailed, HTTPRequestTimeout, \
     HTTPUnprocessableEntity, HTTPClientDisconnect, HTTPCreated, \
@@ -37,9 +38,6 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
 from oio.common.green import SourceReadTimeout
-
-
-DELETE_MARKER_CONTENT_TYPE = 'application/x-deleted;swift_versions_deleted=1'
 
 
 class ObjectControllerRouter(object):
