@@ -36,7 +36,7 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 
 from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
-from oio.common.green import ClientReadTimeout
+from oio.common.green import SourceReadTimeout
 
 
 class ObjectControllerRouter(object):
@@ -288,7 +288,7 @@ class ObjectController(BaseObjectController):
                 etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
-        except ClientReadTimeout as err:
+        except SourceReadTimeout as err:
             self.app.logger.warning(
                 _('ERROR Client read timeout (%ss)'), err.seconds)
             self.app.logger.increment('client_timeouts')

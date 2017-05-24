@@ -3,9 +3,12 @@ import sys
 import logging
 from collections import defaultdict
 from contextlib import contextmanager
+from mock import MagicMock as Mock
 from swift.common import utils
 from swift.common.utils import NOTICE
-from oiopy.object_storage import ObjectStorageAPI
+from oio.api.object_storage import ObjectStorageApi
+from oio.account.client import AccountClient
+from oio.container.client import ContainerClient
 
 
 class FakeMemcache(object):
@@ -38,9 +41,11 @@ class FakeMemcache(object):
         return True
 
 
-class FakeStorageAPI(ObjectStorageAPI):
-    def __init__(*args, **kwargs):
-        pass
+class FakeStorageAPI(ObjectStorageApi):
+    def __init__(self, *args, **kwargs):
+        self.account = Mock(AccountClient)
+        self.container = Mock(ContainerClient)
+        self.__dict__.update(kwargs)
 
 
 class DebugLogAdapter(utils.LogAdapter):
