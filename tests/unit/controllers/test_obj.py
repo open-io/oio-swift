@@ -105,7 +105,7 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_delete = Mock()
         resp = req.get_response(self.app)
         self.storage.object_delete.assert_called_once_with(
-            'a', 'c', 'o')
+            'a', 'c', 'o', version=None)
         self.assertEqual(resp.status_int, 204)
 
     def test_DELETE_not_found(self):
@@ -113,7 +113,7 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_delete = Mock(side_effect=exc.NoSuchObject)
         resp = req.get_response(self.app)
         self.storage.object_delete.assert_called_once_with(
-            'a', 'c', 'o')
+            'a', 'c', 'o', version=None)
         self.assertEqual(resp.status_int, 204)
 
     def test_HEAD_simple(self):
@@ -128,7 +128,7 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_show = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
         self.storage.object_show.assert_called_once_with(
-            'a', 'c', 'o')
+            'a', 'c', 'o', version=None)
         self.assertEqual(resp.status_int, 200)
         self.assertIn('Accept-Ranges', resp.headers)
 
