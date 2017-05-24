@@ -11,14 +11,14 @@ from tests.unit import FakeStorageAPI, FakeMemcache, debug_logger
 
 
 def get_fake_info(meta={}):
-        info = {
-                'ctime': 0,
-                'containers': 2,
-                'objects': 2,
-                'bytes': 2,
-                'metadata': meta
-        }
-        return info
+    info = {
+            'ctime': 0,
+            'containers': 2,
+            'objects': 2,
+            'bytes': 2,
+            'metadata': meta
+    }
+    return info
 
 
 class TestAccountController(unittest.TestCase):
@@ -27,7 +27,7 @@ class TestAccountController(unittest.TestCase):
         self.storage = FakeStorageAPI()
 
         self.app = proxy_server.Application(
-            None, FakeMemcache(),
+            {'sds_namespace': "TEST"}, FakeMemcache(),
             account_ring=FakeRing(), container_ring=FakeRing(),
             storage=self.storage, logger=self.logger)
 
@@ -39,10 +39,11 @@ class TestAccountController(unittest.TestCase):
         self.storage.account_show = Mock(return_value=info)
         resp = req.get_response(self.app)
         self.assertEqual(2, resp.status_int // 100)
-        self.assertTrue('swift.account/AUTH_openio' in resp.environ)
+        self.assertIn('swift.infocache', resp.environ)
+        self.assertIn('account/AUTH_openio', resp.environ['swift.infocache'])
         self.assertEqual(
             headers_to_account_info(resp.headers, resp.status_int),
-            resp.environ['swift.account/AUTH_openio'])
+            resp.environ['swift.infocache']['account/AUTH_openio'])
 
     def test_swift_owner(self):
         owner_headers = {
@@ -129,12 +130,16 @@ class TestAccountController(unittest.TestCase):
             'x-account-meta-temp-url-key': 's3kr1t',
         }
         info = get_fake_info(meta)
-        self.storage.account_show = Mock(return_value=info)
-        l = ({}, info)
-        self.storage.container_list = Mock(return_value=l)
+        info2 = info.copy()
+        self.storage.account.account_show = Mock(return_value=info)
+        self.storage.account.container_list = Mock(return_value=info2)
 
         for verb in ('GET', 'HEAD'):
             for env in ({'swift_owner': True}, {'swift_owner': False}):
+                # The account controller pops 'listing' from the result,
+                # we have to put it back at each iteration
+                info2['listing'] = list()
+
                 req = Request.blank('/v1/acct', environ=env, method=verb)
                 resp = req.get_response(self.app)
                 self.assertEqual(resp.headers.get('x-account-meta-harmless'),
