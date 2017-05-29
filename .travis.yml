@@ -9,12 +9,11 @@ install:
   - virtualenv $HOME/venv
   - source $HOME/venv/bin/activate
   - pip install --upgrade pip setuptools virtualenv tox
-  - git clone -b master https://github.com/open-io/oio-sds.git
-  - cd oio-sds && pip install --upgrade -r all-requirements.txt && python setup.py install && cd ..
-  - git clone -b stable/ocata https://github.com/openstack/swift.git
-  - cd swift && python setup.py install && cd ..
-  - pip install --upgrade -r swift/requirements.txt
+  - git submodule update --init --remote
+  - cd third_party/oio-sds && pip install --upgrade -r all-requirements.txt && python setup.py install && cd ../..
+  - cd third_party/swift && pip install --upgrade -r requirements.txt && python setup.py install && cd ../..
   - pip install --upgrade -r test-requirements.txt
 
 script:
-  - nosetests tests
+  - nosetests -v tests/unit/controllers
+  - nosetests -v tests/unit/common/middleware/test_versioned_writes.py:OioVersionedWritesTestCase
