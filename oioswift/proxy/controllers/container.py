@@ -160,15 +160,14 @@ class ContainerController(SwiftContainerController):
             container_list.append(record)
         ret = Response(request=req, headers=resp_headers,
                        content_type=out_content_type, charset='utf-8')
+        versions = kwargs.get('versions', False)
         if out_content_type == 'application/json':
             ret.body = json.dumps(
-                [self.update_data_record(r, kwargs.get('versions', False))
-                 for r in container_list])
+                [self.update_data_record(r, versions) for r in container_list])
         elif out_content_type.endswith('/xml'):
             doc = Element('container', name=container.decode('utf-8'))
             for obj in container_list:
-                record = self.update_data_record(
-                    obj, kwargs.get('versions', False))
+                record = self.update_data_record(obj, versions)
                 if 'subdir' in record:
                     name = record['subdir'].decode('utf-8')
                     sub = SubElement(doc, 'subdir', name=name)
