@@ -34,7 +34,6 @@ from swift.proxy.controllers.base import clear_info_cache, \
 
 from oio.common import exceptions
 
-from oioswift.common.storage_policy import POLICIES
 from oioswift.utils import get_listing_content_type
 
 
@@ -74,7 +73,7 @@ class ContainerController(SwiftContainerController):
     def convert_policy(self, resp):
         if 'X-Backend-Storage-Policy-Index' in resp.headers and \
                 is_success(resp.status_int):
-                    policy = POLICIES.get_by_index(
+                    policy = self.app.POLICIES.get_by_index(
                         resp.headers['X-Backend-Storage-Policy-Index'])
                     if policy:
                         resp.headers['X-Storage-Policy'] = policy.name
@@ -259,7 +258,7 @@ class ContainerController(SwiftContainerController):
         policy_name = req.headers.get('X-Storage-Policy')
         if not policy_name:
             return
-        policy = POLICIES.get_by_name(policy_name)
+        policy = self.app.POLICIES.get_by_name(policy_name)
         if not policy:
             msg = "Invalid X-Storage-Policy '%s'" % policy_name
             raise HTTPBadRequest(

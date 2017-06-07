@@ -141,7 +141,7 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_create.assert_called_once_with(
                 'a', 'c', obj_name='o', etag='',
                 metadata={}, mime_type='application/octet-stream',
-                file_or_path=req.environ['wsgi.input'])
+                file_or_path=req.environ['wsgi.input'], policy=None)
         self.assertEqual(resp.status_int, 201)
 
     def test_PUT_requires_length(self):

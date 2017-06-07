@@ -15,7 +15,6 @@
 
 from urlparse import parse_qs
 from swift.common.utils import split_path
-from swift.common.swob import HTTPBadRequest
 from oio.common.exceptions import ConfigurationException
 # TODO(jfs): currently in oio.cli, need to adapt as sson as it has been
 #            factorized
