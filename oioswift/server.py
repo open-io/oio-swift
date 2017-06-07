@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from swift.common import storage_policy
 from oioswift.common.storage_policy import POLICIES
 from oioswift.common.ring import FakeRing
 from oioswift.proxy.controllers.container import ContainerController
@@ -53,6 +54,24 @@ class Application(SwiftApplication):
         sds_conf = {k[4:]: v
                     for k, v in conf.iteritems()
                     if k.startswith("sds_")}
+
+        self.oio_stgpol = []
+        if 'auto_storage_policies' in conf:
+            for elem in conf['auto_storage_policies'].split(','):
+                if ':' in elem:
+                    name, offset = elem.split(':')
+                    self.oio_stgpol.append((name, offset))
+                else:
+                    self.oio_stgpol.append((elem, 0))
+            self.oio_stgpol.sort(key=lambda x: x[1])
+
+        policies = [storage_policy.StoragePolicy(0, 'Policy-0', True)]
+        if 'oio_storage_policies' in conf:
+            for i, pol in enumerate(conf['oio_storage_policies'].split(',')):
+                policies.append(storage_policy.StoragePolicy(i+1, pol))
+
+        self.POLICIES = storage_policy.StoragePolicyCollection(policies)
+
         # Mandatory, raises KeyError
         sds_namespace = sds_conf['namespace']
         sds_conf.pop('namespace')  # removed to avoid unpacking conflict

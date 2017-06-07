@@ -278,10 +278,28 @@ class ObjectController(BaseObjectController):
         headers = self.generate_request_headers(req, additional=req.headers)
         return headers
 
+    def _get_auto_policy_from_size(self, content_length):
+        # the default stgpol has an offset of 0 so should always be choose
+        policy = None
+        for (name, offset) in self.app.oio_stgpol:
+            if int(offset) <= int(content_length):
+                policy = name
+
+        return policy
+
     def _store_object(self, req, data_source, headers):
-        # TODO deal with stgpol
         content_type = req.headers.get('content-type', 'octet/stream')
         storage = self.app.storage
+        policy = None
+        container_info = self.container_info(self.account_name,
+                                             self.container_name, req)
+        policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
+                                       container_info['storage_policy'])
+        if policy_index != 0:
+            policy = self.app.POLICIES.get_by_index(policy_index).name
+        else:
+            content_length = req.headers.get('content-length', 0)
+            policy = self._get_auto_policy_from_size(content_length)
 
         metadata = self.load_object_metadata(headers)
         # TODO actually support if-none-match
@@ -289,7 +307,7 @@ class ObjectController(BaseObjectController):
             chunks, size, checksum = storage.object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
-                mime_type=content_type,
+                mime_type=content_type, policy=policy,
                 etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
