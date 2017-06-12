@@ -282,7 +282,7 @@ class ObjectController(BaseObjectController):
         # the default stgpol has an offset of 0 so should always be choose
         policy = None
         for (name, offset) in self.app.oio_stgpol:
-            if int(offset) <= int(content_length):
+            if offset <= content_length:
                 policy = name
 
         return policy
@@ -298,7 +298,7 @@ class ObjectController(BaseObjectController):
         if policy_index != 0:
             policy = self.app.POLICIES.get_by_index(policy_index).name
         else:
-            content_length = req.headers.get('content-length', 0)
+            content_length = int(req.headers.get('content-length', 0))
             policy = self._get_auto_policy_from_size(content_length)
 
         metadata = self.load_object_metadata(headers)
