@@ -60,7 +60,7 @@ class Application(SwiftApplication):
             for elem in conf['auto_storage_policies'].split(','):
                 if ':' in elem:
                     name, offset = elem.split(':')
-                    self.oio_stgpol.append((name, offset))
+                    self.oio_stgpol.append((name, int(offset)))
                 else:
                     self.oio_stgpol.append((elem, 0))
             self.oio_stgpol.sort(key=lambda x: x[1])
