@@ -293,8 +293,12 @@ class ObjectController(BaseObjectController):
         policy = None
         container_info = self.container_info(self.account_name,
                                              self.container_name, req)
-        policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
-                                       container_info['storage_policy'])
+        try:
+            policy_index = int(
+                req.headers.get('X-Backend-Storage-Policy-Index',
+                                container_info['storage_policy']))
+        except TypeError:
+            policy_index = 0
         if policy_index != 0:
             policy = self.app.POLICIES.get_by_index(policy_index).name
         else:
