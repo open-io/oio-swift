@@ -19,7 +19,7 @@ from oioswift.common.ring import FakeRing
 from oioswift.proxy.controllers.container import ContainerController
 from oioswift.proxy.controllers.account import AccountController
 from oioswift.proxy.controllers.obj import ObjectControllerRouter
-from oio.api.object_storage import ObjectStorageAPI
+from oio import ObjectStorageApi
 from swift.proxy.server import Application as SwiftApplication
 import swift.common.utils
 import swift.proxy.server
@@ -75,10 +75,10 @@ class Application(SwiftApplication):
         # Mandatory, raises KeyError
         sds_namespace = sds_conf['namespace']
         sds_conf.pop('namespace')  # removed to avoid unpacking conflict
-        # Loaded by ObjectStorageAPI if None
+        # Loaded by ObjectStorageApi if None
         sds_proxy_url = sds_conf.pop('proxy_url', None)
         self.storage = storage or \
-            ObjectStorageAPI(sds_namespace, sds_proxy_url, **sds_conf)
+            ObjectStorageApi(sds_namespace, endpoint=sds_proxy_url, **sds_conf)
 
 
 def app_factory(global_conf, **local_conf):
