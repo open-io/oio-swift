@@ -293,17 +293,24 @@ class ObjectController(BaseObjectController):
         policy = None
         container_info = self.container_info(self.account_name,
                                              self.container_name, req)
-        try:
-            policy_index = int(
-                req.headers.get('X-Backend-Storage-Policy-Index',
-                                container_info['storage_policy']))
-        except TypeError:
-            policy_index = 0
-        if policy_index != 0:
-            policy = self.app.POLICIES.get_by_index(policy_index).name
+        if 'X-Oio-Storage-Policy' in req.headers:
+            policy = req.headers.get('X-Oio-Storage-Policy')
+            if not self.app.POLICIES.get_by_name(policy):
+                raise HTTPBadRequest(
+                    "invalid policy '%s', must be in %s" %
+                    (policy, self.app.POLICIES.by_name.keys()))
         else:
-            content_length = int(req.headers.get('content-length', 0))
-            policy = self._get_auto_policy_from_size(content_length)
+            try:
+                policy_index = int(
+                    req.headers.get('X-Backend-Storage-Policy-Index',
+                                    container_info['storage_policy']))
+            except TypeError:
+                policy_index = 0
+            if policy_index != 0:
+                policy = self.app.POLICIES.get_by_index(policy_index).name
+            else:
+                content_length = int(req.headers.get('content-length', 0))
+                policy = self._get_auto_policy_from_size(content_length)
 
         metadata = self.load_object_metadata(headers)
         # TODO actually support if-none-match

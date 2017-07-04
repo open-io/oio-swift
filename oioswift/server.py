@@ -65,10 +65,13 @@ class Application(SwiftApplication):
                     self.oio_stgpol.append((elem, 0))
             self.oio_stgpol.sort(key=lambda x: x[1])
 
-        policies = [storage_policy.StoragePolicy(0, 'Policy-0', True)]
+        policies = []
         if 'oio_storage_policies' in conf:
             for i, pol in enumerate(conf['oio_storage_policies'].split(',')):
-                policies.append(storage_policy.StoragePolicy(i+1, pol))
+                policies.append(
+                    storage_policy.StoragePolicy(i, pol, is_default=i == 0))
+        else:
+            policies.append(storage_policy.StoragePolicy(0, 'SINGLE', True))
 
         self.POLICIES = storage_policy.StoragePolicyCollection(policies)
 
