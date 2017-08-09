@@ -31,6 +31,8 @@ from swift.proxy.controllers.base import set_info_cache, clear_info_cache
 
 from oio.common import exceptions
 
+from oioswift.utils import handle_service_busy
+
 
 def get_response_headers(info):
     resp_headers = {
@@ -99,6 +101,7 @@ def account_listing_response(account, req, response_content_type,
 
 class AccountController(SwiftAccountController):
     @public
+    @handle_service_busy
     def GET(self, req):
         """Handler for HTTP GET requests."""
         if len(self.account_name) > constraints.MAX_ACCOUNT_NAME_LENGTH:
@@ -163,6 +166,7 @@ class AccountController(SwiftAccountController):
         return resp
 
     @public
+    @handle_service_busy
     def HEAD(self, req):
         """HTTP HEAD request handler."""
         if len(self.account_name) > constraints.MAX_ACCOUNT_NAME_LENGTH:
@@ -199,6 +203,7 @@ class AccountController(SwiftAccountController):
         return resp
 
     @public
+    @handle_service_busy
     def PUT(self, req):
         """HTTP PUT request handler."""
         if not self.app.allow_account_management:
@@ -238,6 +243,7 @@ class AccountController(SwiftAccountController):
         return resp
 
     @public
+    @handle_service_busy
     def POST(self, req):
         """HTTP POST request handler."""
         if len(self.account_name) > constraints.MAX_ACCOUNT_NAME_LENGTH:
@@ -277,6 +283,7 @@ class AccountController(SwiftAccountController):
         return resp
 
     @public
+    @handle_service_busy
     def DELETE(self, req):
         """HTTP DELETE request handler."""
         if req.query_string:

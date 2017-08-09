@@ -34,7 +34,7 @@ from swift.proxy.controllers.base import clear_info_cache, \
 
 from oio.common import exceptions
 
-from oioswift.utils import get_listing_content_type
+from oioswift.utils import get_listing_content_type, handle_service_busy
 
 
 class ContainerController(SwiftContainerController):
@@ -210,6 +210,7 @@ class ContainerController(SwiftContainerController):
     @public
     @delay_denial
     @cors_validation
+    @handle_service_busy
     def GET(self, req):
         """Handler for HTTP GET requests."""
         return self.GETorHEAD(req)
@@ -217,6 +218,7 @@ class ContainerController(SwiftContainerController):
     @public
     @delay_denial
     @cors_validation
+    @handle_service_busy
     def HEAD(self, req):
         """Handler for HTTP HEAD requests."""
         return self.GETorHEAD(req)
@@ -279,6 +281,7 @@ class ContainerController(SwiftContainerController):
 
     @public
     @cors_validation
+    @handle_service_busy
     def PUT(self, req):
         """HTTP PUT request handler."""
         error_response = \
@@ -323,6 +326,7 @@ class ContainerController(SwiftContainerController):
 
     @public
     @cors_validation
+    @handle_service_busy
     def POST(self, req):
         """HTTP POST request handler."""
         error_response = \
@@ -373,6 +377,7 @@ class ContainerController(SwiftContainerController):
 
     @public
     @cors_validation
+    @handle_service_busy
     def DELETE(self, req):
         """HTTP DELETE request handler."""
         account_partition, accounts, container_count = \

@@ -15,6 +15,16 @@
 
 from swift.common.swob import HTTPNotAcceptable
 
+from functools import wraps
+try:
+    from oio.common.exceptions import ServiceBusy as ServiceBusy
+except ImportError:
+    # TODO To delete when `oio` >= 4.1
+    class ServiceBusyMock(Exception):
+        pass
+    ServiceBusy = ServiceBusyMock
+from swift.common.swob import HTTPServiceUnavailable
+
 _format_map = {"xml": 'application/xml', "json": 'application/json',
                "plain": 'text/plain'}
 
@@ -89,3 +99,16 @@ class IterO(object):
             return self.buf[self.pos:new_pos]
         finally:
             self.pos = min(new_pos, len(self.buf))
+
+
+def handle_service_busy(fnc):
+    @wraps(fnc)
+    def _wrapped(self, req):
+        try:
+            return fnc(self, req)
+        except ServiceBusy as e:
+            headers = dict()
+            headers['Retry-After'] = '1'
+            return HTTPServiceUnavailable(request=req, headers=headers,
+                                          body=e.message)
+    return _wrapped

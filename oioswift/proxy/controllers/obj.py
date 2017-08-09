@@ -39,6 +39,8 @@ from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
 from oio.common.green import SourceReadTimeout
 
+from oioswift.utils import handle_service_busy, ServiceBusy
+
 
 class ObjectControllerRouter(object):
     def __getitem__(self, policy):
@@ -82,6 +84,7 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
+    @handle_service_busy
     def HEAD(self, req):
         """Handle HEAD requests."""
         return self.GETorHEAD(req)
@@ -89,6 +92,7 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
+    @handle_service_busy
     def GET(self, req):
         """Handle GET requests."""
         return self.GETorHEAD(req)
@@ -198,6 +202,7 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
+    @handle_service_busy
     def POST(self, req):
         """HTTP POST request handler."""
         container_info = self.container_info(
@@ -239,6 +244,7 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
+    @handle_service_busy
     def PUT(self, req):
         """HTTP PUT request handler."""
         if req.if_none_match is not None and '*' not in req.if_none_match:
@@ -339,6 +345,8 @@ class ObjectController(BaseObjectController):
             self.app.logger.exception(
                 _('ERROR Exception causing client disconnect'))
             raise HTTPClientDisconnect(request=req)
+        except ServiceBusy:
+            raise
         except Exception:
             self.app.logger.exception(
                 _('ERROR Exception transferring data %s'),
@@ -379,6 +387,7 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
+    @handle_service_busy
     def DELETE(self, req):
         """HTTP DELETE request handler."""
         container_info = self.container_info(
