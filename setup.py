@@ -29,8 +29,8 @@ setup(
             'main=oioswift.server:app_factory',
         ],
         'paste.filter_factory': [
-            'autocontainer=oioswift.autocontainer:filter_factory',
-            'hashedcontainer=oioswift.hashedcontainer:filter_factory',
+            'autocontainer=oioswift.common.middleware.autocontainer:filter_factory',
+            'hashedcontainer=oioswift.common.middleware.hashedcontainer:filter_factory',
             'versioned_writes=oioswift.common.middleware.versioned_writes:filter_factory',
         ],
     },
