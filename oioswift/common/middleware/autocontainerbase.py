@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from urlparse import parse_qs
+from six.moves.urllib.parse import parse_qs, quote_plus
 from swift.common.utils import config_true_value, split_path
 from oio.common.autocontainer import ContainerBuilder
 
@@ -24,14 +24,15 @@ class AutoContainerBase(object):
     BYPASS_HEADER = "X-bypass-autocontainer"
 
     def __init__(self, app, acct,
-                 strip_v1=False, account_first=False):
+                 strip_v1=False, account_first=False, swift3_compat=False):
         self.app = app
         self.account = acct
         self.bypass_header_key = ("HTTP_" +
                                   self.BYPASS_HEADER.upper().replace('-', '_'))
         self.con_builder = ContainerBuilder()
-        self.strip_v1 = strip_v1
         self.account_first = account_first
+        self.swift3_compat = swift3_compat
+        self.strip_v1 = strip_v1
 
     def should_bypass(self, env):
         """Should we bypass this filter?"""
@@ -49,15 +50,23 @@ class AutoContainerBase(object):
         obj = path[1:]
 
         if self.strip_v1:
-            version, tail = split_path(path, 1, 2, True)
+            version, tail = split_path('/' + obj, 1, 2, True)
             if version == 'v1':
                 obj = tail
 
         if self.account_first:
-            account, tail = split_path(path, 1, 2, True)
+            account, tail = split_path('/' + obj, 1, 2, True)
             obj = tail
 
-        container = self.con_builder(obj)
+        if obj is not None and self.swift3_compat:
+            container, tail = split_path('/' + obj, 1, 2, True)
+            obj = tail
+
+        if obj is None:
+            # This is probably an account request
+            return self.app(env, start_response)
+
+        container = quote_plus(self.con_builder(obj))
         path = "/v1/%s/%s/%s" % (account, container, obj)
         env['PATH_INFO'] = path
         return self.app(env, start_response)
