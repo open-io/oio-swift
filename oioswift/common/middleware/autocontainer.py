@@ -13,45 +13,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from urlparse import parse_qs
-from swift.common.utils import split_path
 from oio.common.autocontainer import AutocontainerBuilder
 
 
-class AutocontainerMiddleware(object):
+class AutoContainerMiddleware(object):
 
     BYPASS_QS = "bypass-autocontainer"
     BYPASS_HEADER = "X-bypass-autocontainer"
     TRUE_VALUES = ["true", "yes", "1"]
 
-    def __init__(self, app, default_account=None, *_args, **kwargs):
-        self.app = app
-        self.default_account = default_account
+    def __init__(self, app, default_account=None,
+                 strip_v1=False, account_first=False, **kwargs):
+        super(AutoContainerMiddleware, self).__init__(
+            app, acct=default_account,
+            strip_v1=strip_v1, account_first=account_first)
         self.con_builder = AutocontainerBuilder(**kwargs)
-        self.bypass_header_key = ("HTTP_" +
-                                  self.BYPASS_HEADER.upper().replace('-', '_'))
-
-    def should_bypass(self, env):
-        """Should we bypass this filter?"""
-        header = env.get(self.bypass_header_key, "").lower()
-        query = parse_qs(env.get('QUERY_STRING', "")).get(self.BYPASS_QS, [""])
-        return header in self.TRUE_VALUES or query[0] in self.TRUE_VALUES
-
-    def __call__(self, env, start_response):
-        if self.should_bypass(env):
-            return self.app(env, start_response)
-
-        if self.default_account:
-            # Remove leading '/' to be consistent with split_path()
-            obj = env.get('PATH_INFO')[1:]
-            acc = self.default_account
-        else:
-            acc, obj = split_path(env.get('PATH_INFO'), 1, 2, True)
-
-        con = self.con_builder(obj)
-        path = "/v1/%s/%s/%s" % (acc, con, obj)
-        env['PATH_INFO'] = path
-        return self.app(env, start_response)
 
 
 def filter_factory(global_config, **local_config):
@@ -73,7 +49,7 @@ def filter_factory(global_config, **local_config):
     con_format = local_config.get('format', "%016X")
 
     def factory(app):
-        return AutocontainerMiddleware(app, default_account=default_account,
+        return AutoContainerMiddleware(app, default_account=default_account,
                                        offset=offset, size=size, mask=mask,
                                        base=base, con_format=con_format)
     return factory
