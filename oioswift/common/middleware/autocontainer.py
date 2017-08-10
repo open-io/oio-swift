@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from oioswift.common.middleware.autocontainerbase import AutoContainerBase
 from oio.common.autocontainer import AutocontainerBuilder
 
 
-class AutoContainerMiddleware(object):
+class AutoContainerMiddleware(AutoContainerBase):
 
     BYPASS_QS = "bypass-autocontainer"
     BYPASS_HEADER = "X-bypass-autocontainer"

@@ -31,8 +31,9 @@ setup(
         'paste.filter_factory': [
             'autocontainer=oioswift.common.middleware.autocontainer:filter_factory',
             'hashedcontainer=oioswift.common.middleware.hashedcontainer:filter_factory',
+            'regexcontainer=oioswift.common.middleware.regexcontainer:filter_factory',
             'versioned_writes=oioswift.common.middleware.versioned_writes:filter_factory',
         ],
     },
-    install_requires=['swift>=2.10.0', 'oio>=3.3.0']
+    install_requires=['swift>=2.13.0', 'oio>=4.1.0.a0']
 )

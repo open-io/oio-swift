@@ -14,13 +14,14 @@
 # limitations under the License.
 
 from swift.common.utils import config_true_value
+from oioswift.common.middleware.autocontainerbase import AutoContainerBase
 from oio.common.exceptions import ConfigurationException
 # TODO(jfs): currently in oio.cli, need to adapt as sson as it has been
 #            factorized
 from oio.cli.clientmanager import ClientManager
 
 
-class HashedContainerMiddleware(object):
+class HashedContainerMiddleware(AutoContainerBase):
 
     BYPASS_QS = "bypass-autocontainer"
     BYPASS_HEADER = "X-bypass-autocontainer"
