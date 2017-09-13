@@ -14,6 +14,7 @@
 # limitations under the License.
 
 from six.moves.urllib.parse import parse_qs, quote_plus
+from swift.common.swob import HTTPBadRequest
 from swift.common.utils import config_true_value, split_path
 from oio.common.autocontainer import ContainerBuilder
 
@@ -40,18 +41,15 @@ class AutoContainerBase(object):
         query = parse_qs(env.get('QUERY_STRING', "")).get(self.BYPASS_QS, [""])
         return config_true_value(header) or config_true_value(query[0])
 
-    def __call__(self, env, start_response):
-        if self.should_bypass(env):
-            return self.app(env, start_response)
-
-        path = env.get('PATH_INFO')
+    def _convert_path(self, path):
         account = self.account
         # Remove leading '/' to be consistent with split_path()
         obj = path[1:]
+        container = None
 
         if self.strip_v1:
             version, tail = split_path('/' + obj, 1, 2, True)
-            if version == 'v1':
+            if version in ('v1', 'v1.0'):
                 obj = tail
 
         if self.account_first:
@@ -63,10 +61,34 @@ class AutoContainerBase(object):
             obj = tail
 
         if obj is None:
+            return account, container, None
+
+        container = quote_plus(self.con_builder(obj))
+        return account, container, obj
+
+    def _convert_special_headers(self, account, env):
+        if 'HTTP_X_COPY_FROM' in env:
+            # HTTP_X_COPY_FROM_ACCOUNT will just pass through
+            if self.account_first:
+                src_path = "/fake_account" + env['HTTP_X_COPY_FROM']
+            else:
+                src_path = env['HTTP_X_COPY_FROM']
+            _, cont, obj = self._convert_path(src_path)
+            if not cont or not obj:
+                raise HTTPBadRequest(body="Malformed copy-source header")
+            env['HTTP_X_COPY_FROM'] = "/%s/%s" % (cont, obj)
+
+    def __call__(self, env, start_response):
+        if self.should_bypass(env):
+            return self.app(env, start_response)
+
+        account, container, obj = self._convert_path(env.get('PATH_INFO'))
+
+        if obj is None:
             # This is probably an account request
             return self.app(env, start_response)
 
-        container = quote_plus(self.con_builder(obj))
-        path = "/v1/%s/%s/%s" % (account, container, obj)
-        env['PATH_INFO'] = path
+        env['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container, obj)
+
+        self._convert_special_headers(account, env)
         return self.app(env, start_response)
