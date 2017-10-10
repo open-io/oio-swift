@@ -16,9 +16,6 @@
 from swift.common.utils import config_true_value
 from oioswift.common.middleware.autocontainerbase import AutoContainerBase
 from oio.common.exceptions import ConfigurationException
-# TODO(jfs): currently in oio.cli, need to adapt as sson as it has been
-#            factorized
-from oio.cli.clientmanager import ClientManager
 
 
 class HashedContainerMiddleware(AutoContainerBase):
@@ -27,15 +24,21 @@ class HashedContainerMiddleware(AutoContainerBase):
     BYPASS_HEADER = "X-bypass-autocontainer"
     TRUE_VALUES = ["true", "yes", "1"]
 
-    def __init__(self, app, ns, acct, proxy,
+    def __init__(self, app, ns, acct, proxy=None,
                  strip_v1=False, account_first=False):
         super(HashedContainerMiddleware, self).__init__(
             app, acct, strip_v1=strip_v1, account_first=account_first)
-        climgr = ClientManager({
-            "namespace": ns,
-            "proxyd_url": proxy,
-        })
-        self.con_builder = climgr.get_flatns_manager()
+        conf = {"namespace": ns, "proxyd_url": proxy}
+        try:
+            # New API (openio-sds >= 4.2)
+            from oio.cli.common.clientmanager import ClientManager
+            climgr = ClientManager(conf)
+            self.con_builder = climgr.flatns_manager
+        except ImportError:
+            # Old API
+            from oio.cli.clientmanager import ClientManager
+            climgr = ClientManager(conf)
+            self.con_builder = climgr.get_flatns_manager()
 
 
 def filter_factory(global_conf, **local_config):
