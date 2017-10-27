@@ -43,6 +43,8 @@ def filter_factory(global_conf, **local_config):
     account_first = config_true_value(local_config.get('account_first'))
     swift3_compat = config_true_value(local_config.get('swift3_compat'))
     strip_v1 = config_true_value(local_config.get('strip_v1'))
+    stop_at_first_match = config_true_value(
+        local_config.get('stop_at_first_match'))
     pattern_dict = {k: v for k, v in local_config.items()
                     if k.startswith("pattern")}
 
@@ -53,5 +55,6 @@ def filter_factory(global_conf, **local_config):
         return RegexContainerMiddleware(
             app, acct, patterns,
             strip_v1=strip_v1, account_first=account_first,
-            swift3_compat=swift3_compat)
+            swift3_compat=swift3_compat,
+            stop_at_first_match=stop_at_first_match)
     return factory
