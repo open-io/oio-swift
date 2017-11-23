@@ -241,6 +241,50 @@ class TestObjectController(unittest.TestCase):
             resp = req.get_response(self.app)
             self.assertEqual(resp.status_int, 499)
 
+    def test_PUT_truncated_input_empty(self):
+        class FakeReader(object):
+            def read(self, size):
+                return ''
+
+        req = Request.blank('/v1/a/c/o.jpg', method='PUT',
+                            body='test body')
+        req.environ['wsgi.input'] = FakeReader()
+        req.headers['content-length'] = '6'
+        chunks = [{"url": "http://127.0.0.1:7000/AAAA", "pos": "0", "size": 6}]
+        meta = fake_prepare_meta()
+        self.storage.container.content_prepare = Mock(
+            return_value=(meta, chunks))
+        with patch('oio.api.replication.io.http_connect',
+                   new=fake_http_connect):
+            resp = req.get_response(self.app)
+            self.assertEqual(resp.status_int, 499)
+
+    def test_PUT_truncated_input_almost(self):
+        class FakeReader(object):
+            MAX_COUNT = 5
+
+            def __init__(self):
+                self.count = 0
+
+            def read(self, size):
+                if self.count == self.MAX_COUNT:
+                    return ''
+                self.count += min(size, self.MAX_COUNT)
+                return 'a'*min(size, self.MAX_COUNT)
+
+        req = Request.blank('/v1/a/c/o.jpg', method='PUT',
+                            body='test body')
+        req.environ['wsgi.input'] = FakeReader()
+        req.headers['content-length'] = '6'
+        chunks = [{"url": "http://127.0.0.1:7000/AAAA", "pos": "0", "size": 6}]
+        meta = fake_prepare_meta()
+        self.storage.container.content_prepare = Mock(
+            return_value=(meta, chunks))
+        with patch('oio.api.replication.io.http_connect',
+                   new=fake_http_connect):
+            resp = req.get_response(self.app)
+            self.assertEqual(resp.status_int, 499)
+
     def test_exception_during_transfer_data(self):
         class FakeReader(object):
             def read(self, size):
