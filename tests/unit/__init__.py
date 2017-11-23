@@ -44,7 +44,7 @@ class FakeMemcache(object):
 class FakeStorageAPI(ObjectStorageApi):
     def __init__(self, *args, **kwargs):
         self.account = Mock(AccountClient)
-        self.container = Mock(ContainerClient)
+        self.container = Mock(ContainerClient, perfdata=None)
         self.__dict__.update(kwargs)
 
 

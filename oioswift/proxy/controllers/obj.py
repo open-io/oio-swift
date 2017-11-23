@@ -124,10 +124,12 @@ class ObjectController(BaseObjectController):
 
     def get_object_head_resp(self, req):
         storage = self.app.storage
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
             metadata = storage.object_show(
                 self.account_name, self.container_name, self.object_name,
-                version=req.environ.get('oio_query', {}).get('version'))
+                version=req.environ.get('oio_query', {}).get('version'),
+                headers=oio_headers)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
 
@@ -140,10 +142,11 @@ class ObjectController(BaseObjectController):
             ranges = ranges_from_http_header(req.headers.get('Range'))
         else:
             ranges = None
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
             metadata, stream = storage.object_fetch(
                 self.account_name, self.container_name, self.object_name,
-                ranges=ranges,
+                ranges=ranges, headers=oio_headers,
                 version=req.environ.get('oio_query', {}).get('version'))
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
@@ -229,13 +232,11 @@ class ObjectController(BaseObjectController):
     def _post_object(self, req, headers, stgpol):
         # TODO do something with stgpol
         metadata = self.load_object_metadata(headers)
-
-        storage = self.app.storage
-
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
-            storage.object_set_properties(
+            self.app.storage.object_set_properties(
                 self.account_name, self.container_name, self.object_name,
-                metadata, clear=True)
+                metadata, clear=True, headers=oio_headers)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
         resp = HTTPAccepted(request=req)
@@ -320,11 +321,12 @@ class ObjectController(BaseObjectController):
 
         metadata = self.load_object_metadata(headers)
         # TODO actually support if-none-match
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
             chunks, size, checksum = storage.object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
-                mime_type=content_type, policy=policy,
+                mime_type=content_type, policy=policy, headers=oio_headers,
                 etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
@@ -408,11 +410,12 @@ class ObjectController(BaseObjectController):
 
     def _delete_object(self, req):
         storage = self.app.storage
-
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
             storage.object_delete(
                 self.account_name, self.container_name, self.object_name,
-                version=req.environ.get('oio_query', {}).get('version'))
+                version=req.environ.get('oio_query', {}).get('version'),
+                headers=oio_headers)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         except exceptions.NoSuchObject:

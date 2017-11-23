@@ -138,25 +138,27 @@ class AccountController(SwiftAccountController):
         marker = get_param(req, 'marker')
         end_marker = get_param(req, 'end_marker')
 
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
             info = None
             if hasattr(self.app.storage, 'account'):
                 # Call directly AccountClient.container_list()
+                # because storage.container_list() does not return
+                # account metadata
                 info = self.app.storage.account.container_list(
                     self.account_name, limit=limit, marker=marker,
                     end_marker=end_marker, prefix=prefix,
-                    delimiter=delimiter)
+                    delimiter=delimiter, headers=oio_headers)
                 listing = info.pop('listing')
             else:
                 # Legacy call to account service
                 listing, info = self.app.storage.container_list(
                     self.account_name, limit=limit, marker=marker,
                     end_marker=end_marker, prefix=prefix,
-                    delimiter=delimiter)
-            resp = account_listing_response(self.account_name, req,
-                                            get_listing_content_type(req),
-                                            info=info,
-                                            listing=listing)
+                    delimiter=delimiter, headers=oio_headers)
+            resp = account_listing_response(
+                self.account_name, req, get_listing_content_type(req),
+                info=info, listing=listing)
         except (exceptions.NotFound, exceptions.NoSuchAccount):
             if self.app.account_autocreate:
                 resp = account_listing_response(self.account_name, req,
@@ -188,8 +190,10 @@ class AccountController(SwiftAccountController):
         return resp
 
     def get_account_head_resp(self, req):
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
-            info = self.app.storage.account_show(self.account_name)
+            info = self.app.storage.account_show(
+                self.account_name, headers=oio_headers)
             resp = account_listing_response(self.account_name, req,
                                             get_listing_content_type(req),
                                             info=info)
@@ -227,14 +231,17 @@ class AccountController(SwiftAccountController):
         return resp
 
     def get_account_put_resp(self, req, headers):
-        created = self.app.storage.account_create(self.account_name)
+        oio_headers = {'X-oio-req-id': self.trans_id}
+        created = self.app.storage.account_create(
+            self.account_name, headers=oio_headers)
         metadata = {}
         metadata.update((key, value)
                         for key, value in req.headers.items()
                         if is_sys_or_user_meta('account', key))
 
         if metadata:
-            self.app.storage.account_update(self.account_name, metadata)
+            self.app.storage.account_set_properties(
+                self.account_name, metadata, headers=oio_headers)
 
         if created:
             resp = HTTPCreated(request=req)
@@ -267,15 +274,17 @@ class AccountController(SwiftAccountController):
         metadata.update((key, value)
                         for key, value in req.headers.items()
                         if is_sys_or_user_meta('account', key))
+        headers['X-oio-req-id'] = self.trans_id
         try:
-            self.app.storage.account_update(self.account_name, metadata)
+            self.app.storage.account_set_properties(
+                self.account_name, metadata, headers=headers)
             return HTTPNoContent(request=req)
         except (exceptions.NotFound, exceptions.NoSuchAccount):
             if self.app.account_autocreate:
                 self.autocreate_account(req, self.account_name)
                 if metadata:
-                    self.app.storage.account_update(
-                            self.account_name, metadata, headers=headers)
+                    self.app.storage.account_set_properties(
+                        self.account_name, metadata, headers=headers)
                 resp = HTTPNoContent(request=req)
             else:
                 resp = HTTPNotFound(request=req)

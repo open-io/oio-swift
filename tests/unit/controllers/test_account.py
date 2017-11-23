@@ -99,9 +99,9 @@ class TestAccountController(unittest.TestCase):
                    'x-timestamp': '1.0'}
         req = Request.blank('/v1/a', headers=hdrs_in, method='PUT')
         self.storage.account_create = Mock()
-        self.storage.account_update = Mock()
+        self.storage.account_set_properties = Mock()
         req.get_response(self.app)
-        meta = self.storage.account_update.call_args[0][1]
+        meta = self.storage.account_set_properties.call_args[0][1]
         self.assertEqual(meta[sys_meta_key], 'foo')
         self.assertEqual(meta[user_meta_key], 'bar')
 
@@ -115,9 +115,9 @@ class TestAccountController(unittest.TestCase):
                    user_meta_key: 'bar',
                    'x-timestamp': '1.0'}
         req = Request.blank('/v1/a', headers=hdrs_in, method='POST')
-        self.storage.account_update = Mock()
+        self.storage.account_set_properties = Mock()
         req.get_response(self.app)
-        meta = self.storage.account_update.call_args[0][1]
+        meta = self.storage.account_set_properties.call_args[0][1]
         self.assertEqual(meta[sys_meta_key], 'foo')
         self.assertEqual(meta[user_meta_key], 'bar')
 
