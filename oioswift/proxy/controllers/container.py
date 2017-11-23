@@ -107,8 +107,6 @@ class ContainerController(SwiftContainerController):
         return headers
 
     def get_container_list_resp(self, req):
-        storage = self.app.storage
-
         path = get_param(req, 'path')
         prefix = get_param(req, 'prefix')
         delimiter = get_param(req, 'delimiter')
@@ -134,13 +132,15 @@ class ContainerController(SwiftContainerController):
                 prefix = path.rstrip('/') + '/'
             delimiter = '/'
         opts = req.environ.get('oio_query', {})
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
-            result = storage.object_list(
+            result = self.app.storage.object_list(
                 self.account_name, self.container_name, prefix=prefix,
                 limit=limit, delimiter=delimiter, marker=marker,
                 end_marker=end_marker, properties=True,
                 versions=opts.get('versions', False),
-                deleted=opts.get('deleted', False))
+                deleted=opts.get('deleted', False),
+                headers=oio_headers)
 
             resp_headers = self.get_metadata_resp_headers(result)
             resp = self.create_listing(
@@ -227,10 +227,10 @@ class ContainerController(SwiftContainerController):
         headers = dict()
         out_content_type = get_listing_content_type(req)
         headers['Content-Type'] = out_content_type
-        storage = self.app.storage
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
-            meta = storage.container_get_properties(self.account_name,
-                                                    self.container_name)
+            meta = self.app.storage.container_get_properties(
+                self.account_name, self.container_name, headers=oio_headers)
             headers.update(self.get_metadata_resp_headers(meta))
             resp = HTTPNoContent(request=req, headers=headers, charset='utf-8')
         except exceptions.NoSuchContainer:
@@ -270,10 +270,11 @@ class ContainerController(SwiftContainerController):
     def get_container_create_resp(self, req, headers):
         properties, system = self.properties_from_headers(headers)
         # TODO container update metadata
-        storage = self.app.storage
-        created = storage.container_create(
+        oio_headers = {'X-oio-req-id': self.trans_id}
+        created = self.app.storage.container_create(
             self.account_name, self.container_name,
-            properties=properties, system=system)
+            properties=properties, system=system,
+            headers=oio_headers)
         if created:
             return HTTPCreated(request=req)
         else:
@@ -349,25 +350,26 @@ class ContainerController(SwiftContainerController):
         return resp
 
     def get_container_post_resp(self, req, headers):
-        storage = self.app.storage
-
         properties, system = self.properties_from_headers(headers)
         if not properties:
             return self.PUT(req)
 
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
-            storage.container_set_properties(
+            self.app.storage.container_set_properties(
                 self.account_name, self.container_name,
-                properties=properties, system=system)
+                properties=properties, system=system,
+                headers=oio_headers)
             resp = HTTPNoContent(request=req)
         except exceptions.NoSuchContainer:
             resp = self.PUT(req)
         return resp
 
     def get_container_delete_resp(self, req, headers):
-        storage = self.app.storage
+        oio_headers = {'X-oio-req-id': self.trans_id}
         try:
-            storage.container_delete(self.account_name, self.container_name)
+            self.app.storage.container_delete(
+                self.account_name, self.container_name, headers=oio_headers)
         except exceptions.ContainerNotEmpty:
             return HTTPConflict(request=req)
         except exceptions.NoSuchContainer:

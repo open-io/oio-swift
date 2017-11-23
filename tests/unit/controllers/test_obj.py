@@ -3,7 +3,7 @@
 
 import unittest
 from mock import MagicMock as Mock
-from mock import patch
+from mock import patch, ANY
 
 from eventlet import Timeout
 
@@ -105,7 +105,7 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_delete = Mock()
         resp = req.get_response(self.app)
         self.storage.object_delete.assert_called_once_with(
-            'a', 'c', 'o', version=None)
+            'a', 'c', 'o', version=None, headers=ANY)
         self.assertEqual(resp.status_int, 204)
 
     def test_DELETE_not_found(self):
@@ -113,7 +113,7 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_delete = Mock(side_effect=exc.NoSuchObject)
         resp = req.get_response(self.app)
         self.storage.object_delete.assert_called_once_with(
-            'a', 'c', 'o', version=None)
+            'a', 'c', 'o', version=None, headers=ANY)
         self.assertEqual(resp.status_int, 204)
 
     def test_HEAD_simple(self):
@@ -128,7 +128,7 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_show = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
         self.storage.object_show.assert_called_once_with(
-            'a', 'c', 'o', version=None)
+            'a', 'c', 'o', version=None, headers=ANY)
         self.assertEqual(resp.status_int, 200)
         self.assertIn('Accept-Ranges', resp.headers)
 
@@ -141,7 +141,8 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_create.assert_called_once_with(
                 'a', 'c', obj_name='o', etag='',
                 metadata={}, mime_type='application/octet-stream',
-                file_or_path=req.environ['wsgi.input'], policy=None)
+                file_or_path=req.environ['wsgi.input'], policy=None,
+                headers=ANY)
         self.assertEqual(resp.status_int, 201)
 
     def test_PUT_requires_length(self):
