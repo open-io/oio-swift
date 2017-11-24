@@ -38,6 +38,7 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
 from oio.common.green import SourceReadTimeout
+from oio.common.exceptions import SourceReadError
 
 from oioswift.utils import handle_service_busy, ServiceBusy
 
@@ -74,6 +75,33 @@ class StreamRangeIterator(object):
 
     def __iter__(self):
         return self.stream
+
+
+class ExpectedSizeReader(object):
+    """Only accept as a valid EOF an exact number of bytes received."""
+
+    def __init__(self, source, expected):
+        self.source = source
+        self.expected = expected
+        self.consumed = 0
+
+    def read(self, *args, **kwargs):
+        rc = self.source.read(*args, **kwargs)
+        if len(rc) == 0:
+            if self.consumed != self.expected:
+                raise SourceReadError("Truncated input")
+        else:
+            self.consumed = self.consumed + len(rc)
+        return rc
+
+    def readline(self, *args, **kwargs):
+        rc = self.source.readline(*args, **kwargs)
+        if len(rc) == 0:
+            if self.consumed != self.expected:
+                raise SourceReadError("Truncated input")
+        else:
+            self.consumed = self.consumed + len(rc)
+        return rc
 
 
 class ObjectController(BaseObjectController):
@@ -275,6 +303,8 @@ class ObjectController(BaseObjectController):
         self._update_x_timestamp(req)
 
         data_source = req.environ['wsgi.input']
+        if req.content_length:
+            data_source = ExpectedSizeReader(data_source, req.content_length)
 
         headers = self._prepare_headers(req)
         resp = self._store_object(req, data_source, headers)
