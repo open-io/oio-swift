@@ -5,4 +5,4 @@
 [submodule "third_party/oio-sds"]
 	path = third_party/oio-sds
 	url = https://github.com/open-io/oio-sds.git
-	branch = master
+	branch = 4.x
