@@ -1,7 +1,7 @@
 [submodule "third_party/swift"]
 	path = third_party/swift
 	url = https://github.com/openstack/swift.git
-	branch = stable/ocata
+	branch = stable/pike
 [submodule "third_party/oio-sds"]
 	path = third_party/oio-sds
 	url = https://github.com/open-io/oio-sds.git
