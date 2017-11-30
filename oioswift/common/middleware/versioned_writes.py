@@ -18,7 +18,7 @@ from six.moves.urllib.parse import parse_qs, quote, unquote, urlencode
 from swift.common.middleware import versioned_writes as vw
 from swift.common.swob import Request, HTTPException
 from swift.common.utils import config_true_value, json, \
-    register_swift_info, split_path
+    register_swift_info, split_path, closing_if_possible, close_if_possible
 from swift.proxy.controllers.base import get_container_info, get_object_info
 
 
@@ -79,7 +79,8 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
 
         if orig_container != container_name and \
                 self._response_status == '200 OK':
-            versioned_objects = json.loads("".join(resp))
+            with closing_if_possible(resp):
+                versioned_objects = json.loads("".join(resp))
             for obj in versioned_objects:
                 obj['name'] = swift3_versioned_object_name(
                     obj['name'], obj.get('version', ''))
@@ -129,7 +130,10 @@ class OioVersionedWritesMiddleware(vw.VersionedWritesMiddleware):
                 req.environ['oio_query'] = {
                     'version': obj_inf.get('sysmeta', {}).get('version-id')
                 }
-        return req.get_response(self.app)
+        resp = req.get_response(self.app)
+        if req.method == 'HEAD':
+            close_if_possible(resp.app_iter)
+        return resp
 
     def __call__(self, env, start_response):
         req = Request(env)
