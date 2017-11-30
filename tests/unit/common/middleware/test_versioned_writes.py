@@ -38,6 +38,41 @@ class OioVersionedWritesTestCase(VersionedWritesTestCase):
         self.assertEqual([None], self.app.swift_sources)
         self.assertEqual({'fake_trans_id'}, set(self.app.txn_ids))
 
+    def test_put_request_is_dlo_manifest_with_container_config_true(self):
+        # oio-swift's versioned_writes does not use a version container,
+        # but relies on oio-sds versioning features. It does not do a GET
+        # request since this will be checked internally by oio-sds.
+        self.app.register(
+            'PUT', '/v1/a/c/o', swob.HTTPCreated, {}, 'passed')
+        self.app.register(
+            'GET', '/v1/a/c/o', swob.HTTPOk,
+            {'last-modified': 'Thu, 1 Jan 1970 00:01:00 GMT'}, 'old version')
+        # self.app.register(
+        #     'PUT', '/v1/a/ver_cont/001o/0000000060.00000', swob.HTTPCreated,
+        #     {}, '')
+        cache = FakeCache({'versions': 'ver_cont'})
+        req = Request.blank(
+            '/v1/a/c/o',
+            headers={'X-Object-Manifest': 'req/manifest'},
+            environ={'REQUEST_METHOD': 'PUT', 'swift.cache': cache,
+                     'CONTENT_LENGTH': '100'})
+        status, headers, body = self.call_vw(req)
+        self.assertEqual(status, '201 Created')
+        # self.assertEqual(len(self.authorized), 2)
+        self.assertEqual(len(self.authorized), 1)
+        self.assertRequestEqual(req, self.authorized[0])
+        # self.assertRequestEqual(req, self.authorized[1])
+        # self.assertEqual(3, self.app.call_count)
+        self.assertEqual(1, self.app.call_count)
+        self.assertEqual([
+            # ('GET', '/v1/a/c/o'),
+            # ('PUT', '/v1/a/ver_cont/001o/0000000060.00000'),
+            ('PUT', '/v1/a/c/o'),
+        ], self.app.calls)
+        self.assertIn('x-object-manifest',
+                      # self.app.calls_with_headers[2].headers)
+                      self.app.calls_with_headers[0].headers)
+
     def test_put_version_is_dlo_manifest_with_container_config_true(self):
         self.skipTest("Disabled for oio-swift")
 
