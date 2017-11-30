@@ -51,38 +51,44 @@ def get_response_headers(info):
 
 def account_listing_response(account, req, response_content_type,
                              info=None, listing=None):
+    now = time.time()
     if info is None:
-        now = Timestamp(time.time()).internal
         info = {'containers': 0,
                 'objects': 0,
                 'bytes': 0,
                 'metadata': {},
-                'ctime': now}
+                'ctime': Timestamp(now).internal}
     if listing is None:
         listing = []
+    elif listing and len(listing[0]) < 5:
+        # oio-sds < 4.2 does not return mtime
+        listing = [x + [now] for x in listing]
 
     resp_headers = get_response_headers(info)
 
     if response_content_type == 'application/json':
         data = []
-        for (name, object_count, bytes_used, is_subdir) in listing:
+        for (name, object_count, bytes_used, is_subdir, mtime) in listing:
             if is_subdir:
                 data.append({'subdir': name})
             else:
                 data.append({'name': name, 'count': object_count,
-                             'bytes': bytes_used})
+                             'bytes': bytes_used,
+                             'last_modified': Timestamp(mtime).isoformat})
         account_list = json.dumps(data)
     elif response_content_type.endswith('/xml'):
         output_list = ['<?xml version="1.0" encoding="UTF-8"?>',
                        '<account name=%s>' % saxutils.quoteattr(account)]
-        for (name, object_count, bytes_used, is_subdir) in listing:
+        for (name, object_count, bytes_used, is_subdir, mtime) in listing:
             if is_subdir:
                 output_list.append(
                     '<subdir name=%s />' % saxutils.quoteattr(name))
             else:
                 item = '<container><name>%s</name><count>%s</count>' \
-                       '<bytes>%s</bytes></container>' % \
-                       (saxutils.escape(name), object_count, bytes_used)
+                       '<bytes>%s</bytes><last_modified>%s</last_modified>' \
+                       '</container>' % \
+                       (saxutils.escape(name), object_count, bytes_used,
+                        Timestamp(mtime).isoformat)
                 output_list.append(item)
         output_list.append('</account>')
         account_list = '\n'.join(output_list)
