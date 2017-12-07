@@ -45,7 +45,7 @@ class FakePutResponse(object):
 
 def fake_http_connect(*args, **kwargs):
     conn = Mock(CustomHttpConnection)
-    conn.getresponse = Mock(return_value=FakePutResponse())
+    conn.getresponse = Mock(return_value=FakePutResponse(**kwargs))
     return conn
 
 
@@ -284,6 +284,14 @@ class TestObjectController(unittest.TestCase):
                    new=fake_http_connect):
             resp = req.get_response(self.app)
             self.assertEqual(resp.status_int, 499)
+
+    def test_PUT_conflict(self):
+        req = Request.blank('/v1/a/c/o.jpg', method='PUT',
+                            body='test body')
+        # FIXME: we should be able to create the exception without code
+        self.storage.object_create = Mock(side_effect=exc.Conflict(409))
+        resp = req.get_response(self.app)
+        self.assertEqual(resp.status_int, 409)
 
     def test_exception_during_transfer_data(self):
         class FakeReader(object):

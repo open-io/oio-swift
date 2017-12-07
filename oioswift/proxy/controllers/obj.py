@@ -24,7 +24,7 @@ from swift.common.utils import (
 from swift.common.constraints import check_metadata, check_object_creation
 from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
-    HTTPPreconditionFailed, HTTPRequestTimeout, \
+    HTTPConflict, HTTPPreconditionFailed, HTTPRequestTimeout, \
     HTTPUnprocessableEntity, HTTPClientDisconnect, HTTPCreated, \
     HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator
 from swift.common.request_helpers import is_sys_or_user_meta
@@ -353,11 +353,13 @@ class ObjectController(BaseObjectController):
         # TODO actually support if-none-match
         oio_headers = {'X-oio-req-id': self.trans_id}
         try:
-            chunks, size, checksum = storage.object_create(
+            _chunks, _size, checksum = storage.object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
                 mime_type=content_type, policy=policy, headers=oio_headers,
                 etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
+        except exceptions.Conflict:
+            raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
         except SourceReadTimeout as err:
