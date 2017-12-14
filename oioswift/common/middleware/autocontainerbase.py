@@ -38,7 +38,7 @@ class AutoContainerBase(object):
         self.strip_v1 = strip_v1
         if (not stop_at_first_match and
                 not hasattr(self.con_builder, 'alternatives')):
-            raise ValueError("Setting 'stop_at_first_match' parameter "
+            raise ValueError("Disabling 'stop_at_first_match' parameter "
                              "is not supported with openio-sds < 4.2")
         self.stop_at_first_match = stop_at_first_match
 
@@ -115,7 +115,12 @@ class AutoContainerBase(object):
                 return self.app(orig_env, start_response)
             env = env_modifier(orig_env, alt)
             resp = self.app(env, partial(self._save_response, local_env))
+            if 'last_status' not in local_env:
+                # start_response() was not called. This happens when there is
+                # no 'proxy-logging' just after 'catch_errors' in the pipeline.
+                return resp
             if not local_env['last_status'].startswith('404'):
+                # start_response() was called, and status is not 404.
                 start_response(local_env['last_status'],
                                local_env['last_headers'],
                                local_env['last_exc_info'])
