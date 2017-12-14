@@ -43,8 +43,9 @@ def filter_factory(global_conf, **local_config):
     account_first = config_true_value(local_config.get('account_first'))
     swift3_compat = config_true_value(local_config.get('swift3_compat'))
     strip_v1 = config_true_value(local_config.get('strip_v1'))
+    # By default this is enabled, to be compatible with openio-sds < 4.2.
     stop_at_first_match = config_true_value(
-        local_config.get('stop_at_first_match'))
+        local_config.get('stop_at_first_match', True))
     pattern_dict = {k: v for k, v in local_config.items()
                     if k.startswith("pattern")}
 
