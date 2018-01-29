@@ -24,7 +24,7 @@ def get_fake_info(meta={}):
 class TestAccountController(unittest.TestCase):
     def setUp(self):
         self.logger = debug_logger('proxy-server')
-        self.storage = FakeStorageAPI()
+        self.storage = FakeStorageAPI(logger=self.logger)
 
         self.app = proxy_server.Application(
             {'sds_namespace': "TEST"}, FakeMemcache(),

@@ -15,7 +15,7 @@ class TestContainerController(unittest.TestCase):
     def setUp(self):
 
         self.logger = debug_logger('proxy-server')
-        self.storage = FakeStorageAPI()
+        self.storage = FakeStorageAPI(logger=self.logger)
         self.storage.account.account_show = Mock(return_value={
             'containers': 0,
             'objects': 0,

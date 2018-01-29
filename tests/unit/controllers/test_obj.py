@@ -82,7 +82,7 @@ class TestObjectController(unittest.TestCase):
 
         self.logger = debug_logger('proxy-server')
         self.storage = FakeStorageAPI(
-            namespace='NS', timeouts={})
+            namespace='NS', timeouts={}, logger=self.logger)
 
         self.app = PatchedObjControllerApp(
             {'sds_namespace': "NS"}, FakeMemcache(), account_ring=FakeRing(),

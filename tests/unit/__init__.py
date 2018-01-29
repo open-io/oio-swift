@@ -9,6 +9,7 @@ from swift.common.utils import NOTICE
 from oio.api.object_storage import ObjectStorageApi
 from oio.account.client import AccountClient
 from oio.container.client import ContainerClient
+from oio.blob.client import BlobClient
 
 
 class FakeMemcache(object):
@@ -46,6 +47,7 @@ class FakeStorageAPI(ObjectStorageApi):
         self.account = Mock(AccountClient)
         self.container = Mock(ContainerClient, perfdata=None)
         self.__dict__.update(kwargs)
+        self._blob_client = Mock(BlobClient)
 
 
 class DebugLogAdapter(utils.LogAdapter):
