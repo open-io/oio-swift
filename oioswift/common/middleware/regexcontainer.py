@@ -1,4 +1,4 @@
-# Copyright (C) 2017 OpenIO SAS
+# Copyright (C) 2017-2018 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,11 @@ from swift.common.utils import config_true_value, get_logger
 from oioswift.common.middleware.autocontainerbase import AutoContainerBase
 from oio.common.autocontainer import RegexContainerBuilder
 from oio.common.exceptions import ConfigurationException
+try:
+    # Available since oio-sds 4.2
+    from oio.common.autocontainer import NoMatchFound
+except ImportError:
+    NoMatchFound = ValueError
 
 
 class RegexContainerMiddleware(AutoContainerBase):
@@ -24,11 +29,21 @@ class RegexContainerMiddleware(AutoContainerBase):
     BYPASS_QS = "bypass-autocontainer"
     BYPASS_HEADER = "X-bypass-autocontainer"
 
-    def __init__(self, app, acct, patterns,
+    def __init__(self, app, acct, patterns, failsafe=False,
                  **kwargs):
         super(RegexContainerMiddleware, self).__init__(
             app, acct, **kwargs)
         self.con_builder = RegexContainerBuilder(patterns)
+        self.failsafe = failsafe
+
+    def _call(self, env, start_response):
+        try:
+            return super(RegexContainerMiddleware, self)._call(
+                env, start_response)
+        except NoMatchFound:
+            if self.failsafe:
+                return self.app(env, start_response)
+            raise
 
 
 def filter_factory(global_conf, **local_config):
@@ -41,6 +56,7 @@ def filter_factory(global_conf, **local_config):
         raise ConfigurationException('No OIO-SDS account configured')
 
     account_first = config_true_value(local_config.get('account_first'))
+    failsafe = config_true_value(local_config.get('failsafe'))
     swift3_compat = config_true_value(local_config.get('swift3_compat'))
     strip_v1 = config_true_value(local_config.get('strip_v1'))
     # By default this is enabled, to be compatible with openio-sds < 4.2.
@@ -57,5 +73,6 @@ def filter_factory(global_conf, **local_config):
             app, acct, patterns,
             strip_v1=strip_v1, account_first=account_first,
             swift3_compat=swift3_compat,
-            stop_at_first_match=stop_at_first_match)
+            stop_at_first_match=stop_at_first_match,
+            failsafe=failsafe)
     return factory
