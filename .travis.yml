@@ -19,3 +19,4 @@ install:
 script:
   - nosetests -v tests/unit/controllers
   - nosetests -v tests/unit/common/middleware/test_versioned_writes.py:OioVersionedWritesTestCase
+  - ./oio-check-version.sh
