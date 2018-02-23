@@ -45,6 +45,10 @@ def get_unversioned_container(container):
     return container
 
 
+def is_deleted(obj):
+    return obj.get('content_type') == vw.DELETE_MARKER_CONTENT_TYPE
+
+
 class OioVersionedWritesContext(vw.VersionedWritesContext):
 
     def handle_container_listing(self, env, start_response):
@@ -71,6 +75,9 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
             if 'marker' in qs:
                 marker, _ = swift3_split_object_name_version(qs['marker'][0])
                 qs['marker'] = [marker]
+            if 'prefix' in qs:
+                prefix, _ = swift3_split_object_name_version(qs['prefix'][0])
+                qs['prefix'] = prefix
             sub_env['QUERY_STRING'] = urlencode(qs, True)
             sub_env['oio_query'] = {'versions': True}
 
@@ -81,10 +88,22 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
                 self._response_status == '200 OK':
             with closing_if_possible(resp):
                 versioned_objects = json.loads("".join(resp))
+
+            # Discard the latest version of each object, because it is
+            # not supposed to appear in the versioning container.
+            latest = dict()
+            for obj in versioned_objects:
+                ver = int(obj.get('version', '0'))
+                if ver > latest.get(obj['name'], 0):
+                    latest[obj['name']] = ver
+            versioned_objects = [obj for obj in versioned_objects
+                                 if int(obj.get('version', '0')) !=
+                                 latest[obj['name']] or
+                                 is_deleted(obj)]
+
             for obj in versioned_objects:
                 obj['name'] = swift3_versioned_object_name(
                     obj['name'], obj.get('version', ''))
-            # XXX: we may need to filter the most recent version
             resp = json.dumps(versioned_objects)
             self._response_headers = [x for x in self._response_headers
                                       if x[0] != 'Content-Length']
