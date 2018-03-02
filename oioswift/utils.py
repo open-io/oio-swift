@@ -1,4 +1,4 @@
-# Copyright (C) 2015 OpenIO SAS
+# Copyright (C) 2015-2018 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,27 +13,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from swift.common.swob import HTTPNotAcceptable
-
 from functools import wraps
-try:
-    from oio.common.exceptions import ServiceBusy as ServiceBusy
-except ImportError:
-    # TODO To delete when `oio` >= 4.1
-    class ServiceBusyMock(Exception):
-        pass
-    ServiceBusy = ServiceBusyMock
-from swift.common.swob import HTTPServiceUnavailable
 
-_format_map = {"xml": 'application/xml', "json": 'application/json',
+from swift.common.swob import HTTPMethodNotAllowed, HTTPNotAcceptable, \
+    HTTPServiceUnavailable
+
+from oio.common.exceptions import ServiceBusy
+try:
+    # Since oio-sds 4.1.14
+    from oio.common.exceptions import MethodNotAllowed
+    # TODO(FVE): delete when `oio` >= 4.2
+except ImportError:
+    from oio.common.exceptions import ClientException as MethodNotAllowed
+
+
+_FORMAT_MAP = {"xml": 'application/xml', "json": 'application/json',
                "plain": 'text/plain'}
 
 
 def get_listing_content_type(req):
     req_format = req.params.get('format')
     if req_format:
-        req.accept = _format_map.get(req_format.lower(),
-                                     _format_map.get('plain'))
+        req.accept = _FORMAT_MAP.get(req_format.lower(),
+                                     _FORMAT_MAP.get('plain'))
     req_format = req.accept.best_match(
         ['text/plain', 'application/json', 'application/xml', 'text/xml'])
     if not req_format:
@@ -103,12 +105,29 @@ class IterO(object):
 
 def handle_service_busy(fnc):
     @wraps(fnc)
-    def _wrapped(self, req):
+    def _wrapped(self, req, *args, **kwargs):
         try:
-            return fnc(self, req)
+            return fnc(self, req, *args, **kwargs)
         except ServiceBusy as e:
             headers = dict()
             headers['Retry-After'] = '1'
             return HTTPServiceUnavailable(request=req, headers=headers,
                                           body=e.message)
+    return _wrapped
+
+
+def handle_not_allowed(fnc):
+    """Handle MethodNotAllowed ('405 Method not allowed') errors."""
+    @wraps(fnc)
+    def _wrapped(self, req, *args, **kwargs):
+        try:
+            return fnc(self, req, *args, **kwargs)
+        except MethodNotAllowed as exc:
+            headers = dict()
+            if 'worm' in exc.message.lower():
+                headers['Allow'] = 'GET, HEAD, PUT'
+            else:
+                # TODO(FVE): load Allow header from exception attributes
+                pass
+            return HTTPMethodNotAllowed(request=req, headers=headers)
     return _wrapped

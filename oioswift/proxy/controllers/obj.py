@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016-2017 OpenIO SAS
+# Copyright (c) 2016-2018 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,9 +38,9 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
 from oio.common.green import SourceReadTimeout
-from oio.common.exceptions import SourceReadError
 
-from oioswift.utils import handle_service_busy, ServiceBusy
+
+from oioswift.utils import handle_service_busy, handle_not_allowed, ServiceBusy
 
 
 class ObjectControllerRouter(object):
@@ -89,7 +89,7 @@ class ExpectedSizeReader(object):
         rc = self.source.read(*args, **kwargs)
         if len(rc) == 0:
             if self.consumed != self.expected:
-                raise SourceReadError("Truncated input")
+                raise exceptions.SourceReadError("Truncated input")
         else:
             self.consumed = self.consumed + len(rc)
         return rc
@@ -98,7 +98,7 @@ class ExpectedSizeReader(object):
         rc = self.source.readline(*args, **kwargs)
         if len(rc) == 0:
             if self.consumed != self.expected:
-                raise SourceReadError("Truncated input")
+                raise exceptions.SourceReadError("Truncated input")
         else:
             self.consumed = self.consumed + len(rc)
         return rc
@@ -233,6 +233,7 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
+    @handle_not_allowed
     @handle_service_busy
     def POST(self, req):
         """HTTP POST request handler."""
@@ -273,6 +274,7 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
+    @handle_not_allowed
     @handle_service_busy
     def PUT(self, req):
         """HTTP PUT request handler."""
@@ -421,6 +423,7 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
+    @handle_not_allowed
     @handle_service_busy
     def DELETE(self, req):
         """HTTP DELETE request handler."""
