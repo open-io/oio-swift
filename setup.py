@@ -36,5 +36,5 @@ setup(
             'container_hierarchy=oioswift.common.middleware.container_hierarchy:filter_factory',
         ],
     },
-    install_requires=['swift>=2.13.0', 'oio>=4.1.0.a0']
+    install_requires=['swift>=2.13.0', 'oio>=4.1.0']
 )
