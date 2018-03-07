@@ -154,14 +154,16 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         req = Request(env)
         account, container, obj = self._extract_path(req.path_info)
         env2 = env.copy()
-        qs = parse_qs(req.query_string)
+        qs = parse_qs(req.query_string or '')
         prefix = qs.get('prefix')  # returns a list or None
         LOG.debug("%s: Got %s request for container=%s, obj=%s, prefix=%s",
                   self.SWIFT_SOURCE, req.method, container, obj, prefix)
         must_recurse = False
+        is_listing = False
         # TODO(FVE): check if this DELIMITER thing is relevant
         if obj is None or (self.DELIMITER not in obj and req.method == 'GET'):
             LOG.debug("%s: -> is a listing request", self.SWIFT_SOURCE)
+            is_listing = True
             must_recurse = req.method == 'GET' and 'delimiter' not in qs
             if not prefix:
                 obj_parts = ['']
@@ -205,12 +207,21 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             oheaders['Content-Length'] = len(body)
             start_response("200 OK", oheaders.items())
             res = [body]
-        elif obj is not None:
+        elif obj:
             env2['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container, obj)
             res = self.app(env2, start_response)
         else:
             env2['PATH_INFO'] = "/v1/%s/%s/" % (account, container)
             res = self.app(env2, start_response)
+            # As we stripped the "directory" name of objects when storing them,
+            # we have to prepend it while listing (required for SLO)
+            if is_listing and isinstance(res, list) and res[0]:
+                all_objs = json.loads(res[0])
+                for objmd in all_objs:
+                    if 'name' in objmd:
+                        objmd['name'] = self.DELIMITER.join(
+                            obj_parts[:-1] + [objmd['name']])
+                res[0] = json.dumps(all_objs)
         return res
 
 
