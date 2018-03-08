@@ -222,12 +222,15 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             # As we stripped the "directory" name of objects when storing them,
             # we have to prepend it while listing (required for SLO)
             if is_listing and isinstance(res, list) and res[0]:
-                all_objs = json.loads(res[0])
-                for objmd in all_objs:
-                    if 'name' in objmd:
-                        objmd['name'] = self.DELIMITER.join(
-                            obj_parts[:-1] + [objmd['name']])
-                res[0] = json.dumps(all_objs)
+                try:
+                    all_objs = json.loads(res[0])
+                    for objmd in all_objs:
+                        if 'name' in objmd:
+                            objmd['name'] = self.DELIMITER.join(
+                                obj_parts[:-1] + [objmd['name']])
+                    res[0] = json.dumps(all_objs)
+                except ValueError:
+                    pass
         return res
 
 
