@@ -166,8 +166,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                   self.SWIFT_SOURCE, req.method, container, obj, prefix)
         must_recurse = False
         is_listing = False
-        # TODO(FVE): check if this DELIMITER thing is relevant
-        if obj is None or (self.DELIMITER not in obj and req.method == 'GET'):
+        if obj is None:
             LOG.debug("%s: -> is a listing request", self.SWIFT_SOURCE)
             is_listing = True
             must_recurse = req.method == 'GET' and 'delimiter' not in qs
