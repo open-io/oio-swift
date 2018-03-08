@@ -76,6 +76,12 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 'Invalid pipeline %r: %s must be placed after authentication'
                 % (pipeline, MIDDLEWARE_NAME))
 
+        if ('slo' in pipeline and
+                pipeline.index(MIDDLEWARE_NAME) < pipeline.index('slo')):
+            raise ValueError(
+                'Invalid pipeline %r: %s must be placed after SLO'
+                % (pipeline, MIDDLEWARE_NAME))
+
     def _create_dir_marker(self, env, account, container, obj):
         """
         Create an empty object to mark a subdirectory. This is required to
