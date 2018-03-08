@@ -158,6 +158,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         if self.should_bypass(env):
             return self.app(env, start_response)
         req = Request(env)
+        # bypass pre authenticate from swift3
+        if req.method == 'TEST':
+            return self.app(env, start_response)
+
         account, container, obj = self._extract_path(req.path_info)
         env2 = env.copy()
         qs = parse_qs(req.query_string or '')
@@ -220,7 +224,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             res = self.app(env2, start_response)
             # As we stripped the "directory" name of objects when storing them,
             # we have to prepend it while listing (required for SLO)
-            if is_listing and isinstance(res, list) and res[0]:
+            if (is_listing and isinstance(res, list)
+                    and len(res) > 0 and res[0]):
                 try:
                     all_objs = json.loads(res[0])
                     for objmd in all_objs:
