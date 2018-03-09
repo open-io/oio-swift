@@ -2,6 +2,9 @@ sudo: required
 dist: trusty
 language: python
 
+services:
+  - docker
+
 install:
   - sudo apt-add-repository "deb http://archive.ubuntu.com/ubuntu trusty-backports main restricted universe multiverse"
   - sudo apt-get update -qq
@@ -14,13 +17,19 @@ install:
   - pip install --upgrade -r deps-requirements.txt
   - cd third_party/oio-sds && python setup.py install && cd ../..
   - cd third_party/swift && python setup.py install && cd ../..
+  - cd third_party/swift3 && python setup.py install && cd ../..
+  - python setup.py install
   - pip install --upgrade -r test-requirements.txt
+  # - docker pull openio/sds
+  # - docker run -d -p 127.0.0.1:6007:6007 openio/sds
+  # - sleep 20
 
 script:
   - coverage run --source=oioswift -a $(which nosetests) -v tests/unit/controllers
   - coverage run --source=oioswift -a $(which nosetests) -v tests/unit/common/middleware/test_versioned_writes.py:OioVersionedWritesTestCase
   - flake8 oioswift
   - ./oio-check-version.sh
+  # - ./tests/functional/run_tests.sh
 
 after_success:
   - bash <(curl -s https://codecov.io/bash) -f cmake_coverage.output
