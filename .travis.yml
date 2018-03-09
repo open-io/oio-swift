@@ -17,7 +17,11 @@ install:
   - pip install --upgrade -r test-requirements.txt
 
 script:
-  - nosetests -v tests/unit/controllers
-  - nosetests -v tests/unit/common/middleware/test_versioned_writes.py:OioVersionedWritesTestCase
+  - coverage run --source=oioswift -a $(which nosetests) -v tests/unit/controllers
+  - coverage run --source=oioswift -a $(which nosetests) -v tests/unit/common/middleware/test_versioned_writes.py:OioVersionedWritesTestCase
   - flake8 oioswift
   - ./oio-check-version.sh
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash) -f cmake_coverage.output
+  - codecov
