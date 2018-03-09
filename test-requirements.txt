@@ -3,3 +3,4 @@ nose
 oio>=3.3.0
 coverage
 codecov
+awscli
