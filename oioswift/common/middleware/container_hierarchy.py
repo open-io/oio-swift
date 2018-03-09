@@ -88,18 +88,30 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         quickly recurse on subdirectories, since with this middleware they
         are stored on separate containers.
         """
-        path = quote_plus(self.DELIMITER.join(
-            ('', 'v1', account, container, obj)))
-        req = make_subrequest(
-            env, method='PUT', path=path, body='',
-            swift_source=self.SWIFT_SOURCE)
-        req.headers['If-None-Match'] = '*'
-        req.headers['Content-Length'] = '0'
-        resp = req.get_response(self.app)
-        if not resp.is_success:
-            LOG.warn('%s: Failed to create directory placeholder in %s: %s',
-                     self.SWIFT_SOURCE, container, resp.status)
-        close_if_possible(resp.app_iter)
+
+        items = container.split(self.ENCODED_DELIMITER)
+
+        # TODO: should be controlled by a flag to allow recursive
+        # or stop iterating when an item is already present ?
+        while items:
+            path = quote_plus(self.DELIMITER.join(
+                ('', 'v1', account, container, obj)))
+            req = make_subrequest(
+                env, method='PUT', path=path, body='',
+                swift_source=self.SWIFT_SOURCE)
+            req.headers['If-None-Match'] = '*'
+            req.headers['Content-Length'] = '0'
+            resp = req.get_response(self.app)
+            if not resp.is_success:
+                LOG.warn('%s: Failed to create directory placeholder in %s: %s',
+                         self.SWIFT_SOURCE, container, resp.status)
+            close_if_possible(resp.app_iter)
+
+            items = container.split(self.ENCODED_DELIMITER)
+            if items:
+                obj = items.pop() + self.DELIMITER
+                container = self.ENCODED_DELIMITER.join(items)
+
 
     def _fake_container_and_obj(self, container, obj_parts, is_listing=False):
         """
