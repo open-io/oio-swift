@@ -2,7 +2,7 @@
 
 GW_NETLOC="127.0.0.1:5000"
 #GW_NETLOC="127.0.0.1:5001"
-BUCKET="bucket0"
+BUCKET="bucket0-${RANDOM}"
 OBJ_SRC="/etc/resolv.conf"
 AWS_CMD="aws --endpoint-url http://${GW_NETLOC} --no-verify-ssl"
 #AWS_CMD="aws --endpoint-url http://${GW_NETLOC} --no-verify-ssl --profile keystone"
