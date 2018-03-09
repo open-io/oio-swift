@@ -8,7 +8,7 @@ install:
   - sudo apt-get install -y --force-yes python-virtualenv liberasurecode-dev libssl-dev libattr1-dev libleveldb1 libleveldb-dev
   - virtualenv $HOME/venv
   - source $HOME/venv/bin/activate
-  - pip install --upgrade pip setuptools virtualenv tox
+  - pip install --upgrade pip setuptools virtualenv tox flake8
   - git submodule update --init --remote
   - ( grep -v PyECLib third_party/oio-sds/all-requirements.txt ; grep -v eventlet third_party/swift/requirements.txt ) > deps-requirements.txt
   - pip install --upgrade -r deps-requirements.txt
@@ -19,4 +19,5 @@ install:
 script:
   - nosetests -v tests/unit/controllers
   - nosetests -v tests/unit/common/middleware/test_versioned_writes.py:OioVersionedWritesTestCase
+  - flake8 oioswift
   - ./oio-check-version.sh
