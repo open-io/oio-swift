@@ -38,7 +38,7 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
 from oio.common.green import SourceReadTimeout
-
+from urllib3.exceptions import ReadTimeoutError
 
 from oioswift.utils import handle_service_busy, handle_not_allowed, ServiceBusy
 
@@ -383,6 +383,10 @@ class ObjectController(BaseObjectController):
             raise HTTPClientDisconnect(request=req)
         except ServiceBusy:
             raise
+        except ReadTimeoutError:
+            self.app.logger.exception(
+                _('ERROR Exception causing client disconnect'))
+            raise ServiceBusy()
         except Exception:
             self.app.logger.exception(
                 _('ERROR Exception transferring data %s'),
