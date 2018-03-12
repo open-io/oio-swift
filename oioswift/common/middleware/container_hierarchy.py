@@ -107,7 +107,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                       self.SWIFT_SOURCE, obj, container)
             resp = req.get_response(self.app)
             if not resp.is_success:
-                LOG.warn('%s: Failed to create directory placeholder in %s:%s',
+                LOG.warn('%s: Failed to create directory placeholder '
+                         'in %s: %s',
                          self.SWIFT_SOURCE, container, resp.status)
             close_if_possible(resp.app_iter)
 
