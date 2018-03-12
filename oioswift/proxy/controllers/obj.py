@@ -387,6 +387,14 @@ class ObjectController(BaseObjectController):
             self.app.logger.exception(
                 _('ERROR Exception causing client disconnect'))
             raise ServiceBusy()
+        except exceptions.ClientException as err:
+            # 481 = CODE_POLICY_NOT_SATISFIABLE
+            if err.status == 481:
+                raise ServiceBusy
+            self.app.logger.exception(
+                _('ERROR Exception transferring data %s'),
+                {'path': req.path})
+            raise HTTPInternalServerError(request=req)
         except Exception:
             self.app.logger.exception(
                 _('ERROR Exception transferring data %s'),
