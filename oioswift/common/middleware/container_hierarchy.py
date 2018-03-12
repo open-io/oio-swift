@@ -37,12 +37,14 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
     SWIFT_SOURCE = 'CH'
 
     def __init__(self, app, conf, acct, create_dir_placeholders=False,
-                 **kwargs):
+                 recursive_placeholders=False, **kwargs):
         super(ContainerHierarchyMiddleware, self).__init__(
             app, acct, **kwargs)
         self.create_dir_placeholders = create_dir_placeholders
-        LOG.debug("%s: create_dir_placeholders set to %s",
-                  self.SWIFT_SOURCE, self.create_dir_placeholders)
+        self.recursive_placeholders = recursive_placeholders
+        LOG.debug("%s: create_dir_placeholders set to %s (recursive %d)",
+                  self.SWIFT_SOURCE, self.create_dir_placeholders,
+                  self.recursive_placeholders)
 
         self.check_pipeline(conf)
 
@@ -91,8 +93,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         items = container.split(self.ENCODED_DELIMITER)
 
-        # TODO: should be controlled by a flag to allow recursive
-        # or stop iterating when an item is already present ?
+        # TODO: if recursive_placeholders is set, we should
+        # stop iterating when a placeholder is already present
         while items:
             path = quote_plus(self.DELIMITER.join(
                 ('', 'v1', account, container, obj)))
@@ -106,6 +108,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 LOG.warn('%s: Failed to create directory placeholder in %s: %s',
                          self.SWIFT_SOURCE, container, resp.status)
             close_if_possible(resp.app_iter)
+
+            if not self.recursive_placeholders:
+                break
 
             items = container.split(self.ENCODED_DELIMITER)
             if items:
@@ -269,6 +274,8 @@ def filter_factory(global_conf, **local_config):
     strip_v1 = config_true_value(local_config.get('strip_v1'))
     create_dir_placeholders = config_true_value(
         local_config.get('create_dir_placeholders'))
+    recursive_placeholders = config_true_value(
+        local_config.get('recursive_placeholders'))
 
     def factory(app):
         return ContainerHierarchyMiddleware(
@@ -276,5 +283,6 @@ def filter_factory(global_conf, **local_config):
             strip_v1=strip_v1,
             account_first=account_first,
             swift3_compat=swift3_compat,
-            create_dir_placeholders=create_dir_placeholders)
+            create_dir_placeholders=create_dir_placeholders,
+            recursive_placeholders=recursive_placeholders)
     return factory
