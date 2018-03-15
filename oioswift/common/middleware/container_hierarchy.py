@@ -179,6 +179,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         if req.method == 'TEST':
             return self.app(env, start_response)
 
+        # TODO: should test if container name ends with ?
+        if '%2Bsegments/' in req.path:
+            return self.app(env, start_response)
+
         account, container, obj = self._extract_path(req.path_info)
         env2 = env.copy()
         qs = parse_qs(req.query_string or '')
