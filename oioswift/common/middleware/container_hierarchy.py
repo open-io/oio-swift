@@ -191,6 +191,15 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                   self.SWIFT_SOURCE, req.method, container, obj, prefix)
         must_recurse = False
         is_listing = False
+
+        # Rework X-Copy-From to use correct source (container, obj)
+        if 'X-Copy-From' in req.headers and req.method == 'PUT':
+            _, c_container, c_obj = req.headers['X-Copy-From'].split('/', 2)
+            c_container, c_obj = self._fake_container_and_obj(c_container, c_obj.split('/'))
+            # update Headers
+            req.headers['X-Copy-From'] = '/' + c_container + '/' + c_obj
+            env2['HTTP_X_COPY_FROM'] = '/' + c_container + '/' + c_obj
+
         if obj is None:
             LOG.debug("%s: -> is a listing request", self.SWIFT_SOURCE)
             is_listing = True
@@ -218,8 +227,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 obj = obj_parts[-2] + self.DELIMITER
                 self._create_dir_marker(env2, account, ct, obj)
             container, obj = self._fake_container_and_obj(container, obj_parts)
-        LOG.debug("%s: Converted to container=%s, obj=%s",
-                  self.SWIFT_SOURCE, container, obj)
+        LOG.debug("%s: Converted to container=%s, obj=%s, qs=%s",
+                  self.SWIFT_SOURCE, container, obj, qs)
         if must_recurse:
             oheaders = dict()
 
@@ -239,10 +248,18 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             res = [body]
         elif obj:
             env2['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container, obj)
-            res = self.app(env2, start_response)
+            try:
+                res = self.app(env2, start_response)
+            except:
+                LOG.exception("XXX for %s", env2['PATH_INFO'])
+                raise
         else:
             env2['PATH_INFO'] = "/v1/%s/%s/" % (account, container)
-            res = self.app(env2, start_response)
+            try:
+                res = self.app(env2, start_response)
+            except:
+                LOG.exception("YYY for %s", env2['PATH_INFO'])
+                raise
             # As we stripped the "directory" name of objects when storing them,
             # we have to prepend it while listing (required for SLO)
             if (is_listing and isinstance(res, list)
