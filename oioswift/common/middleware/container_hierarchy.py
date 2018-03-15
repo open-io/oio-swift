@@ -105,7 +105,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             req.headers['Content-Length'] = '0'
             resp = req.get_response(self.app)
             if not resp.is_success:
-                LOG.warn('%s: Failed to create directory placeholder in %s: %s',
+                LOG.warn('%s: Failed to create directory placeholder in %s:%s',
                          self.SWIFT_SOURCE, container, resp.status)
             close_if_possible(resp.app_iter)
 
@@ -116,7 +116,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             if items:
                 obj = items.pop() + self.DELIMITER
                 container = self.ENCODED_DELIMITER.join(items)
-
 
     def _fake_container_and_obj(self, container, obj_parts, is_listing=False):
         """
@@ -134,11 +133,11 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             obj = obj_parts[-1] if obj_parts else ''
         return container, obj
 
-    def _recursive_listing(self, env, account, ct_parts, header_cb, prefix='', recursive=True):
+    def _recursive_listing(self, env, account, ct_parts, header_cb,
+                           prefix='', recursive=True):
         """
         For each subdirectory marker encountered, make a listing subrequest,
         and yield object list.
-        # first is for also use last ct_parts as prefix
         """
         sub_path = quote_plus(self.DELIMITER.join(
             ('', 'v1', account, self.ENCODED_DELIMITER.join(ct_parts))))
@@ -188,9 +187,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             return self.app(env, start_response)
 
         # bypass CH for +segments
-        # TODO it should be allowed because segments are put in same container (bad)
-        # but it forbid to remove bucket (maybe with fix that remove placeholder
-        # when not more stuff it here, it should be ok)
+        # TODO it should be allowed because segments will be put
+        # in same container # but it forbid to remove bucket
+        # (rework how placeholder are managed for +segments
+        # by disable creation of placeholder ?)
         if '%2Bsegments' in req.path:
             return self.app(env, start_response)
 
@@ -206,6 +206,16 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                   self.SWIFT_SOURCE, req.method, container, obj, prefix)
         must_recurse = False
         is_listing = False
+
+        # Rework Oio-Copy-From to use correct source (container, obj)
+        if 'Oio-Copy-From' in req.headers and req.method == 'PUT':
+            _, c_container, c_obj = req.headers['Oio-Copy-From'].split('/', 2)
+            c_container, c_obj = \
+                self._fake_container_and_obj(c_container, c_obj.split('/'))
+            # update Headers
+            req.headers['Oio-Copy-From'] = '/' + c_container + '/' + c_obj
+            env2['HTTP_OIO_COPY_FROM'] = '/' + c_container + '/' + c_obj
+
         if obj is None:
             LOG.debug("%s: -> is a listing request", self.SWIFT_SOURCE)
             is_listing = True
@@ -230,8 +240,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 obj = obj_parts[-2] + self.DELIMITER
                 self._create_dir_marker(env2, account, ct, obj)
             container, obj = self._fake_container_and_obj(container, obj_parts)
-        LOG.debug("%s: Converted to container=%s, obj=%s",
-                  self.SWIFT_SOURCE, container, obj)
+        LOG.debug("%s: Converted to container=%s, obj=%s, qs=%s",
+                  self.SWIFT_SOURCE, container, obj, qs)
         if must_recurse:
             oheaders = dict()
 
@@ -239,7 +249,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 oheaders.update(header_dict)
 
             all_objs = [x for x in self._recursive_listing(
-                        env, account, tuple(container.split(self.ENCODED_DELIMITER)), header_cb)]
+                        env, account,
+                        tuple(container.split(self.ENCODED_DELIMITER)),
+                        header_cb)]
             body = json.dumps(all_objs)
             oheaders['X-Container-Object-Count'] = len(all_objs)
             # FIXME: aggregate X-Container-Bytes-Used
@@ -258,8 +270,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             res = self.app(env2, start_response)
         else:
             all_objs = [x for x in self._recursive_listing(
-                        env, account, tuple(container.split(self.ENCODED_DELIMITER)), None,
-                        prefix=obj or '', recursive=False)]
+                        env, account,
+                        tuple(container.split(self.ENCODED_DELIMITER)),
+                        None, prefix=obj or '', recursive=False)]
             body = json.dumps(all_objs)
             oheaders = dict()
             oheaders['X-Container-Object-Count'] = len(all_objs)
