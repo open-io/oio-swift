@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import mimetypes
 import time
 import math
@@ -302,6 +303,9 @@ class ObjectController(BaseObjectController):
         if error_response:
             return error_response
 
+        if req.headers.get('X-Copy-From'):
+            return self._link_object(req)
+
         self._update_x_timestamp(req)
 
         data_source = req.environ['wsgi.input']
@@ -325,6 +329,64 @@ class ObjectController(BaseObjectController):
                 policy = name
 
         return policy
+
+    def _link_object(self, req):
+        _, container, obj = req.headers['X-Copy-From'].split('/', 2)
+
+        self.app.logger.info("LINK (%s,%s,%s) TO (%s,%s,%s)",
+            self.account_name, self.container_name, self.object_name,
+            self.account_name, container, obj)
+        storage = self.app.storage
+
+        if req.headers.get('Range'):
+            ranges = ranges_from_http_header(req.headers.get('Range'))
+            if len(ranges) != 1:
+                # TODO use proper SwiftException
+                raise Exception("Invalid number of ranges")
+            ranges = ranges[0]
+        else:
+            ranges = None
+
+        SLO = 'x-static-large-object'
+        SLO_SIZE = 'x-object-sysmeta-slo-size'
+
+        props = storage.object_get_properties(self.account_name, container, obj)
+        if props['properties'].get(SLO, None):
+            # TODO: abort if no range is specified ?
+            self.app.logger.debug("LINK, original object is a SLO")
+
+            # retrieve manifest
+            _, data = storage.object_fetch(self.account_name, container, obj)
+            manifest = json.loads("".join(data))
+            part = None
+            offset = 0
+            # found proper part to copy
+            for entry in manifest:
+                if ranges[0] == offset and ranges[1] + 1 == offset + entry['bytes']:
+                    part = entry
+                    break
+                offset += entry['bytes']
+            else:
+                # TODO use proper SwiftException
+                raise Exception("Invalid state")
+
+            _, container, obj = part['name'].split('/', 2)
+            self.app.logger.info("LINK SLO (%s,%s,%s) TO (%s,%s,%s)",
+                self.account_name, self.container_name, self.object_name,
+                self.account_name, container, obj)
+            ret = storage.object_fastcopy(self.account_name, container, obj,
+                                    self.account_name, self.container_name, self.object_name)
+            checksum = part['hash']
+        else:
+            # TODO: abort if a range is specified
+            ret = storage.object_fastcopy(self.account_name, container, obj,
+                                    self.account_name, self.container_name, self.object_name)
+            checksum = props['hash']
+
+
+        resp = HTTPCreated(request=req, etag=checksum)
+        return resp
+
 
     def _store_object(self, req, data_source, headers):
         content_type = req.headers.get('content-type', 'octet/stream')
