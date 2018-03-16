@@ -18,6 +18,7 @@ import mimetypes
 import time
 import math
 
+from random import randint
 from swift import gettext_ as _
 from swift.common.utils import (
     clean_content_type, config_true_value, Timestamp, public)
