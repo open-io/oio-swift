@@ -350,11 +350,10 @@ class ObjectController(BaseObjectController):
         SLO = 'x-static-large-object'
         SLO_SIZE = 'x-object-sysmeta-slo-size'
 
-        props = storage.object_get_properties(self.account_name, container, obj)['properties']
-
-        if props.get(SLO, None):
+        props = storage.object_get_properties(self.account_name, container, obj)
+        if props['properties'].get(SLO, None):
             # TODO: abort if no range is specified ?
-            self.app.logger.debug("SLO object detected")
+            self.app.logger.debug("LINK, original object is a SLO")
 
             # retrieve manifest
             _, data = storage.object_fetch(self.account_name, container, obj)
@@ -383,6 +382,7 @@ class ObjectController(BaseObjectController):
             ret = storage.object_fastcopy(self.account_name, container, obj,
                                     self.account_name, self.container_name, self.object_name)
             checksum = props['hash']
+
 
         resp = HTTPCreated(request=req, etag=checksum)
         return resp
