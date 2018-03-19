@@ -103,6 +103,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 swift_source=self.SWIFT_SOURCE)
             req.headers['If-None-Match'] = '*'
             req.headers['Content-Length'] = '0'
+            LOG.debug("%s: Create placeholder %s in %s",
+                      self.SWIFT_SOURCE, obj, container)
             resp = req.get_response(self.app)
             if not resp.is_success:
                 LOG.warn('%s: Failed to create directory placeholder in %s:%s',
@@ -198,6 +200,16 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         # allow global listing on account
         if container is None:
             return self.app(env, start_response)
+
+        if req.method == 'DELETE' and obj and obj.endswith('/'):
+            # silent drop remove of placeholder
+            # TODO: DELETE should be accepted only if associated container
+            # are empty or non existing
+            oheaders = {}
+            oheaders['Content-Length'] = 0
+            start_response("200 OK", oheaders.items())
+            res = []
+            return res
 
         env2 = env.copy()
         qs = parse_qs(req.query_string or '')
