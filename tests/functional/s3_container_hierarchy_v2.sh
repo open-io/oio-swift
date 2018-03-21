@@ -66,14 +66,14 @@ rm testfile
 # CREATE SIMPLE OBJECT
 ${AWS} s3 cp /etc/passwd s3://${BUCKET}/subdir/simple
 # OVERWRITE IT WITH MPU
-${AWS} s3 cp randfile s3://${BUCKET}/subdir/bigfile
+${AWS} s3 cp randfile s3://${BUCKET}/subdir/simple
 # CHECK MD5
-${AWS} s3 cp s3://${BUCKET}/subdir/bigfile testfile
+${AWS} s3 cp s3://${BUCKET}/subdir/simple testfile
 [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum testfile | cut -d\  -f1)" ]
 rm testfile
 
 OUT=$( ${AWS} s3 ls --recursive s3://${BUCKET} )
-echo ${OUT} | grep subdir/bigfile
+echo ${OUT} | grep subdir/simple
 
 # wait for event to be accounted
 sleep 0.5
@@ -89,18 +89,18 @@ ${AWS} s3api put-object --bucket ${BUCKET} --key d1/d2/d3/d4/o2 --body aa
 ${AWS} s3api put-object --bucket ${BUCKET} --key v1/o2 --body aa
 sleep 0.5
 CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
-[ "$CNT" -ne 8 ]
+[ "$CNT" -eq 8 ]
 
 # COPY S3<=>S3
 
 BCK1=bucket-${RANDOM}
 BCK2=bucket-${RANDOM}
 
-${AWS} s3api create-bucket --bucket ${BCKT1}
-${AWS} s3api create-bucket --bucket ${BCKT2}
+${AWS} s3api create-bucket --bucket ${BCK1}
+${AWS} s3api create-bucket --bucket ${BCK2}
 
 # INIT
-${AWS} s3 cp bigfile s3://${BUCKET}/root
+${AWS} s3 cp bigfile s3://${BCK1}/root
 
 # COPY AT ROOT
 ${AWS} s3 cp s3://${BCK1}/root s3://${BCK2}/root
