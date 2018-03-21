@@ -82,6 +82,11 @@ set -e
 
 [ "${LS_REC_OUT}" = "${EXPECTED}" ]
 
+echo "Trying to delete a placeholder of a non-empty container"
+$AWS_CMD s3 rm "s3://${BUCKET}/subdir1/subdir2/"
+$AWS_CMD s3api head-object --bucket "${BUCKET}" --key "subdir1/subdir2/"
+
+echo "Deleting all objects (and placeholders)"
 $AWS_CMD s3 rm "s3://${BUCKET}/file_at_root"
 $AWS_CMD s3 rm "s3://${BUCKET}/subdir1/file_in_subdir1"
 $AWS_CMD s3 rm "s3://${BUCKET}/subdir1/multi_in_subdir1"

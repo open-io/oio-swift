@@ -114,10 +114,34 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             if not self.recursive_placeholders:
                 break
 
-            items = container.split(self.ENCODED_DELIMITER)
             if items:
                 obj = items.pop() + self.DELIMITER
                 container = self.ENCODED_DELIMITER.join(items)
+
+    def _can_delete_dir_marker(self, req, account, container, obj):
+        """
+        Check if a directory placeholder can be deleted:
+        the sub-container must be empty.
+        """
+        container2 = container + self.ENCODED_DELIMITER + obj[:-1]
+        LOG.debug("%s: checking if '%s' is empty",
+                  self.SWIFT_SOURCE, container2)
+        # Check if there is any object (or placeholder) before
+        # accepting deletion.
+        empty = not any(self._list_objects(
+                        req.environ.copy(),
+                        account,
+                        tuple(container2.split(self.ENCODED_DELIMITER)),
+                        None,
+                        recursive=False,
+                        limit=1))
+        return empty
+
+    def _build_empty_response(self, start_response, status='200 OK'):
+        """Build a response with no body and the specified status."""
+        oheaders = {'Content-Length': 0}
+        start_response(status, oheaders.items())
+        return []  # empty body
 
     def _fake_container_and_obj(self, container, obj_parts, is_listing=False):
         """
@@ -135,22 +159,26 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             obj = obj_parts[-1] if obj_parts else ''
         return container, obj
 
-    def _recursive_listing(self, env, account, ct_parts, header_cb,
-                           prefix='', recursive=True):
+    def _list_objects(self, env, account, ct_parts, header_cb,
+                      prefix='', recursive=True, limit=10000):
         """
-        For each subdirectory marker encountered, make a listing subrequest,
-        and yield object list.
+        If `recursive` is set (the default), for each subdirectory marker
+        encountered, make a listing subrequest, and yield object list.
+
+        If `recursive` is False, list objects and directory markers (but
+        do not recurse).
         """
         sub_path = quote_plus(self.DELIMITER.join(
             ('', 'v1', account, self.ENCODED_DELIMITER.join(ct_parts))))
-        LOG.debug("%s: Recursively listing '%s'", self.SWIFT_SOURCE, sub_path)
+        LOG.debug("%s: listing objects from '%s'", self.SWIFT_SOURCE, sub_path)
         sub_req = make_subrequest(env.copy(), method='GET', path=sub_path,
                                   body='',
                                   swift_source=self.SWIFT_SOURCE)
         params = sub_req.params
         params['delimiter'] = self.DELIMITER
-        params['limit'] = '10000'
+        params['limit'] = str(limit)  # FIXME: why is it str?
         params['prefix'] = prefix
+        params['format'] = 'json'
         sub_req.params = params
         resp = sub_req.get_response(self.app)
         obj_prefix = ''
@@ -176,17 +204,20 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         if recursive:
             for subdir in subdirs:
-                for obj in self._recursive_listing(
+                for obj in self._list_objects(
                         env, account, ct_parts + (subdir, ), header_cb):
                     yield obj
+
+    def should_bypass(self, env):
+        # Pre authentication from swift3
+        return (env.get('REQUEST_METHOD') == 'TEST' or
+                super(ContainerHierarchyMiddleware, self).should_bypass(env))
 
     def __call__(self, env, start_response):
         if self.should_bypass(env):
             return self.app(env, start_response)
+
         req = Request(env)
-        # bypass pre authenticate from swift3
-        if req.method == 'TEST':
-            return self.app(env, start_response)
 
         # bypass CH for +segments
         # TODO it should be allowed because segments will be put
@@ -201,23 +232,12 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         if container is None:
             return self.app(env, start_response)
 
-        if req.method == 'DELETE' and obj and obj.endswith('/'):
-            # silent drop remove of placeholder
-            # TODO: DELETE should be accepted only if associated container
-            # are empty or non existing
-            oheaders = {}
-            oheaders['Content-Length'] = 0
-            start_response("200 OK", oheaders.items())
-            res = []
-            return res
-
         env2 = env.copy()
         qs = parse_qs(req.query_string or '')
         prefix = qs.get('prefix')  # returns a list or None
         LOG.debug("%s: Got %s request for container=%s, obj=%s, prefix=%s",
                   self.SWIFT_SOURCE, req.method, container, obj, prefix)
         must_recurse = False
-        is_listing = False
 
         # Rework Oio-Copy-From to use correct source (container, obj)
         if 'Oio-Copy-From' in req.headers and req.method == 'PUT':
@@ -230,7 +250,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         if obj is None:
             LOG.debug("%s: -> is a listing request", self.SWIFT_SOURCE)
-            is_listing = True
             must_recurse = req.method == 'GET' and 'delimiter' not in qs
             if not prefix:
                 obj_parts = ['']
@@ -246,12 +265,17 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             LOG.debug("%s: -> is NOT listing request", self.SWIFT_SOURCE)
             obj_parts = obj.split(self.DELIMITER)
             if (len(obj_parts) > 1 and
-                    self.create_dir_placeholders and
-                    req.method == 'PUT'):
+                    self.create_dir_placeholders):
                 ct = self.ENCODED_DELIMITER.join([container] + obj_parts[:-2])
                 obj = obj_parts[-2] + self.DELIMITER
-                self._create_dir_marker(env2, account, ct, obj)
+                if req.method == 'PUT':
+                    self._create_dir_marker(env2, account, ct, obj)
+                elif req.method == 'DELETE' and not obj_parts[-1]:
+                    if not self._can_delete_dir_marker(req, account, ct, obj):
+                        return self._build_empty_response(
+                            start_response, '204 No content')
             container, obj = self._fake_container_and_obj(container, obj_parts)
+
         LOG.debug("%s: Converted to container=%s, obj=%s, qs=%s",
                   self.SWIFT_SOURCE, container, obj, qs)
         if must_recurse:
@@ -260,7 +284,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             def header_cb(header_dict):
                 oheaders.update(header_dict)
 
-            all_objs = [x for x in self._recursive_listing(
+            all_objs = [x for x in self._list_objects(
                         env, account,
                         tuple(container.split(self.ENCODED_DELIMITER)),
                         header_cb)]
@@ -281,7 +305,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 env2['PATH_INFO'] = "/v1/%s/%s" % (account, container)
             res = self.app(env2, start_response)
         else:
-            all_objs = [x for x in self._recursive_listing(
+            all_objs = [x for x in self._list_objects(
                         env, account,
                         tuple(container.split(self.ENCODED_DELIMITER)),
                         None, prefix=obj or '', recursive=False)]
