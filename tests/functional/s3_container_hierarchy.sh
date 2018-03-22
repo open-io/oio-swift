@@ -82,6 +82,55 @@ set -e
 
 [ "${LS_REC_OUT}" = "${EXPECTED}" ]
 
+echo "Listing objects from bucket ${BUCKET} recursively, with a prefix (subdir1)"
+LS_REC_OUT=$($AWS_CMD s3 ls --recursive "s3://${BUCKET}/subdir1" | awk '{print $4}')
+
+set +e
+read -d '' EXPECTED << EOF
+subdir1/file_in_subdir1
+subdir1/multi_in_subdir1
+subdir1/subdir2/file_in_subdir2
+EOF
+set -e
+
+[ "${LS_REC_OUT}" = "${EXPECTED}" ]
+
+
+echo "Listing objects from bucket ${BUCKET} recursively, with a prefix (subdir1/)"
+LS_REC_OUT=$($AWS_CMD s3 ls --recursive "s3://${BUCKET}/subdir1/" | awk '{print $4}')
+
+set +e
+read -d '' EXPECTED << EOF
+subdir1/file_in_subdir1
+subdir1/multi_in_subdir1
+subdir1/subdir2/file_in_subdir2
+EOF
+set -e
+
+[ "${LS_REC_OUT}" = "${EXPECTED}" ]
+
+echo "Listing objects from bucket ${BUCKET} recursively, with a prefix (subdir1/subdir2)"
+LS_REC_OUT=$($AWS_CMD s3 ls --recursive "s3://${BUCKET}/subdir1/subdir2" | awk '{print $4}')
+
+set +e
+read -d '' EXPECTED << EOF
+subdir1/subdir2/file_in_subdir2
+EOF
+set -e
+
+[ "${LS_REC_OUT}" = "${EXPECTED}" ]
+
+echo "Listing objects from bucket ${BUCKET} recursively, with a prefix (subdir1/subdir2/)"
+LS_REC_OUT=$($AWS_CMD s3 ls --recursive "s3://${BUCKET}/subdir1/subdir2/" | awk '{print $4}')
+
+set +e
+read -d '' EXPECTED << EOF
+subdir1/subdir2/file_in_subdir2
+EOF
+set -e
+
+[ "${LS_REC_OUT}" = "${EXPECTED}" ]
+
 echo "Trying to delete a placeholder of a non-empty container"
 $AWS_CMD s3 rm "s3://${BUCKET}/subdir1/subdir2/"
 $AWS_CMD s3api head-object --bucket "${BUCKET}" --key "subdir1/subdir2/"
