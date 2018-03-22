@@ -288,7 +288,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             all_objs = [x for x in self._list_objects(
                         env, account,
                         tuple(container.split(self.ENCODED_DELIMITER)),
-                        header_cb)]
+                        header_cb, prefix=obj or '')]
             body = json.dumps(all_objs)
             oheaders['X-Container-Object-Count'] = len(all_objs)
             # FIXME: aggregate X-Container-Bytes-Used
