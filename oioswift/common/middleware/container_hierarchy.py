@@ -144,6 +144,28 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         start_response(status, oheaders.items())
         return []  # empty body
 
+    def _build_object_listing(self, start_response, env,
+                              account, container, obj,
+                              recursive=False):
+        oheaders = dict()
+
+        def header_cb(header_dict):
+            oheaders.update(header_dict)
+
+        all_objs = [x for x in self._list_objects(
+                    env, account,
+                    tuple(container.split(self.ENCODED_DELIMITER)),
+                    header_cb, prefix=obj or '',
+                    recursive=recursive)]
+        body = json.dumps(all_objs)
+        oheaders['X-Container-Object-Count'] = len(all_objs)
+        # FIXME: aggregate X-Container-Bytes-Used
+        # FIXME: aggregate X-Container-Object-Count
+        # FIXME: send main bucket X-Timestamp
+        oheaders['Content-Length'] = len(body)
+        start_response("200 OK", oheaders.items())
+        return [body]
+
     def _fake_container_and_obj(self, container, obj_parts, is_listing=False):
         """
         Aggregate object parts (except the last) into the container name.
@@ -280,24 +302,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         LOG.debug("%s: Converted to container=%s, obj=%s, qs=%s",
                   self.SWIFT_SOURCE, container, obj, qs)
         if must_recurse:
-            oheaders = dict()
-
-            def header_cb(header_dict):
-                oheaders.update(header_dict)
-
-            all_objs = [x for x in self._list_objects(
-                        env, account,
-                        tuple(container.split(self.ENCODED_DELIMITER)),
-                        header_cb, prefix=obj or '')]
-            body = json.dumps(all_objs)
-            oheaders['X-Container-Object-Count'] = len(all_objs)
-            # FIXME: aggregate X-Container-Bytes-Used
-            # FIXME: aggregate X-Container-Object-Count
-            # FIXME: send main bucket X-Timestamp
-            # Content-Length is computed from body length
-            oheaders['Content-Length'] = len(body)
-            start_response("200 OK", oheaders.items())
-            res = [body]
+            res = self._build_object_listing(start_response, env,
+                                             account, container, obj,
+                                             recursive=True)
         elif not (qs.get('prefix') or qs.get('delimiter')):
             # should be other operation that listing
             if obj:
@@ -306,20 +313,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 env2['PATH_INFO'] = "/v1/%s/%s" % (account, container)
             res = self.app(env2, start_response)
         else:
-            all_objs = [x for x in self._list_objects(
-                        env, account,
-                        tuple(container.split(self.ENCODED_DELIMITER)),
-                        None, prefix=obj or '', recursive=False)]
-            body = json.dumps(all_objs)
-            oheaders = dict()
-            oheaders['X-Container-Object-Count'] = len(all_objs)
-            # FIXME: aggregate X-Container-Bytes-Used
-            # FIXME: aggregate X-Container-Object-Count
-            # FIXME: send main bucket X-Timestamp
-            # Content-Length is computed from body length
-            oheaders['Content-Length'] = len(body)
-            start_response("200 OK", oheaders.items())
-            res = [body]
+            res = self._build_object_listing(start_response, env,
+                                             account, container, obj,
+                                             recursive=False)
 
         return res
 
