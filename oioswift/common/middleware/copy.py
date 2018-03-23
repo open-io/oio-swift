@@ -19,6 +19,7 @@ from swift.common.constraints import check_account_format, MAX_FILE_SIZE
 from swift.common.request_helpers import copy_header_subset, remove_items, \
     is_sys_meta, is_sys_or_user_meta, is_object_transient_sysmeta
 from swift.common.wsgi import WSGIContext, make_subrequest
+from swift.proxy.controllers.base import get_object_info
 
 
 def _check_path_header(req, name, length, error_msg):
@@ -186,6 +187,54 @@ class ServerSideCopyMiddleware(object):
         except (NoSectionError, NoOptionError):
             pass
 
+    def allow_fast_copy(self, req):
+        """Check is fastcopy is possible."""
+
+        if req.method != 'PUT' or 'X-Copy-From' not in req.headers:
+            return False
+
+        # TODO maybe is it not necessary
+        already_checked = req.headers.get("Oio-Check-Fastcopy", 0)
+        if already_checked:
+            return False
+
+        self.logger.debug("COPY check fastcopy")
+
+        # mark request already checked
+        req.headers['Oio-Check-Fastcopy'] = 1
+
+        if req.headers.get('Range') or \
+                req.headers.get('X-Amz-Copy-Source-Range'):
+            self.logger.debug(
+                "COPY fastcopy not available (reason=Range header)")
+            return False
+
+        # now check if object is SLO:
+        # when a SLO is used as source without range read,
+        # it is used to recreate a plain object
+        # TODO we may cheat to create object as appended metachunks ?
+
+        req2 = req.environ.copy()
+        # FIXME check if a proper method is available
+        req2['PATH_INFO'] = '/'.join(req2['PATH_INFO'].split('/')[0:3]) + '/'
+
+        obj_src = req.headers.get('X-Copy-From').lstrip('/')
+        req2['PATH_INFO'] += obj_src
+        try:
+            obj_inf = get_object_info(req2, self.app,
+                                      swift_source='COPY')
+            is_slo = obj_inf.get('sysmeta', {}).get('slo-size', False)
+            if is_slo:
+                self.logger.debug(
+                    "COPY fastcopy not available (reason=source is a SLO)")
+            return not is_slo
+        except:  # noqa
+            self.logger.debug(
+                "COPY fastcopy not available (reason=Exception in SLO check)")
+            # something bad has happened
+            # leave other responsabilities to other middleware
+            return False
+
     def __call__(self, env, start_response):
         req = Request(env)
         try:
@@ -199,47 +248,14 @@ class ServerSideCopyMiddleware(object):
         self.object_name = obj
 
         # Check if fastcopy is possible
-        # (only plain object at this time)
-        if req.headers.get('X-Copy-From') and not (
-                req.headers.get('Range') or
-                req.headers.get('X-Amz-Copy-Source-Range')):
-            # TODO: it could be also a copy from MPU to full object
-            # but I pretty sure that this case is explained on AWS doc
+        # only plain object as source and destination
+        # FIXME: handle COPY method (with Destination-* headers)
+        if self.allow_fast_copy(req):
+            self.logger.debug("COPY fastcopy allowed")
             req.headers['Oio-Copy-From'] = req.headers.get('X-Copy-From')
             del req.headers['X-Copy-From']
             return self.app(env, start_response)
-        """ TODO (how access proxy/obj.py instance to checking SLO ?)
-            # compare range and segments
 
-            ranges = ranges_from_http_header(req.headers.get('Range'))
-            if len(ranges) == 1:
-                ranges = ranges[0]
-
-                # check that ORG object is SLO
-                container, obj = req.headers['X-Copy-From'].split('/', 1)
-                storage = self.app.storage
-                props = storage.object_get_properties(
-                    self.account_name, container, obj)
-                if props['properties'].get(SLO, None):
-                    manifest = json.loads("".join(data))
-                offset = 0
-                # identify segment to copy
-                for entry in manifest:
-                    if ranges[0] == offset and \
-                            ranges[1] + 1 == offset + entry['bytes']:
-                        _, container, obj = entry['name'].split('/', 2)
-                        checksum = entry['hash']
-                        self.app.logger.info(
-                            "LINK SLO (%s,%s,%s) TO (%s,%s,%s)",
-                            self.account_name, self.container_name,
-                            self.object_name,
-                            self.account_name, container, obj)
-                        return self.app(env, start_response)
-                        break
-                    offset += entry['bytes']
-                else:
-                    print("NO SEGMENT FOUND, FALLACK")
-        """
         try:
             # In some cases, save off original request method since it gets
             # mutated into PUT during handling. This way logging can display
