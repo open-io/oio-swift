@@ -21,7 +21,8 @@ import math
 
 from swift import gettext_ as _
 from swift.common.utils import (
-    clean_content_type, config_true_value, Timestamp, public)
+    clean_content_type, config_true_value, Timestamp, public,
+    close_if_possible, closing_if_possible)
 from swift.common.constraints import check_metadata, check_object_creation
 from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
@@ -105,6 +106,9 @@ class ExpectedSizeReader(object):
         else:
             self.consumed = self.consumed + len(rc)
         return rc
+
+    def close(self):
+        return close_if_possible(self.source)
 
 
 class ObjectController(BaseObjectController):
@@ -315,7 +319,8 @@ class ObjectController(BaseObjectController):
             data_source = ExpectedSizeReader(data_source, req.content_length)
 
         headers = self._prepare_headers(req)
-        resp = self._store_object(req, data_source, headers)
+        with closing_if_possible(data_source):
+            resp = self._store_object(req, data_source, headers)
         return resp
 
     def _prepare_headers(self, req):
@@ -395,6 +400,7 @@ class ObjectController(BaseObjectController):
                 self.account_name, container, obj,
                 self.account_name, self.container_name, self.object_name,
                 headers=oio_headers)
+        # TODO(FVE): this exception catching block has to be refactored
         # TODO check which ones are ok or make non sense
         except exceptions.Conflict:
             raise HTTPConflict(request=req)
@@ -415,8 +421,8 @@ class ObjectController(BaseObjectController):
             return HTTPUnprocessableEntity(request=req)
         except exceptions.OioTimeout:
             self.app.logger.exception(
-                _('ERROR Exception causing client disconnect'))
-            raise HTTPClientDisconnect(request=req)
+                _('ERROR Timeout while uploading data or metadata'))
+            raise ServiceBusy()
         except ServiceBusy:
             raise
         except ReadTimeoutError:
@@ -493,8 +499,8 @@ class ObjectController(BaseObjectController):
             return HTTPUnprocessableEntity(request=req)
         except exceptions.OioTimeout:
             self.app.logger.exception(
-                _('ERROR Exception causing client disconnect'))
-            raise HTTPClientDisconnect(request=req)
+                _('ERROR Timeout while uploading data or metadata'))
+            raise ServiceBusy()
         except ServiceBusy:
             raise
         except ReadTimeoutError:

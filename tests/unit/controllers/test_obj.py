@@ -205,7 +205,8 @@ class TestObjectController(unittest.TestCase):
             resp = req.get_response(self.app)
         self.assertEqual(resp.status_int, 499)
 
-    def test_PUT_chunkreadtimeout_during_transfer_data(self):
+    def test_PUT_chunkreadtimeout_during_data_transfer(self):
+        """The gateway times out while reading from the client."""
         class FakeReader(object):
             def read(self, size):
                 raise oiogreen.SourceReadTimeout()
@@ -223,7 +224,8 @@ class TestObjectController(unittest.TestCase):
             resp = req.get_response(self.app)
             self.assertEqual(resp.status_int, 408)
 
-    def test_PUT_timeout_during_transfer_data(self):
+    def test_PUT_timeout_during_data_transfer(self):
+        """The gateway times out while upload data to the server."""
         class FakeReader(object):
             def read(self, size):
                 raise Timeout()
@@ -239,9 +241,10 @@ class TestObjectController(unittest.TestCase):
         with patch('oio.api.replication.io.http_connect',
                    new=fake_http_connect):
             resp = req.get_response(self.app)
-            self.assertEqual(resp.status_int, 499)
+            self.assertEqual(resp.status_int, 503)
 
     def test_PUT_truncated_input_empty(self):
+        """The gateway does not receive data from the client."""
         class FakeReader(object):
             def read(self, size):
                 return ''
@@ -260,6 +263,7 @@ class TestObjectController(unittest.TestCase):
             self.assertEqual(resp.status_int, 499)
 
     def test_PUT_truncated_input_almost(self):
+        """The gateway does not receive enough data from the client."""
         class FakeReader(object):
             MAX_COUNT = 5
 
