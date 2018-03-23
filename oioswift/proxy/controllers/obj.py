@@ -347,7 +347,7 @@ class ObjectController(BaseObjectController):
         storage = self.app.storage
 
         if req.headers.get('Range'):
-            raise Exception("NOT SUPPORTED AT THIS TIME")
+            raise Exception("Fast Copy with Range is unsupported")
 
             ranges = ranges_from_http_header(req.headers.get('Range'))
             if len(ranges) != 1:
@@ -361,7 +361,7 @@ class ObjectController(BaseObjectController):
         props = storage.object_get_properties(self.account_name, container,
                                               obj)
         if props['properties'].get(SLO, None):
-            raise Exception("NOT SUPPORTED AT THIS TIME")
+            raise Exception("Fast Copy with SLO is unsupported")
 
             if ranges is None:
                 raise HTTPInternalServerError(request=req,
