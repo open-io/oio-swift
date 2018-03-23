@@ -209,8 +209,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             obj_prefix = self.DELIMITER.join(ct_parts[1:] + ('',))
 
         if not resp.is_success or resp.content_length == 0:
-            LOG.warn("Failed to recursively list '%s': %s",
-                     obj_prefix, resp.status)
+            LOG.warn("Failed to list '%s'%s: %s", obj_prefix,
+                     ' (recursively)' if recursive else '',
+                     resp.status)
             return
         with closing_if_possible(resp.app_iter):
             items = json.loads(resp.body)
