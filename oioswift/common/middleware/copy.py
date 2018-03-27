@@ -187,50 +187,59 @@ class ServerSideCopyMiddleware(object):
         except (NoSectionError, NoOptionError):
             pass
 
-    def allow_fast_copy(self, req):
-        """Check is fastcopy is possible."""
+    def fast_copy_allowed(self, req):
+        """Check is fastcopy is possible and allowed."""
 
         if req.method != 'PUT' or 'X-Copy-From' not in req.headers:
             return False
 
-        # TODO maybe is it not necessary
-        already_checked = req.headers.get("Oio-Check-Fastcopy", 0)
-        if already_checked:
+        fast_copy_forbidden = req.environ.get('oio.forbid_fast_copy')
+        if fast_copy_forbidden:
             return False
 
-        self.logger.debug("COPY check fastcopy")
+        self.logger.debug("COPY: checking if fast copy is allowed")
 
-        # mark request already checked
-        req.headers['Oio-Check-Fastcopy'] = 1
+        # Among the several subrequests we may execute, only one can use
+        # fast copy. This will prevent subsequent requests to even do
+        # the check.
+        req.environ['oio.forbid_fast_copy'] = True
 
         if req.headers.get('Range') or \
                 req.headers.get('X-Amz-Copy-Source-Range'):
             self.logger.debug(
-                "COPY fastcopy not available (reason=Range header)")
+                "COPY: fast copy not available (reason=Range header)")
             return False
 
-        # now check if object is SLO:
+        # now check if object is a SLO:
         # when a SLO is used as source without range read,
         # it is used to recreate a plain object
-        # TODO we may cheat to create object as appended metachunks ?
+        # TODO: we may cheat to create object as appended metachunks?
 
-        req2 = req.environ.copy()
-        # FIXME check if a proper method is available
-        req2['PATH_INFO'] = '/'.join(req2['PATH_INFO'].split('/')[0:3]) + '/'
-
-        obj_src = req.headers.get('X-Copy-From').lstrip('/')
-        req2['PATH_INFO'] += obj_src
         try:
-            obj_inf = get_object_info(req2, self.app,
+            # [0]=v1, [1]=account, [2]=container/obj
+            src_path_parts = req.split_path(2, 3, True)
+        except ValueError:
+            self.logger.debug("COPY: Incomplete path, cannot copy")
+            return False
+
+        # Reuse version from original path,
+        # take account from header or original path,
+        # take /container/obj from headers (with leading slash)
+        src_path = '/%s/%s%s' % (src_path_parts[0],
+                                 req.environ.get('HTTP_X_COPY_FROM_ACCOUNT',
+                                                 src_path_parts[1]),
+                                 req.environ['HTTP_X_COPY_FROM'])
+        try:
+            obj_inf = get_object_info(req.environ, self.app,
+                                      path=src_path,
                                       swift_source='COPY')
             is_slo = obj_inf.get('sysmeta', {}).get('slo-size', False)
             if is_slo:
                 self.logger.debug(
-                    "COPY fastcopy not available (reason=source is a SLO)")
+                    "COPY: fast copy not available (reason=source is a SLO)")
             return not is_slo
-        except:  # noqa
-            self.logger.debug(
-                "COPY fastcopy not available (reason=Exception in SLO check)")
+        except Exception as exc:
+            self.logger.debug("COPY: fast copy not available (reason=%s)", exc)
             # something bad has happened
             # leave other responsabilities to other middleware
             return False
@@ -250,8 +259,9 @@ class ServerSideCopyMiddleware(object):
         # Check if fastcopy is possible
         # only plain object as source and destination
         # FIXME: handle COPY method (with Destination-* headers)
-        if self.allow_fast_copy(req):
-            self.logger.debug("COPY fastcopy allowed")
+        if self.fast_copy_allowed(req):
+            self.logger.debug("COPY: fast copy allowed")
+            # FIXME(FVE): we may use req.environ instead of headers
             req.headers['Oio-Copy-From'] = req.headers.get('X-Copy-From')
             del req.headers['X-Copy-From']
             return self.app(env, start_response)

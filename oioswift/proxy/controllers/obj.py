@@ -340,6 +340,7 @@ class ObjectController(BaseObjectController):
     def _link_object(self, req):
         _, container, obj = req.headers['Oio-Copy-From'].split('/', 2)
 
+        # FIXME(FVE): load account name from X-Copy-From-Account
         self.app.logger.info("LINK (%s,%s,%s) TO (%s,%s,%s)",
                              self.account_name, self.container_name,
                              self.object_name,
