@@ -42,7 +42,8 @@ from oio.common.http import ranges_from_http_header
 from oio.common.green import SourceReadTimeout
 from urllib3.exceptions import ReadTimeoutError
 
-from oioswift.utils import handle_service_busy, handle_not_allowed, ServiceBusy
+from oioswift.utils import check_if_none_match, handle_service_busy, \
+    handle_not_allowed, ServiceBusy
 
 SLO = 'x-static-large-object'
 
@@ -132,6 +133,7 @@ class ObjectController(BaseObjectController):
         """Handle GET requests."""
         return self.GETorHEAD(req)
 
+    @check_if_none_match
     def GETorHEAD(self, req):
         """Handle HTTP GET or HEAD requests."""
         container_info = self.container_info(
@@ -163,7 +165,7 @@ class ObjectController(BaseObjectController):
         try:
             metadata = storage.object_show(
                 self.account_name, self.container_name, self.object_name,
-                version=req.environ.get('oio_query', {}).get('version'),
+                version=req.environ.get('oio.query', {}).get('version'),
                 headers=oio_headers)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
@@ -182,7 +184,7 @@ class ObjectController(BaseObjectController):
             metadata, stream = storage.object_fetch(
                 self.account_name, self.container_name, self.object_name,
                 ranges=ranges, headers=oio_headers,
-                version=req.environ.get('oio_query', {}).get('version'))
+                version=req.environ.get('oio.query', {}).get('version'))
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
         resp = self.make_object_response(req, metadata, stream, ranges=ranges)
@@ -242,6 +244,7 @@ class ObjectController(BaseObjectController):
     @delay_denial
     @handle_not_allowed
     @handle_service_busy
+    @check_if_none_match
     def POST(self, req):
         """HTTP POST request handler."""
         container_info = self.container_info(
@@ -283,12 +286,9 @@ class ObjectController(BaseObjectController):
     @delay_denial
     @handle_not_allowed
     @handle_service_busy
+    @check_if_none_match
     def PUT(self, req):
         """HTTP PUT request handler."""
-        if req.if_none_match is not None and '*' not in req.if_none_match:
-            # Sending an etag with if-none-match isn't currently supported
-            return HTTPBadRequest(request=req, content_type='text/plain',
-                                  body='If-None-Match only supports *')
         container_info = self.container_info(
             self.account_name, self.container_name, req)
 
@@ -359,6 +359,7 @@ class ObjectController(BaseObjectController):
             ranges = None
 
         oio_headers = {'X-oio-req-id': self.trans_id}
+        # FIXME(FVE): use object_show, cache in req.environ
         props = storage.object_get_properties(self.account_name, container,
                                               obj)
         if props['properties'].get(SLO, None):
@@ -473,7 +474,6 @@ class ObjectController(BaseObjectController):
                 policy = self._get_auto_policy_from_size(content_length)
 
         metadata = self.load_object_metadata(headers)
-        # TODO actually support if-none-match
         oio_headers = {'X-oio-req-id': self.trans_id}
         try:
             _chunks, _size, checksum = storage.object_create(
@@ -582,7 +582,7 @@ class ObjectController(BaseObjectController):
         try:
             storage.object_delete(
                 self.account_name, self.container_name, self.object_name,
-                version=req.environ.get('oio_query', {}).get('version'),
+                version=req.environ.get('oio.query', {}).get('version'),
                 headers=oio_headers)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)

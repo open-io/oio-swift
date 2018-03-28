@@ -106,7 +106,7 @@ class TestObjectController(unittest.TestCase):
         resp = req.get_response(self.app)
         self.storage.object_delete.assert_called_once_with(
             'a', 'c', 'o', version=None, headers=ANY)
-        self.assertEqual(resp.status_int, 204)
+        self.assertEqual(204, resp.status_int)
 
     def test_DELETE_not_found(self):
         req = Request.blank('/v1/a/c/o', method='DELETE')
@@ -114,7 +114,7 @@ class TestObjectController(unittest.TestCase):
         resp = req.get_response(self.app)
         self.storage.object_delete.assert_called_once_with(
             'a', 'c', 'o', version=None, headers=ANY)
-        self.assertEqual(resp.status_int, 204)
+        self.assertEqual(204, resp.status_int)
 
     def test_HEAD_simple(self):
         req = Request.blank('/v1/a/c/o', method='HEAD')
@@ -132,6 +132,39 @@ class TestObjectController(unittest.TestCase):
         self.assertEqual(resp.status_int, 200)
         self.assertIn('Accept-Ranges', resp.headers)
 
+    def test_GET_if_none_match_not_star(self):
+        """
+        An object with different hash exists -> accept
+        """
+        req = Request.blank('/v1/a/c/o', method='GET')
+        req.headers['if-none-match'] = '0000'
+        req.headers['content-length'] = '0'
+        ret_val = {
+            'ctime': 0,
+            'hash': '1111',
+            'length': 1,
+            'deleted': False,
+            'version': 42,
+        }
+        self.storage.object_show = Mock(return_value=ret_val)
+        self.storage.object_fetch = Mock(return_value=(ret_val, None))
+        resp = req.get_response(self.app)
+        self.storage.object_show.assert_called_once()
+        self.assertEqual(200, resp.status_int)
+
+    def test_GET_if_none_match_not_star_denied(self):
+        """
+        An object with the same hash exists -> deny
+        """
+        req = Request.blank('/v1/a/c/o', method='GET')
+        req.headers['if-none-match'] = '0000'
+        req.headers['content-length'] = '0'
+        ret_val = {'hash': '0000'}
+        self.storage.object_show = Mock(return_value=ret_val)
+        resp = req.get_response(self.app)
+        self.storage.object_show.assert_called_once()
+        self.assertEqual(304, resp.status_int)
+
     def test_PUT_simple(self):
         req = Request.blank('/v1/a/c/o', method='PUT')
         req.headers['content-length'] = '0'
@@ -143,12 +176,12 @@ class TestObjectController(unittest.TestCase):
                 metadata={}, mime_type='application/octet-stream',
                 file_or_path=req.environ['wsgi.input'], policy=None,
                 headers=ANY)
-        self.assertEqual(resp.status_int, 201)
+        self.assertEqual(201, resp.status_int)
 
     def test_PUT_requires_length(self):
         req = Request.blank('/v1/a/c/o', method='PUT')
         resp = req.get_response(self.app)
-        self.assertEqual(resp.status_int, 411)
+        self.assertEqual(411, resp.status_int)
 
     def test_PUT_empty_bad_etag(self):
         req = Request.blank('/v1/a/c/o', method='PUT')
@@ -161,31 +194,62 @@ class TestObjectController(unittest.TestCase):
         with patch('oio.api.replication.io.http_connect',
                    new=fake_http_connect):
             resp = req.get_response(self.app)
-        self.assertEqual(resp.status_int, 422)
+        self.assertEqual(422, resp.status_int)
 
     def test_PUT_if_none_match(self):
+        """
+        No object with the same name exists -> accept
+        """
         req = Request.blank('/v1/a/c/o', method='PUT')
         req.headers['if-none-match'] = '*'
         req.headers['content-length'] = '0'
         ret_val = ({}, 0, '')
+        self.storage.object_show = Mock(side_effect=exc.NoSuchObject)
         self.storage.object_create = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
-        self.assertEqual(resp.status_int, 201)
+        self.assertEqual(201, resp.status_int)
 
     def test_PUT_if_none_match_denied(self):
+        """
+        An object with the same name exists -> deny
+        """
         req = Request.blank('/v1/a/c/o', method='PUT')
         req.headers['if-none-match'] = '*'
         req.headers['content-length'] = '0'
-        self.storage.object_create = Mock(side_effect=exc.PreconditionFailed)
+        ret_val = {'hash': ''}
+        self.storage.object_show = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
-        self.assertEqual(resp.status_int, 412)
+        self.storage.object_show.assert_called_once()
+        self.assertEqual(412, resp.status_int)
+
+    def test_PUT_if_none_match_not_star_denied(self):
+        """
+        An object with the same name and hash exists -> deny
+        """
+        req = Request.blank('/v1/a/c/o', method='PUT')
+        req.headers['if-none-match'] = '0000'
+        req.headers['content-length'] = '0'
+        ret_val = {'hash': '0000'}
+        self.storage.object_show = Mock(return_value=ret_val)
+        resp = req.get_response(self.app)
+        self.assertEqual(412, resp.status_int)
 
     def test_PUT_if_none_match_not_star(self):
+        """
+        An object with the same name exists,
+        but it has different hash -> accept
+        """
         req = Request.blank('/v1/a/c/o', method='PUT')
-        req.headers['if-none-match'] = 'foo'
+        req.headers['if-none-match'] = '1111'
         req.headers['content-length'] = '0'
+        ret_val = {'hash': '0000'}
+        self.storage.object_show = Mock(return_value=ret_val)
+        ret_val2 = ({}, 0, '')
+        self.app.storage.object_create = Mock(return_value=ret_val2)
         resp = req.get_response(self.app)
-        self.assertEqual(resp.status_int, 400)
+        self.storage.object_show.assert_called_once()
+        self.storage.object_create.assert_called_once()
+        self.assertEqual(201, resp.status_int)
 
     def test_PUT_error_during_transfer_data(self):
         class FakeReader(object):
