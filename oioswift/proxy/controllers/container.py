@@ -131,7 +131,7 @@ class ContainerController(SwiftContainerController):
             if path:
                 prefix = path.rstrip('/') + '/'
             delimiter = '/'
-        opts = req.environ.get('oio_query', {})
+        opts = req.environ.get('oio.query', {})
         oio_headers = {'X-oio-req-id': self.trans_id}
         try:
             result = self.app.storage.object_list(

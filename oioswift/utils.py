@@ -16,9 +16,9 @@
 from functools import wraps
 
 from swift.common.swob import HTTPMethodNotAllowed, HTTPNotAcceptable, \
-    HTTPServiceUnavailable
+    HTTPNotModified, HTTPPreconditionFailed, HTTPServiceUnavailable
 
-from oio.common.exceptions import ServiceBusy
+from oio.common.exceptions import ServiceBusy, NoSuchContainer, NoSuchObject
 try:
     # Since oio-sds 4.1.14
     from oio.common.exceptions import MethodNotAllowed
@@ -131,3 +131,27 @@ def handle_not_allowed(fnc):
                 pass
             return HTTPMethodNotAllowed(request=req, headers=headers)
     return _wrapped
+
+
+def check_if_none_match(fnc):
+    """Check if object exists, and if etag matches."""
+    @wraps(fnc)
+    def _handle_if_none_match(self, req, *args, **kwargs):
+        if req.if_none_match is None:
+            return fnc(self, req, *args, **kwargs)
+        oio_headers = {'X-oio-req-id': self.trans_id}
+        try:
+            metadata = self.app.storage.object_show(
+                self.account_name, self.container_name, self.object_name,
+                version=req.environ.get('oio.query', {}).get('version'),
+                headers=oio_headers)
+        except (NoSuchObject, NoSuchContainer):
+            return fnc(self, req, *args, **kwargs)
+        # req.if_none_match will check for '*'.
+        if metadata.get('hash') in req.if_none_match:
+            if req.method in ('HEAD', 'GET'):
+                raise HTTPNotModified(request=req)
+            else:
+                raise HTTPPreconditionFailed(request=req)
+        return fnc(self, req, *args, **kwargs)
+    return _handle_if_none_match

@@ -79,7 +79,7 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
                 prefix, _ = swift3_split_object_name_version(qs['prefix'][0])
                 qs['prefix'] = prefix
             sub_env['QUERY_STRING'] = urlencode(qs, True)
-            sub_env['oio_query'] = {'versions': True}
+            sub_env['oio.query'] = {'versions': True}
 
         resp = super(OioVersionedWritesContext, self).handle_container_request(
             sub_env, lambda x, y, z: None)
@@ -134,7 +134,7 @@ class OioVersionedWritesMiddleware(vw.VersionedWritesMiddleware):
         if orig_container != container_name:
             orig_object, version = \
                 swift3_split_object_name_version(object_name)
-            req.environ['oio_query'] = {'version': version}
+            req.environ['oio.query'] = {'version': version}
             req.environ['PATH_INFO'] = '/%s/%s/%s/%s' % (api_version,
                                                          account,
                                                          quote(orig_container),
@@ -146,7 +146,7 @@ class OioVersionedWritesMiddleware(vw.VersionedWritesMiddleware):
                 # Do not create a delete marker, delete the latest version
                 obj_inf = get_object_info(req.environ, self.app,
                                           swift_source='VW')
-                req.environ['oio_query'] = {
+                req.environ['oio.query'] = {
                     'version': obj_inf.get('sysmeta', {}).get('version-id')
                 }
         resp = req.get_response(self.app)

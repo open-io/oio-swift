@@ -17,6 +17,7 @@ import json
 from paste.deploy import loadwsgi
 from six.moves.urllib.parse import parse_qs, quote_plus, urlencode
 from swift.common.swob import Request
+from swift.common.http import HTTP_PRECONDITION_FAILED
 from swift.common.utils import config_true_value, close_if_possible, \
     closing_if_possible, get_logger
 from swift.common.wsgi import make_subrequest, loadcontext, PipelineWrapper
@@ -93,8 +94,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         items = container.split(self.ENCODED_DELIMITER)
 
-        # TODO: if recursive_placeholders is set, we should
-        # stop iterating when a placeholder is already present
         while items:
             path = quote_plus(self.DELIMITER.join(
                 ('', 'v1', account, container, obj)))
@@ -106,6 +105,12 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             LOG.debug("%s: Create placeholder %s in %s",
                       self.SWIFT_SOURCE, obj, container)
             resp = req.get_response(self.app)
+            if resp.status_int == HTTP_PRECONDITION_FAILED:
+                LOG.debug('%s: directory placeholder already present '
+                          'in %s', self.SWIFT_SOURCE, container)
+                close_if_possible(resp.app_iter)
+                break
+
             if not resp.is_success:
                 LOG.warn('%s: Failed to create directory placeholder '
                          'in %s: %s',
