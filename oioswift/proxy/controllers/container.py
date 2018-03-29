@@ -34,7 +34,9 @@ from swift.proxy.controllers.base import clear_info_cache, \
 
 from oio.common import exceptions
 
-from oioswift.utils import get_listing_content_type, handle_service_busy
+from oioswift.utils import get_listing_content_type, \
+    handle_oio_no_such_container, handle_oio_timeout, \
+    handle_service_busy
 
 
 class ContainerController(SwiftContainerController):
@@ -43,6 +45,9 @@ class ContainerController(SwiftContainerController):
                             'x-container-sync-key', 'x-container-sync-to',
                             'x-versions-location']
 
+    @handle_oio_no_such_container
+    @handle_oio_timeout
+    @handle_service_busy
     def GETorHEAD(self, req):
         """Handler for HTTP GET/HEAD requests."""
         if self.account_info(self.account_name, req) is None:
@@ -86,11 +91,7 @@ class ContainerController(SwiftContainerController):
 
     def get_metadata_resp_headers(self, meta):
         headers = {}
-        try:
-            system = meta['system']
-        except KeyError:
-            # compatibility with oio-sds < 3.2
-            system = meta['properties']
+        system = meta.get('system') or {}
         # sys.m2.ctime is microseconds
         ctime = float(system.get('sys.m2.ctime', 0)) / 1000000.0
         headers.update({
@@ -133,21 +134,18 @@ class ContainerController(SwiftContainerController):
             delimiter = '/'
         opts = req.environ.get('oio.query', {})
         oio_headers = {'X-oio-req-id': self.trans_id}
-        try:
-            result = self.app.storage.object_list(
-                self.account_name, self.container_name, prefix=prefix,
-                limit=limit, delimiter=delimiter, marker=marker,
-                end_marker=end_marker, properties=True,
-                versions=opts.get('versions', False),
-                deleted=opts.get('deleted', False),
-                headers=oio_headers)
+        result = self.app.storage.object_list(
+            self.account_name, self.container_name, prefix=prefix,
+            limit=limit, delimiter=delimiter, marker=marker,
+            end_marker=end_marker, properties=True,
+            versions=opts.get('versions', False),
+            deleted=opts.get('deleted', False),
+            headers=oio_headers)
 
-            resp_headers = self.get_metadata_resp_headers(result)
-            resp = self.create_listing(
-                req, out_content_type, resp_headers, result,
-                self.container_name, **opts)
-        except exceptions.NoSuchContainer:
-            return HTTPNotFound(request=req)
+        resp_headers = self.get_metadata_resp_headers(result)
+        resp = self.create_listing(
+            req, out_content_type, resp_headers, result,
+            self.container_name, **opts)
         return resp
 
     def create_listing(self, req, out_content_type, resp_headers,
@@ -210,7 +208,6 @@ class ContainerController(SwiftContainerController):
     @public
     @delay_denial
     @cors_validation
-    @handle_service_busy
     def GET(self, req):
         """Handler for HTTP GET requests."""
         return self.GETorHEAD(req)
@@ -218,7 +215,6 @@ class ContainerController(SwiftContainerController):
     @public
     @delay_denial
     @cors_validation
-    @handle_service_busy
     def HEAD(self, req):
         """Handler for HTTP HEAD requests."""
         return self.GETorHEAD(req)
@@ -228,15 +224,10 @@ class ContainerController(SwiftContainerController):
         out_content_type = get_listing_content_type(req)
         headers['Content-Type'] = out_content_type
         oio_headers = {'X-oio-req-id': self.trans_id}
-        try:
-            meta = self.app.storage.container_get_properties(
-                self.account_name, self.container_name, headers=oio_headers)
-            headers.update(self.get_metadata_resp_headers(meta))
-            resp = HTTPNoContent(request=req, headers=headers, charset='utf-8')
-        except exceptions.NoSuchContainer:
-            resp = HTTPNotFound(request=req, headers=headers)
-
-        return resp
+        meta = self.app.storage.container_get_properties(
+            self.account_name, self.container_name, headers=oio_headers)
+        headers.update(self.get_metadata_resp_headers(meta))
+        return HTTPNoContent(request=req, headers=headers, charset='utf-8')
 
     def properties_from_headers(self, headers):
         metadata = {
@@ -282,6 +273,7 @@ class ContainerController(SwiftContainerController):
 
     @public
     @cors_validation
+    @handle_oio_timeout
     @handle_service_busy
     def PUT(self, req):
         """HTTP PUT request handler."""
@@ -327,6 +319,7 @@ class ContainerController(SwiftContainerController):
 
     @public
     @cors_validation
+    @handle_oio_timeout
     @handle_service_busy
     def POST(self, req):
         """HTTP POST request handler."""
@@ -365,20 +358,20 @@ class ContainerController(SwiftContainerController):
             resp = self.PUT(req)
         return resp
 
-    def get_container_delete_resp(self, req, headers):
+    def get_container_delete_resp(self, req):
         oio_headers = {'X-oio-req-id': self.trans_id}
         try:
             self.app.storage.container_delete(
                 self.account_name, self.container_name, headers=oio_headers)
         except exceptions.ContainerNotEmpty:
             return HTTPConflict(request=req)
-        except exceptions.NoSuchContainer:
-            return HTTPNotFound(request=req)
         resp = HTTPNoContent(request=req)
         return resp
 
     @public
     @cors_validation
+    @handle_oio_no_such_container
+    @handle_oio_timeout
     @handle_service_busy
     def DELETE(self, req):
         """HTTP DELETE request handler."""
@@ -386,10 +379,9 @@ class ContainerController(SwiftContainerController):
             self.account_info(self.account_name, req)
         if not accounts:
             return HTTPNotFound(request=req)
-        headers = self.generate_request_headers(req, transfer=True)
         clear_info_cache(self.app, req.environ,
                          self.account_name, self.container_name)
-        resp = self.get_container_delete_resp(req, headers)
+        resp = self.get_container_delete_resp(req)
         if resp.status_int == HTTP_ACCEPTED:
             return HTTPNotFound(request=req)
         return resp
