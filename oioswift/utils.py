@@ -145,7 +145,8 @@ def handle_oio_timeout(fnc):
             headers = dict()
             # TODO(FVE): choose the value according to the timeout
             headers['Retry-After'] = '1'
-            return HTTPServiceUnavailable(request=req, body=str(exc))
+            return HTTPServiceUnavailable(request=req, headers=headers,
+                                          body=str(exc))
     return _oio_timeout_wrapper
 
 
