@@ -16,9 +16,11 @@
 from functools import wraps
 
 from swift.common.swob import HTTPMethodNotAllowed, HTTPNotAcceptable, \
+    HTTPNotFound, \
     HTTPNotModified, HTTPPreconditionFailed, HTTPServiceUnavailable
 
-from oio.common.exceptions import ServiceBusy, NoSuchContainer, NoSuchObject
+from oio.common.exceptions import ServiceBusy, NoSuchContainer, NoSuchObject,\
+    OioTimeout
 try:
     # Since oio-sds 4.1.14
     from oio.common.exceptions import MethodNotAllowed
@@ -105,7 +107,7 @@ class IterO(object):
 
 def handle_service_busy(fnc):
     @wraps(fnc)
-    def _wrapped(self, req, *args, **kwargs):
+    def _service_busy_wrapper(self, req, *args, **kwargs):
         try:
             return fnc(self, req, *args, **kwargs)
         except ServiceBusy as e:
@@ -113,13 +115,13 @@ def handle_service_busy(fnc):
             headers['Retry-After'] = '1'
             return HTTPServiceUnavailable(request=req, headers=headers,
                                           body=e.message)
-    return _wrapped
+    return _service_busy_wrapper
 
 
 def handle_not_allowed(fnc):
     """Handle MethodNotAllowed ('405 Method not allowed') errors."""
     @wraps(fnc)
-    def _wrapped(self, req, *args, **kwargs):
+    def _not_allowed_wrapper(self, req, *args, **kwargs):
         try:
             return fnc(self, req, *args, **kwargs)
         except MethodNotAllowed as exc:
@@ -130,13 +132,38 @@ def handle_not_allowed(fnc):
                 # TODO(FVE): load Allow header from exception attributes
                 pass
             return HTTPMethodNotAllowed(request=req, headers=headers)
-    return _wrapped
+    return _not_allowed_wrapper
+
+
+def handle_oio_timeout(fnc):
+    """Catch OioTimeout errors and return '503 Service Unavailable'."""
+    @wraps(fnc)
+    def _oio_timeout_wrapper(self, req, *args, **kwargs):
+        try:
+            return fnc(self, req, *args, **kwargs)
+        except OioTimeout as exc:
+            headers = dict()
+            # TODO(FVE): choose the value according to the timeout
+            headers['Retry-After'] = '1'
+            return HTTPServiceUnavailable(request=req, body=str(exc))
+    return _oio_timeout_wrapper
+
+
+def handle_oio_no_such_container(fnc):
+    """Catch NoSuchContainer errors and return '404 Not Found'"""
+    @wraps(fnc)
+    def _oio_no_such_container_wrapper(self, req, *args, **kwargs):
+        try:
+            return fnc(self, req, *args, **kwargs)
+        except NoSuchContainer:
+            return HTTPNotFound(request=req)
+    return _oio_no_such_container_wrapper
 
 
 def check_if_none_match(fnc):
     """Check if object exists, and if etag matches."""
     @wraps(fnc)
-    def _handle_if_none_match(self, req, *args, **kwargs):
+    def _if_none_match_wrapper(self, req, *args, **kwargs):
         if req.if_none_match is None:
             return fnc(self, req, *args, **kwargs)
         oio_headers = {'X-oio-req-id': self.trans_id}
@@ -154,4 +181,4 @@ def check_if_none_match(fnc):
             else:
                 raise HTTPPreconditionFailed(request=req)
         return fnc(self, req, *args, **kwargs)
-    return _handle_if_none_match
+    return _if_none_match_wrapper
