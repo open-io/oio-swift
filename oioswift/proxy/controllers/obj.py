@@ -39,11 +39,10 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 
 from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
-from oio.common.green import SourceReadTimeout
-from urllib3.exceptions import ReadTimeoutError
 
-from oioswift.utils import check_if_none_match, handle_service_busy, \
-    handle_not_allowed, ServiceBusy
+from oio.common.green import SourceReadTimeout
+from oioswift.utils import check_if_none_match, \
+    handle_not_allowed, handle_oio_timeout, handle_service_busy
 
 SLO = 'x-static-large-object'
 
@@ -120,7 +119,6 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
-    @handle_service_busy
     def HEAD(self, req):
         """Handle HEAD requests."""
         return self.GETorHEAD(req)
@@ -128,11 +126,12 @@ class ObjectController(BaseObjectController):
     @public
     @cors_validation
     @delay_denial
-    @handle_service_busy
     def GET(self, req):
         """Handle GET requests."""
         return self.GETorHEAD(req)
 
+    @handle_oio_timeout
+    @handle_service_busy
     @check_if_none_match
     def GETorHEAD(self, req):
         """Handle HTTP GET or HEAD requests."""
@@ -243,6 +242,7 @@ class ObjectController(BaseObjectController):
     @cors_validation
     @delay_denial
     @handle_not_allowed
+    @handle_oio_timeout
     @handle_service_busy
     @check_if_none_match
     def POST(self, req):
@@ -285,6 +285,7 @@ class ObjectController(BaseObjectController):
     @cors_validation
     @delay_denial
     @handle_not_allowed
+    @handle_oio_timeout
     @handle_service_busy
     @check_if_none_match
     def PUT(self, req):
@@ -408,11 +409,6 @@ class ObjectController(BaseObjectController):
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
-        except SourceReadTimeout as err:
-            self.app.logger.warning(
-                _('ERROR Client read timeout (%ss)'), err.seconds)
-            self.app.logger.increment('client_timeouts')
-            raise HTTPRequestTimeout(request=req)
         except exceptions.SourceReadError:
             req.client_disconnect = True
             self.app.logger.warning(
@@ -421,20 +417,12 @@ class ObjectController(BaseObjectController):
             raise HTTPClientDisconnect(request=req)
         except exceptions.EtagMismatch:
             return HTTPUnprocessableEntity(request=req)
-        except exceptions.OioTimeout:
-            self.app.logger.exception(
-                _('ERROR Timeout while uploading data or metadata'))
-            raise ServiceBusy()
-        except ServiceBusy:
+        except (exceptions.ServiceBusy, exceptions.OioTimeout):
             raise
-        except ReadTimeoutError:
-            self.app.logger.exception(
-                _('ERROR Exception causing client disconnect'))
-            raise ServiceBusy()
         except exceptions.ClientException as err:
             # 481 = CODE_POLICY_NOT_SATISFIABLE
             if err.status == 481:
-                raise ServiceBusy
+                raise exceptions.ServiceBusy()
             self.app.logger.exception(
                 _('ERROR Exception transferring data %s'),
                 {'path': req.path})
@@ -485,6 +473,7 @@ class ObjectController(BaseObjectController):
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
+        # FIXME(FVE): SourceReadTimeout should never be raised from oio!
         except SourceReadTimeout as err:
             self.app.logger.warning(
                 _('ERROR Client read timeout (%ss)'), err.seconds)
@@ -498,20 +487,12 @@ class ObjectController(BaseObjectController):
             raise HTTPClientDisconnect(request=req)
         except exceptions.EtagMismatch:
             return HTTPUnprocessableEntity(request=req)
-        except exceptions.OioTimeout:
-            self.app.logger.exception(
-                _('ERROR Timeout while uploading data or metadata'))
-            raise ServiceBusy()
-        except ServiceBusy:
+        except (exceptions.ServiceBusy, exceptions.OioTimeout):
             raise
-        except ReadTimeoutError:
-            self.app.logger.exception(
-                _('ERROR Exception causing client disconnect'))
-            raise ServiceBusy()
         except exceptions.ClientException as err:
             # 481 = CODE_POLICY_NOT_SATISFIABLE
             if err.status == 481:
-                raise ServiceBusy
+                raise exceptions.ServiceBusy()
             self.app.logger.exception(
                 _('ERROR Exception transferring data %s'),
                 {'path': req.path})
@@ -557,6 +538,7 @@ class ObjectController(BaseObjectController):
     @cors_validation
     @delay_denial
     @handle_not_allowed
+    @handle_oio_timeout
     @handle_service_busy
     def DELETE(self, req):
         """HTTP DELETE request handler."""

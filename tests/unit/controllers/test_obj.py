@@ -267,7 +267,7 @@ class TestObjectController(unittest.TestCase):
         with patch('oio.api.replication.io.http_connect',
                    new=fake_http_connect):
             resp = req.get_response(self.app)
-        self.assertEqual(resp.status_int, 499)
+        self.assertEqual(499, resp.status_int)
 
     def test_PUT_chunkreadtimeout_during_data_transfer(self):
         """The gateway times out while reading from the client."""
@@ -286,7 +286,7 @@ class TestObjectController(unittest.TestCase):
         with patch('oio.api.replication.io.http_connect',
                    new=fake_http_connect):
             resp = req.get_response(self.app)
-            self.assertEqual(resp.status_int, 408)
+            self.assertEqual(408, resp.status_int)
 
     def test_PUT_timeout_during_data_transfer(self):
         """The gateway times out while upload data to the server."""
@@ -305,7 +305,7 @@ class TestObjectController(unittest.TestCase):
         with patch('oio.api.replication.io.http_connect',
                    new=fake_http_connect):
             resp = req.get_response(self.app)
-            self.assertEqual(resp.status_int, 503)
+            self.assertEqual(503, resp.status_int)
 
     def test_PUT_truncated_input_empty(self):
         """The gateway does not receive data from the client."""
@@ -324,7 +324,7 @@ class TestObjectController(unittest.TestCase):
         with patch('oio.api.replication.io.http_connect',
                    new=fake_http_connect):
             resp = req.get_response(self.app)
-            self.assertEqual(resp.status_int, 499)
+            self.assertEqual(499, resp.status_int)
 
     def test_PUT_truncated_input_almost(self):
         """The gateway does not receive enough data from the client."""
