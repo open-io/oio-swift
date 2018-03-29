@@ -31,7 +31,7 @@ from swift.proxy.controllers.base import set_info_cache, clear_info_cache
 
 from oio.common import exceptions
 
-from oioswift.utils import handle_service_busy
+from oioswift.utils import handle_oio_timeout, handle_service_busy
 
 
 def get_response_headers(info):
@@ -105,8 +105,29 @@ def account_listing_response(account, req, response_content_type,
     return ret
 
 
+def handle_account_not_found_autocreate(fnc):
+    """
+    Catch NoSuchAccount and NotFound errors.
+    If account_autocreate is enabled, return a dummy listing.
+    Otherwise, return a proper '404 Not Found' response.
+    """
+    def _account_not_found_wrapper(self, req, *args, **kwargs):
+        try:
+            resp = fnc(self, req, *args, **kwargs)
+        except (exceptions.NotFound, exceptions.NoSuchAccount):
+            if self.app.account_autocreate:
+                resp = account_listing_response(self.account_name, req,
+                                                get_listing_content_type(req))
+            else:
+                resp = HTTPNotFound(request=req)
+        return resp
+    return _account_not_found_wrapper
+
+
 class AccountController(SwiftAccountController):
     @public
+    @handle_account_not_found_autocreate
+    @handle_oio_timeout
     @handle_service_busy
     def GET(self, req):
         """Handler for HTTP GET requests."""
@@ -145,35 +166,29 @@ class AccountController(SwiftAccountController):
         end_marker = get_param(req, 'end_marker')
 
         oio_headers = {'X-oio-req-id': self.trans_id}
-        try:
-            info = None
-            if hasattr(self.app.storage, 'account'):
-                # Call directly AccountClient.container_list()
-                # because storage.container_list() does not return
-                # account metadata
-                info = self.app.storage.account.container_list(
-                    self.account_name, limit=limit, marker=marker,
-                    end_marker=end_marker, prefix=prefix,
-                    delimiter=delimiter, headers=oio_headers)
-                listing = info.pop('listing')
-            else:
-                # Legacy call to account service
-                listing, info = self.app.storage.container_list(
-                    self.account_name, limit=limit, marker=marker,
-                    end_marker=end_marker, prefix=prefix,
-                    delimiter=delimiter, headers=oio_headers)
-            resp = account_listing_response(
-                self.account_name, req, get_listing_content_type(req),
-                info=info, listing=listing)
-        except (exceptions.NotFound, exceptions.NoSuchAccount):
-            if self.app.account_autocreate:
-                resp = account_listing_response(self.account_name, req,
-                                                get_listing_content_type(req))
-            else:
-                resp = HTTPNotFound(request=req)
-        return resp
+        info = None
+        if hasattr(self.app.storage, 'account'):
+            # Call directly AccountClient.container_list()
+            # because storage.container_list() does not return
+            # account metadata
+            info = self.app.storage.account.container_list(
+                self.account_name, limit=limit, marker=marker,
+                end_marker=end_marker, prefix=prefix,
+                delimiter=delimiter, headers=oio_headers)
+            listing = info.pop('listing')
+        else:
+            # Legacy call to account service
+            listing, info = self.app.storage.container_list(
+                self.account_name, limit=limit, marker=marker,
+                end_marker=end_marker, prefix=prefix,
+                delimiter=delimiter, headers=oio_headers)
+        return account_listing_response(
+            self.account_name, req, get_listing_content_type(req),
+            info=info, listing=listing)
 
     @public
+    @handle_account_not_found_autocreate
+    @handle_oio_timeout
     @handle_service_busy
     def HEAD(self, req):
         """HTTP HEAD request handler."""
@@ -197,22 +212,14 @@ class AccountController(SwiftAccountController):
 
     def get_account_head_resp(self, req):
         oio_headers = {'X-oio-req-id': self.trans_id}
-        try:
-            info = self.app.storage.account_show(
-                self.account_name, headers=oio_headers)
-            resp = account_listing_response(self.account_name, req,
-                                            get_listing_content_type(req),
-                                            info=info)
-        except (exceptions.NotFound, exceptions.NoSuchAccount):
-            if self.app.account_autocreate:
-                resp = account_listing_response(self.account_name, req,
-                                                get_listing_content_type(req))
-            else:
-                resp = HTTPNotFound(request=req)
-
-        return resp
+        info = self.app.storage.account_show(
+            self.account_name, headers=oio_headers)
+        return account_listing_response(self.account_name, req,
+                                        get_listing_content_type(req),
+                                        info=info)
 
     @public
+    @handle_oio_timeout
     @handle_service_busy
     def PUT(self, req):
         """HTTP PUT request handler."""
@@ -256,6 +263,7 @@ class AccountController(SwiftAccountController):
         return resp
 
     @public
+    @handle_oio_timeout
     @handle_service_busy
     def POST(self, req):
         """HTTP POST request handler."""
@@ -298,6 +306,7 @@ class AccountController(SwiftAccountController):
         return resp
 
     @public
+    @handle_oio_timeout
     @handle_service_busy
     def DELETE(self, req):
         """HTTP DELETE request handler."""

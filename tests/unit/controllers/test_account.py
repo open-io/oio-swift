@@ -7,6 +7,7 @@ from swift.common.request_helpers import get_sys_meta_prefix
 from swift.proxy.controllers.base import headers_to_account_info
 from oioswift.common.ring import FakeRing
 from oioswift import server as proxy_server
+from oio.common import exceptions as oioexc
 from tests.unit import FakeStorageAPI, FakeMemcache, debug_logger
 
 
@@ -44,6 +45,41 @@ class TestAccountController(unittest.TestCase):
         self.assertEqual(
             headers_to_account_info(resp.headers, resp.status_int),
             resp.environ['swift.infocache']['account/AUTH_openio'])
+
+    def test_account_info_not_found(self):
+        req = Request.blank(
+            '/v1/AUTH_openio', {'PATH_INFO': '/v1/AUTH_openio'}, method='HEAD')
+
+        self.storage.account_show = Mock(side_effect=oioexc.NoSuchAccount)
+        resp = req.get_response(self.app)
+        self.assertEqual(404, resp.status_int)
+
+    def test_account_info_not_found_autocreate(self):
+        req = Request.blank(
+            '/v1/AUTH_openio', {'PATH_INFO': '/v1/AUTH_openio'}, method='HEAD')
+
+        self.storage.account_show = Mock(side_effect=oioexc.NoSuchAccount)
+        self.app.account_autocreate = True
+        resp = req.get_response(self.app)
+        self.assertEqual(2, resp.status_int // 100)
+        # We got a dummy response, it should not be cached
+        self.assertNotIn('swift.infocache', resp.environ)
+
+    def test_account_info_service_busy(self):
+        req = Request.blank(
+            '/v1/AUTH_openio', {'PATH_INFO': '/v1/AUTH_openio'}, method='HEAD')
+
+        self.storage.account_show = Mock(side_effect=oioexc.ServiceBusy)
+        resp = req.get_response(self.app)
+        self.assertEqual(503, resp.status_int)
+
+    def test_account_info_timeout(self):
+        req = Request.blank(
+            '/v1/AUTH_openio', {'PATH_INFO': '/v1/AUTH_openio'}, method='HEAD')
+
+        self.storage.account_show = Mock(side_effect=oioexc.OioTimeout)
+        resp = req.get_response(self.app)
+        self.assertEqual(503, resp.status_int)
 
     def test_swift_owner(self):
         owner_headers = {
