@@ -26,6 +26,7 @@ from oio.common.exceptions import ConfigurationException
 
 LOG = None
 MIDDLEWARE_NAME = 'container_hierarchy'
+DEFAULT_LIMIT = 10000
 
 
 class ContainerHierarchyMiddleware(AutoContainerBase):
@@ -151,7 +152,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
     def _build_object_listing(self, start_response, env,
                               account, container, obj,
-                              recursive=False):
+                              limit=None,
+                              recursive=False, marker=None):
         oheaders = dict()
 
         def header_cb(header_dict):
@@ -160,8 +162,12 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         all_objs = [x for x in self._list_objects(
                     env, account,
                     tuple(container.split(self.ENCODED_DELIMITER)),
-                    header_cb, prefix=obj or '',
-                    recursive=recursive)]
+                    header_cb, prefix=obj or '', marker=marker,
+                    limit=limit, recursive=recursive)]
+        # results must be sorted or paginated listing are broken
+        all_objs = sorted(all_objs,
+                          key=lambda entry: entry.get('name',
+                                                      entry.get('subdir')))
         body = json.dumps(all_objs)
         oheaders['X-Container-Object-Count'] = len(all_objs)
         # FIXME: aggregate X-Container-Bytes-Used
@@ -188,7 +194,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         return container, obj
 
     def _list_objects(self, env, account, ct_parts, header_cb,
-                      prefix='', recursive=True, limit=10000):
+                      prefix='', recursive=True, limit=DEFAULT_LIMIT,
+                      marker=None):
         """
         If `recursive` is set (the default), for each subdirectory marker
         encountered, make a listing subrequest, and yield object list.
@@ -198,7 +205,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         """
         sub_path = quote_plus(self.DELIMITER.join(
             ('', 'v1', account, self.ENCODED_DELIMITER.join(ct_parts))))
-        LOG.debug("%s: listing objects from '%s'", self.SWIFT_SOURCE, sub_path)
+        LOG.debug("%s: listing objects from '%s' "
+                  "(limit=%d, prefix=%s, marker=%s)",
+                  self.SWIFT_SOURCE, sub_path, limit, prefix, marker)
         sub_req = make_subrequest(env.copy(), method='GET', path=sub_path,
                                   body='',
                                   swift_source=self.SWIFT_SOURCE)
@@ -207,6 +216,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         params['limit'] = str(limit)  # FIXME: why is it str?
         params['prefix'] = prefix
         params['format'] = 'json'
+        if marker:
+            params['marker'] = marker
         sub_req.params = params
         resp = sub_req.get_response(self.app)
         obj_prefix = ''
@@ -264,8 +275,12 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         env2 = env.copy()
         qs = parse_qs(req.query_string or '')
         prefix = qs.get('prefix')  # returns a list or None
-        LOG.debug("%s: Got %s request for container=%s, obj=%s, prefix=%s",
-                  self.SWIFT_SOURCE, req.method, container, obj, prefix)
+        marker = qs.get('marker')
+        limit = qs.get('limit')
+        LOG.debug("%s: Got %s request for container=%s, "
+                  "obj=%s, prefix=%s marker=%s",
+                  self.SWIFT_SOURCE, req.method, container, obj, prefix,
+                  marker)
         must_recurse = False
 
         # Rework Oio-Copy-From to use correct source (container, obj)
@@ -290,6 +305,14 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 env2['QUERY_STRING'] = urlencode(qs, True)
                 container, obj = self._fake_container_and_obj(
                     container, obj_parts, is_listing=True)
+            if not marker:
+                marker = None
+            else:
+                marker = marker[0].strip('/').split(self.DELIMITER)[-1]
+            if not limit:
+                limit = self.DEFAULT_LIMIT
+            else:
+                limit = int(limit[0])
         else:
             LOG.debug("%s: -> is NOT listing request", self.SWIFT_SOURCE)
             obj_parts = obj.split(self.DELIMITER)
@@ -310,7 +333,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         if must_recurse:
             res = self._build_object_listing(start_response, env,
                                              account, container, obj,
-                                             recursive=True)
+                                             limit=limit, recursive=True,
+                                             marker=marker)
         elif not (qs.get('prefix') or qs.get('delimiter')):
             # should be other operation that listing
             if obj:
@@ -321,7 +345,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         else:
             res = self._build_object_listing(start_response, env,
                                              account, container, obj,
-                                             recursive=False)
+                                             limit=limit,
+                                             recursive=False, marker=marker)
 
         return res
 
