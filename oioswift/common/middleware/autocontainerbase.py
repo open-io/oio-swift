@@ -78,13 +78,16 @@ class AutoContainerBase(object):
         return account, container, obj
 
     def _alternatives(self, account, container, obj):
+        # put S3 parts in dedicated container
+        suffix = ("+segments" if container and container.endswith('+segments')
+                  else "")
         if obj is None:
             yield account, container, obj
         elif self.stop_at_first_match:
-            yield account, quote_plus(self.con_builder(obj)), obj
+            yield account, quote_plus(self.con_builder(obj)) + suffix, obj
         else:
             for alt_container in self.con_builder.alternatives(obj):
-                yield account, quote_plus(alt_container), obj
+                yield account, quote_plus(alt_container) + suffix, obj
         raise StopIteration
 
     @staticmethod
