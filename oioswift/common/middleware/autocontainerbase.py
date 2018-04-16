@@ -14,9 +14,11 @@
 # limitations under the License.
 
 from functools import partial
+import collections
 from six.moves.urllib.parse import parse_qs, quote_plus
 from swift.common.swob import HTTPBadRequest
 from swift.common.utils import config_true_value, split_path
+from swift.common.wsgi import reiterate
 from oio.common.autocontainer import ContainerBuilder
 
 
@@ -75,12 +77,16 @@ class AutoContainerBase(object):
             container = quote_plus(self.con_builder(obj))
         return account, container, obj
 
-    def _alternatives(self, path):
+    def _alternatives(self, path, prefix):
         account, container, obj = self._extract_path(path)
+        is_prefix = False
+        if obj is None and prefix:
+            obj = prefix[0]
+            is_prefix = True
         if obj is None:
-            yield account, container, obj
+            yield account, container, obj, is_prefix
         elif self.stop_at_first_match:
-            yield account, quote_plus(self.con_builder(obj)), obj
+            yield account, quote_plus(self.con_builder(obj)), obj, is_prefix
         else:
             for alt_container in self.con_builder.alternatives(obj):
                 yield account, quote_plus(alt_container), obj
@@ -110,11 +116,19 @@ class AutoContainerBase(object):
             path parts (may raise an exception)
         """
         local_env = {}
-        for alt in self._alternatives(path_to_modify):
+        params = parse_qs(orig_env['QUERY_STRING'], True)
+        for alt in self._alternatives(path_to_modify, params.get('prefix')):
             if alt_checker and not alt_checker(alt):
                 return self.app(orig_env, start_response)
             env = env_modifier(orig_env, alt)
             resp = self.app(env, partial(self._save_response, local_env))
+
+            if isinstance(resp, collections.Iterable):
+                # TODO when a MPU is completed, resp is an iterator
+                # and we must fill last_status but it may break
+                # next test
+                resp = reiterate(resp)
+
             if 'last_status' not in local_env:
                 # start_response() was not called. This happens when there is
                 # no 'proxy-logging' just after 'catch_errors' in the pipeline.
@@ -171,7 +185,10 @@ class AutoContainerBase(object):
         """
         def modify_path_info(orig_env, alternative):
             env_ = orig_env.copy()
-            env_['PATH_INFO'] = "/v1/%s/%s/%s" % alternative
+            if alternative[3]:  # from prefix
+                env_['PATH_INFO'] = "/v1/%s/%s" % alternative[0:2]
+            else:
+                env_['PATH_INFO'] = "/v1/%s/%s/%s" % alternative[0:3]
             return env_
 
         def check_obj(alternative):
