@@ -77,16 +77,11 @@ class AutoContainerBase(object):
             container = quote_plus(self.con_builder(obj))
         return account, container, obj
 
-    def _alternatives(self, path, prefix):
-        account, container, obj = self._extract_path(path)
-        is_prefix = False
-        if obj is None and prefix:
-            obj = prefix[0]
-            is_prefix = True
+    def _alternatives(self, account, container, obj):
         if obj is None:
-            yield account, container, obj, is_prefix
+            yield account, container, obj
         elif self.stop_at_first_match:
-            yield account, quote_plus(self.con_builder(obj)), obj, is_prefix
+            yield account, quote_plus(self.con_builder(obj)), obj
         else:
             for alt_container in self.con_builder.alternatives(obj):
                 yield account, quote_plus(alt_container), obj
@@ -116,11 +111,15 @@ class AutoContainerBase(object):
             path parts (may raise an exception)
         """
         local_env = {}
-        params = parse_qs(orig_env['QUERY_STRING'], True)
-        for alt in self._alternatives(path_to_modify, params.get('prefix')):
+        query = parse_qs(orig_env['QUERY_STRING'], True)
+        account, container, obj = self._extract_path(path_to_modify)
+        is_container_req = container is not None and obj is None
+        if is_container_req and 'prefix' in query:
+            obj = query['prefix'][0]
+        for alt in self._alternatives(account, container, obj):
             if alt_checker and not alt_checker(alt):
                 return self.app(orig_env, start_response)
-            env = env_modifier(orig_env, alt)
+            env = env_modifier(orig_env, alt[:2] if is_container_req else alt)
             resp = self.app(env, partial(self._save_response, local_env))
 
             if isinstance(resp, collections.Iterable):
@@ -185,10 +184,7 @@ class AutoContainerBase(object):
         """
         def modify_path_info(orig_env, alternative):
             env_ = orig_env.copy()
-            if alternative[3]:  # from prefix
-                env_['PATH_INFO'] = "/v1/%s/%s" % alternative[0:2]
-            else:
-                env_['PATH_INFO'] = "/v1/%s/%s/%s" % alternative[0:3]
+            env_['PATH_INFO'] = '/'.join(('', 'v1') + alternative)
             return env_
 
         def check_obj(alternative):
