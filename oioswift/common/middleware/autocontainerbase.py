@@ -1,4 +1,4 @@
-# Copyright (C) 2017 OpenIO SAS
+# Copyright (C) 2017-2018 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 from functools import partial
 import collections
 from six.moves.urllib.parse import parse_qs, quote_plus
-from swift.common.swob import HTTPBadRequest
+from swift.common.swob import HTTPBadRequest, Request
 from swift.common.utils import config_true_value, split_path
 from swift.common.wsgi import reiterate
 from oio.common.autocontainer import ContainerBuilder
@@ -200,6 +200,10 @@ class AutoContainerBase(object):
 
     def __call__(self, env, start_response):
         if self.should_bypass(env):
+            return self.app(env, start_response)
+
+        req = Request(env)
+        if '%2Bsegments' in req.path:
             return self.app(env, start_response)
 
         if self.is_copy(env):
