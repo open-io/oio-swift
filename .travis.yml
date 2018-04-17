@@ -2,14 +2,11 @@ sudo: required
 dist: trusty
 language: python
 
-services:
-  - docker
-
 env:
   matrix:
     - TEST_SUITE=unit
     - TEST_SUITE=ns-wide-versioning
-    # - TEST_SUITE=s3
+    - TEST_SUITE=s3
 
 install:
   - sudo apt-add-repository "deb http://archive.ubuntu.com/ubuntu trusty-backports main restricted universe multiverse"
@@ -27,9 +24,6 @@ install:
   - cd third_party/swift3 && python setup.py install && cd ../..
   - python setup.py install
   - pip install --upgrade -r test-requirements.txt
-  # - docker pull openio/sds
-  # - docker run -d -p 127.0.0.1:6007:6007 openio/sds
-  # - sleep 20
 
 script:
   - flake8 oioswift
