@@ -114,7 +114,7 @@ class AutoContainerBase(object):
             path parts (may raise an exception)
         """
         local_env = {}
-        query = parse_qs(orig_env['QUERY_STRING'], True)
+        query = parse_qs(orig_env.get('QUERY_STRING', ''), True)
         account, container, obj = self._extract_path(path_to_modify)
         is_container_req = container is not None and obj is None
         if is_container_req and 'prefix' in query:
