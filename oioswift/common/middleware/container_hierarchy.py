@@ -310,7 +310,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             else:
                 marker = marker[0].strip('/').split(self.DELIMITER)[-1]
             if not limit:
-                limit = self.DEFAULT_LIMIT
+                limit = DEFAULT_LIMIT
             else:
                 limit = int(limit[0])
         else:
