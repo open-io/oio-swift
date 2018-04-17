@@ -42,7 +42,6 @@ echo ${OUT} | grep root
 echo ${OUT} | grep dir1/dir2/object
 
 
-S3CMD="/home/murlock/openio/resources/s3cmd"
 ${AWS} s3 cp bigfile s3://${BUCKET}/subdir/bigfile
 
 ${AWS} s3 cp s3://${BUCKET}/subdir/bigfile testfile
