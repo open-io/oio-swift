@@ -261,9 +261,8 @@ class ServerSideCopyMiddleware(object):
         # FIXME: handle COPY method (with Destination-* headers)
         if self.fast_copy_allowed(req):
             self.logger.debug("COPY: fast copy allowed")
-            # FIXME(FVE): we may use req.environ instead of headers
-            req.headers['Oio-Copy-From'] = req.headers.get('X-Copy-From')
-            del req.headers['X-Copy-From']
+            env['HTTP_OIO_COPY_FROM'] = unquote(env['HTTP_X_COPY_FROM'])
+            del env['HTTP_X_COPY_FROM']
             return self.app(env, start_response)
 
         try:

@@ -93,7 +93,8 @@ class AutoContainerBase(object):
     @staticmethod
     def is_copy(env):
         """Tell if `env` represents an object copy operation."""
-        return env['REQUEST_METHOD'] == 'PUT' and 'HTTP_X_COPY_FROM' in env
+        return (env['REQUEST_METHOD'] == 'PUT' and
+                ('HTTP_X_COPY_FROM' in env or 'HTTP_OIO_COPY_FROM' in env))
 
     @staticmethod
     def _save_response(env, status, headers, exc_info=None):
@@ -159,15 +160,23 @@ class AutoContainerBase(object):
             return self.app(env, start_response)
         env['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container, obj)
 
+        for hdr in ("HTTP_OIO_COPY_FROM", "HTTP_X_COPY_FROM"):
+            if hdr in env:
+                from_value = env.get(hdr)
+                from_header = hdr
+                break
+        else:
+            raise HTTPBadRequest(body="Malformed copy-source header")
+
         # HTTP_X_COPY_FROM_ACCOUNT will just pass through
         if self.account_first:
-            src_path = "/fake_account" + env['HTTP_X_COPY_FROM']
+            src_path = "/fake_account" + from_value
         else:
-            src_path = env['HTTP_X_COPY_FROM']
+            src_path = from_value
 
         def modify_copy_from(orig_env, alternative):
             env_ = orig_env.copy()
-            env_['HTTP_X_COPY_FROM'] = "/%s/%s" % (
+            env_[from_header] = "/%s/%s" % (
                 quote_plus(alternative[1]), alternative[2])
             return env_
 
