@@ -26,6 +26,7 @@ sleep 1
 PID=$(jobs -p)
 
 bash tests/functional/ns_wide_versioning_tests.sh "$OIO_NS" "$OIO_ACCOUNT"
+RET=$?
 
 for pid in $PID; do
     kill $pid
@@ -33,3 +34,4 @@ for pid in $PID; do
 done
 
 # TODO(FVE): gridinit_cmd stop
+exit $RET
