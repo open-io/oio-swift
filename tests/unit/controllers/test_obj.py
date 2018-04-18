@@ -168,7 +168,7 @@ class TestObjectController(unittest.TestCase):
     def test_PUT_simple(self):
         req = Request.blank('/v1/a/c/o', method='PUT')
         req.headers['content-length'] = '0'
-        ret_val = ({}, 0, '')
+        ret_val = ({}, 0, 'd41d8cd98f00b204e9800998ecf8427e')
         self.storage.object_create = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
         self.storage.object_create.assert_called_once_with(
@@ -177,6 +177,9 @@ class TestObjectController(unittest.TestCase):
                 file_or_path=req.environ['wsgi.input'], policy=None,
                 headers=ANY)
         self.assertEqual(201, resp.status_int)
+        self.assertIn('Last-Modified', resp.headers)
+        self.assertIn('Etag', resp.headers)
+        self.assertIn(ret_val[2], resp.headers['Etag'])
 
     def test_PUT_requires_length(self):
         req = Request.blank('/v1/a/c/o', method='PUT')
@@ -273,7 +276,7 @@ class TestObjectController(unittest.TestCase):
         """The gateway times out while reading from the client."""
         class FakeReader(object):
             def read(self, size):
-                raise oiogreen.SourceReadTimeout()
+                raise oiogreen.SourceReadTimeout(1)
 
         req = Request.blank('/v1/a/c/o.jpg', method='PUT',
                             body='test body')
