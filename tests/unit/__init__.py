@@ -48,6 +48,7 @@ class FakeStorageAPI(ObjectStorageApi):
         self.container = Mock(ContainerClient, perfdata=None)
         self.__dict__.update(kwargs)
         self._blob_client = Mock(BlobClient)
+        self._global_kwargs = dict()
 
 
 class DebugLogAdapter(utils.LogAdapter):
