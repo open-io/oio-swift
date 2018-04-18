@@ -34,6 +34,7 @@ function configure_oioswift() {
 
 
 export OIO_NS="OPENIO" OIO_ACCOUNT="test_account" OIO_USER=USER-$RANDOM OIO_PATH=PATH-$RANDOM
+
 install_deps
 compile_sds
 run_sds
@@ -45,6 +46,7 @@ sleep 1
 PID=$(jobs -p)
 
 bash tests/functional/s3_container_hierarchy_v2.sh
+RET=$?
 
 for pid in $PID; do
     kill $pid
@@ -52,3 +54,4 @@ for pid in $PID; do
 done
 
 # TODO(FVE): gridinit_cmd stop
+exit $RET
