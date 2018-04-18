@@ -40,7 +40,15 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
 
-from oio.common.green import SourceReadTimeout
+try:
+    from oio.common.exceptions import SourceReadTimeout
+except ImportError:
+    # TODO(FVE): remove when dependency is oio>=4.2.0
+    class SourceReadTimeout(exceptions.OioTimeout):
+        pass
+# TODO(FVE): GreenSourceReadTimeout should never be raised from oio!
+# Remove when dependency is oio>=4.2.0
+from oio.common.green import SourceReadTimeout as GreenSourceReadTimeout
 from oioswift.utils import check_if_none_match, \
     handle_not_allowed, handle_oio_timeout, handle_service_busy
 
@@ -473,10 +481,9 @@ class ObjectController(BaseObjectController):
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
-        # FIXME(FVE): SourceReadTimeout should never be raised from oio!
-        except SourceReadTimeout as err:
+        except (SourceReadTimeout, GreenSourceReadTimeout) as err:
             self.app.logger.warning(
-                _('ERROR Client read timeout (%ss)'), err.seconds)
+                _('ERROR Client read timeout (%s)'), err)
             self.app.logger.increment('client_timeouts')
             raise HTTPRequestTimeout(request=req)
         except exceptions.SourceReadError:
@@ -503,7 +510,10 @@ class ObjectController(BaseObjectController):
                 {'path': req.path})
             raise HTTPInternalServerError(request=req)
 
-        resp = HTTPCreated(request=req, etag=checksum)
+        # TODO(FVE): use the timestamp of the object.
+        # Unfortunately the oio-sds API does not return the actual ctime.
+        resp = HTTPCreated(request=req, etag=checksum,
+                           last_modified=int(time.time()))
         return resp
 
     def _update_content_type(self, req):
