@@ -349,9 +349,10 @@ class ObjectController(BaseObjectController):
     def _link_object(self, req):
         _, container, obj = req.headers['Oio-Copy-From'].split('/', 2)
 
-        # FIXME(FVE): load account name from X-Copy-From-Account
+        from_account = req.headers.get('X-Copy-From-Account',
+                                       self.account_name)
         self.app.logger.info("LINK (%s,%s,%s) TO (%s,%s,%s)",
-                             self.account_name, self.container_name,
+                             from_account, self.container_name,
                              self.object_name,
                              self.account_name, container, obj)
         storage = self.app.storage
@@ -369,8 +370,7 @@ class ObjectController(BaseObjectController):
 
         oio_headers = {'X-oio-req-id': self.trans_id}
         # FIXME(FVE): use object_show, cache in req.environ
-        props = storage.object_get_properties(self.account_name, container,
-                                              obj)
+        props = storage.object_get_properties(from_account, container, obj)
         if props['properties'].get(SLO, None):
             raise Exception("Fast Copy with SLO is unsupported")
 
@@ -380,7 +380,7 @@ class ObjectController(BaseObjectController):
             self.app.logger.debug("LINK, original object is a SLO")
 
             # retrieve manifest
-            _, data = storage.object_fetch(self.account_name, container, obj)
+            _, data = storage.object_fetch(from_account, container, obj)
             manifest = json.loads("".join(data))
             offset = 0
             # identify segment to copy
@@ -391,7 +391,7 @@ class ObjectController(BaseObjectController):
                     checksum = entry['hash']
                     self.app.logger.info(
                         "LINK SLO (%s,%s,%s) TO (%s,%s,%s)",
-                        self.account_name, self.container_name,
+                        from_account, self.container_name,
                         self.object_name,
                         self.account_name, container, obj)
                     break
@@ -408,7 +408,7 @@ class ObjectController(BaseObjectController):
         try:
             # TODO check return code (values ?)
             storage.object_fastcopy(
-                self.account_name, container, obj,
+                from_account, container, obj,
                 self.account_name, self.container_name, self.object_name,
                 headers=oio_headers)
         # TODO(FVE): this exception catching block has to be refactored
