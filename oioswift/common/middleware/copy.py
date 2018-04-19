@@ -19,10 +19,11 @@ Please check original doc from swift/common/middleware/copy.py
 
 # from oio.common.http import ranges_from_http_header
 
-from six.moves.urllib.parse import unquote
+from six.moves.urllib.parse import quote, unquote
 
-from swift.common.middleware.copy import ServerSideCopyMiddleware
-from swift.common.swob import Request
+from swift.common.middleware.copy import ServerSideCopyMiddleware, \
+        _check_copy_from_header
+from swift.common.swob import HTTPException, Request
 from swift.proxy.controllers.base import get_object_info
 
 
@@ -60,24 +61,20 @@ class OioServerSideCopyMiddleware(ServerSideCopyMiddleware):
         # it is used to recreate a plain object
         # TODO: we may cheat to create object as appended metachunks?
 
-        try:
-            # [0]=v1, [1]=account, [2]=container/obj
-            src_path_parts = req.split_path(2, 3, True)
-        except ValueError:
-            self.logger.debug("COPY: Incomplete path, cannot copy")
-            return False
-
         # Reuse version from original path,
         # take account from header or original path,
         # take /container/obj from headers (with leading slash)
-        src_path = '/%s/%s%s' % (src_path_parts[0],
-                                 req.environ.get('HTTP_X_COPY_FROM_ACCOUNT',
-                                                 src_path_parts[1]),
-                                 req.environ['HTTP_X_COPY_FROM'])
+        src_container_name, src_obj_name = _check_copy_from_header(req)
+        src_path = '/'.join(('',
+                             self.version,
+                             req.environ.get('HTTP_X_COPY_FROM_ACCOUNT',
+                                             self.account_name),
+                             src_container_name,
+                             src_obj_name))
         try:
             obj_inf = get_object_info(req.environ, self.app,
                                       path=src_path,
-                                      swift_source='COPY')
+                                      swift_source='SSC')
             is_slo = obj_inf.get('sysmeta', {}).get('slo-size', False)
             if is_slo:
                 self.logger.debug(
@@ -92,19 +89,34 @@ class OioServerSideCopyMiddleware(ServerSideCopyMiddleware):
     def __call__(self, env, start_response):
         req = Request(env)
         try:
-            req.split_path(4, 4, True)
+            (version, account, container, obj) = req.split_path(4, 4, True)
         except ValueError:
             # If obj component is not present in req, do not proceed further.
             return self.app(env, start_response)
 
-        # Check if fastcopy is possible
-        # only plain object as source and destination
-        # FIXME: handle COPY method (with Destination-* headers)
-        if self.fast_copy_allowed(req):
-            self.logger.debug("COPY: fast copy allowed")
-            env['HTTP_OIO_COPY_FROM'] = unquote(env['HTTP_X_COPY_FROM'])
-            del env['HTTP_X_COPY_FROM']
-            return self.app(env, start_response)
+        self.version = version
+        self.account_name = account
+
+        try:
+            # Check if fastcopy is possible
+            # only plain object as source and destination
+            # FIXME: handle COPY method (with Destination-* headers)
+            if self.fast_copy_allowed(req):
+                self.logger.debug("COPY: fast copy allowed")
+                env['HTTP_OIO_COPY_FROM'] = unquote(env['HTTP_X_COPY_FROM'])
+                del env['HTTP_X_COPY_FROM']
+
+                def _start_response(status, headers, exc_info=None):
+                    headers.append(('X-Copied-From-Account',
+                                    env.get('HTTP_X_COPY_FROM_ACCOUNT',
+                                            self.account_name)))
+                    headers.append(('X-Copied-From',
+                                    quote(env['HTTP_OIO_COPY_FROM'])))
+                    start_response(status, headers, exc_info)
+
+                return self.app(env, _start_response)
+        except HTTPException as exc:
+            return exc(req.environ, start_response)
 
         return super(OioServerSideCopyMiddleware, self).__call__(
             env, start_response)
