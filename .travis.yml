@@ -22,7 +22,7 @@ install:
   - cd third_party/oio-sds && python setup.py install && cd ../..
   - cd third_party/swift && python setup.py install && cd ../..
   - cd third_party/swift3 && python setup.py install && cd ../..
-  - python setup.py install
+  - python setup.py develop
   - pip install --upgrade -r test-requirements.txt
 
 script:
