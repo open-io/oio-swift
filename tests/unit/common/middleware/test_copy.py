@@ -18,18 +18,14 @@
 import os.path
 import sys
 
-from six.moves import urllib
-
 from swift.common import swob
 from swift.common.swob import Request
 from oioswift.common.middleware import copy
 
-# noqa: E402
 # Hack PYTHONPATH so "test" is swift's test directory
 sys.path.insert(1, os.path.abspath(os.path.join(__file__, '../../../../..')))
-import test  # noqa: F401
-from test.unit.common.middleware.helpers import FakeSwift
-from test.unit.common.middleware.test_copy import TestServerSideCopyMiddleware
+from test.unit.common.middleware.helpers import FakeSwift  # noqa: F401
+from test.unit.common.middleware.test_copy import TestServerSideCopyMiddleware  # noqa: F401 E501
 
 
 class TestOioServerSideCopyMiddleware(TestServerSideCopyMiddleware):

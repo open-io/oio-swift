@@ -5,10 +5,10 @@ from swift.common.swob import Request
 from oioswift.common.middleware import versioned_writes
 
 # Hack PYTHONPATH so "test" is swift's test directory
-sys.path.insert(1, os.path.abspath(os.path.join(__file__, '../../../../..')))
+sys.path.insert(1, os.path.abspath(os.path.join(__file__, '../../../../..')))  # noqa: E402 E501
 import test  # noqa: E402, F401
 from test.unit.common.middleware.test_versioned_writes import \
-    VersionedWritesTestCase, FakeCache, local_tz
+    VersionedWritesTestCase, FakeCache
 
 
 class OioVersionedWritesTestCase(VersionedWritesTestCase):

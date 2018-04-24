@@ -26,7 +26,7 @@ install:
   - pip install --upgrade -r test-requirements.txt
 
 script:
-  - flake8 oioswift
+  - flake8 oioswift tests
   - ./tests/run_tests.sh "$TEST_SUITE"
 
 after_success:
