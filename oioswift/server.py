@@ -21,6 +21,7 @@ from oioswift.proxy.controllers.account import AccountController
 from oioswift.proxy.controllers.obj import ObjectControllerRouter
 from oio import ObjectStorageApi
 from swift.proxy.server import Application as SwiftApplication
+from swift.common.utils import config_true_value
 import swift.common.utils
 import swift.proxy.server
 
@@ -80,6 +81,16 @@ class Application(SwiftApplication):
         sds_conf.pop('namespace')  # removed to avoid unpacking conflict
         # Loaded by ObjectStorageApi if None
         sds_proxy_url = sds_conf.pop('proxy_url', None)
+        # Fix boolean parameter
+        if 'autocreate' in sds_conf and not (
+                hasattr(ObjectStorageApi, 'EXTRA_KEYWORDS') or
+                'autocreate' in ObjectStorageApi.EXTRA_KEYWORDS):
+            logger.error('autocreate parameter is not available with current '
+                         'OpenIO SDS')
+        else:
+            sds_conf['autocreate'] = config_true_value(
+                sds_conf.get('autocreate', 'true'))
+
         self.storage = storage or \
             ObjectStorageApi(sds_namespace, endpoint=sds_proxy_url, **sds_conf)
 
