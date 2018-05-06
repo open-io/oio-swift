@@ -427,6 +427,8 @@ class ObjectController(BaseObjectController):
             return HTTPUnprocessableEntity(request=req)
         except (exceptions.ServiceBusy, exceptions.OioTimeout):
             raise
+        except (exceptions.NoSuchContainer, exceptions.NotFound):
+            raise HTTPNotFound(request=req)
         except exceptions.ClientException as err:
             # 481 = CODE_POLICY_NOT_SATISFIABLE
             if err.status == 481:
@@ -496,6 +498,8 @@ class ObjectController(BaseObjectController):
             return HTTPUnprocessableEntity(request=req)
         except (exceptions.ServiceBusy, exceptions.OioTimeout):
             raise
+        except (exceptions.NoSuchContainer, exceptions.NotFound):
+            raise HTTPNotFound(request=req)
         except exceptions.ClientException as err:
             # 481 = CODE_POLICY_NOT_SATISFIABLE
             if err.status == 481:
