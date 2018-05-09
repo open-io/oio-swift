@@ -498,6 +498,8 @@ class ObjectController(BaseObjectController):
             return HTTPUnprocessableEntity(request=req)
         except (exceptions.ServiceBusy, exceptions.OioTimeout):
             raise
+        # TODO(FVE): exceptions.NotFound is never raised from oio
+        # Remove when dependency is oio>=4.2.0
         except (exceptions.NoSuchContainer, exceptions.NotFound):
             raise HTTPNotFound(request=req)
         except exceptions.ClientException as err:
