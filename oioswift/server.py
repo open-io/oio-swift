@@ -1,4 +1,4 @@
-# Copyright (c) 2016 OpenIO SAS
+# Copyright (c) 2016-2018 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -85,8 +85,8 @@ class Application(SwiftApplication):
         if 'autocreate' in sds_conf and not (
                 hasattr(ObjectStorageApi, 'EXTRA_KEYWORDS') or
                 'autocreate' in ObjectStorageApi.EXTRA_KEYWORDS):
-            logger.error('autocreate parameter is not available with current '
-                         'OpenIO SDS')
+            logger.warn("'autocreate' parameter is ignored by current version"
+                        " of OpenIO SDS. Please update to oio>=4.1.23.")
         else:
             sds_conf['autocreate'] = config_true_value(
                 sds_conf.get('autocreate', 'true'))
