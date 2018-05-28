@@ -25,6 +25,8 @@
     * when misplaced: If before `s3token`, raise `ValueError: Invalid pipeline`, else nothing    
 - `staticweb`: Put just after your auth filter(s)
     * when misplaced: Nothing
+- `verb_acl`: Put after your auth filter(s) and before `dlo` and `slo`
+    * when misplaced: Nothing
 - `copy`: Put after your auth filter(s) and before `dlo` and `slo`
     * when misplaced: Nothing
 - `container-quotas`: Put after auth filter(s)
