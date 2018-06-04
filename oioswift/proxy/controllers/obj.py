@@ -32,8 +32,9 @@ from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator
 from swift.common.request_helpers import is_sys_or_user_meta, \
     is_object_transient_sysmeta
+from swift.common.wsgi import make_subrequest
 from swift.proxy.controllers.base import set_object_info_cache, \
-        delay_denial, cors_validation
+        delay_denial, cors_validation, get_object_info
 from swift.proxy.controllers.obj import check_content_type
 
 from swift.proxy.controllers.obj import BaseObjectController as \
@@ -293,6 +294,19 @@ class ObjectController(BaseObjectController):
         resp = HTTPAccepted(request=req)
         return resp
 
+    def _delete_slo_parts(self, req, manifest):
+        """Delete parts of an obsolete SLO."""
+        # We cannot use bulk-delete here,
+        # because we are at the end of the pipeline, after 'bulk'.
+        for part in manifest:
+            path = '/'.join(('', 'v1', self.account_name)) + part['name']
+            try:
+                del_req = make_subrequest(req.environ, 'DELETE', path=path)
+                del_req.get_response(self.app)
+            except Exception as exc:
+                self.app.logger.warn('Failed to delete SLO part %s: %s',
+                                     path, exc)
+
     @public
     @cors_validation
     @delay_denial
@@ -314,6 +328,26 @@ class ObjectController(BaseObjectController):
             if aresp:
                 return aresp
 
+        old_slo_manifest = None
+        # If versioning is disabled, we must check if the object exists.
+        # If it's a SLO, we will have to delete the parts if the current
+        # operation is a success.
+        if (self.app.delete_slo_parts and
+                not container_info['sysmeta'].get('versions-location', None)):
+            try:
+                dest_info = get_object_info(req.environ, self.app)
+                if 'slo-size' in dest_info['sysmeta']:
+                    manifest_env = req.environ.copy()
+                    manifest_env['QUERY_STRING'] = 'multipart-manifest=get'
+                    manifest_req = make_subrequest(manifest_env, 'GET')
+                    manifest_resp = manifest_req.get_response(self.app)
+                    old_slo_manifest = json.loads(manifest_resp.body)
+            except Exception as exc:
+                self.app.logger.warn(('Failed to check existence of %s. If '
+                                      'overwriting a SLO, old parts may '
+                                      'remain. Error was: %s') %
+                                     (req.path, exc))
+
         self._update_content_type(req)
 
         self._update_x_timestamp(req)
@@ -334,6 +368,11 @@ class ObjectController(BaseObjectController):
         headers = self._prepare_headers(req)
         with closing_if_possible(data_source):
             resp = self._store_object(req, data_source, headers)
+        if old_slo_manifest and resp.is_success:
+            self.app.logger.debug(
+                'Previous object %s was a SLO, deleting parts',
+                req.path)
+            self._delete_slo_parts(req, old_slo_manifest)
         return resp
 
     def _prepare_headers(self, req):
