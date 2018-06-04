@@ -256,12 +256,13 @@ class TestObjectController(unittest.TestCase):
         req = Request.blank('/v1/a/c/o', method='PUT')
         req.headers['if-none-match'] = '1111'
         req.headers['content-length'] = '0'
-        ret_val = {'hash': '0000'}
+        ret_val = {'hash': '0000', 'version': '554086800000000',
+                   'ctime': 554086800, 'length': 0, 'deleted': 'false'}
         self.storage.object_show = Mock(return_value=ret_val)
         ret_val2 = ({}, 0, '')
         self.app.storage.object_create = Mock(return_value=ret_val2)
         resp = req.get_response(self.app)
-        self.storage.object_show.assert_called_once()
+        self.storage.object_show.assert_called()
         self.storage.object_create.assert_called_once()
         self.assertEqual(201, resp.status_int)
 
