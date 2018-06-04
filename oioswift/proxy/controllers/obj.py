@@ -368,6 +368,8 @@ class ObjectController(BaseObjectController):
         else:
             ranges = None
 
+        headers = self._prepare_headers(req)
+        metadata = self.load_object_metadata(headers)
         oio_headers = {'X-oio-req-id': self.trans_id}
         # FIXME(FVE): use object_show, cache in req.environ
         props = storage.object_get_properties(from_account, container, obj)
@@ -410,7 +412,8 @@ class ObjectController(BaseObjectController):
             storage.object_fastcopy(
                 from_account, container, obj,
                 self.account_name, self.container_name, self.object_name,
-                headers=oio_headers)
+                headers=oio_headers, properties=metadata,
+                properties_directive='REPLACE')
         # TODO(FVE): this exception catching block has to be refactored
         # TODO check which ones are ok or make non sense
         except exceptions.Conflict:
