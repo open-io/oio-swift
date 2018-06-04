@@ -75,7 +75,7 @@ class OioServerSideCopyMiddleware(ServerSideCopyMiddleware):
             obj_inf = get_object_info(req.environ, self.app,
                                       path=src_path,
                                       swift_source='SSC')
-            is_slo = obj_inf.get('sysmeta', {}).get('slo-size', False)
+            is_slo = 'X-Static-Large-Object' in obj_inf.get('sysmeta', {})
             if is_slo:
                 self.logger.debug(
                     "COPY: fast copy not available (reason=source is a SLO)")
