@@ -6,6 +6,7 @@ function run_sds() {
   export G_DEBUG_LEVEL=D PATH="$PATH:/tmp/oio/bin" LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/tmp/oio/lib"
   oio-reset.sh -v -v -N "$OIO_NS" \
     -f third_party/oio-sds/etc/bootstrap-preset-SINGLE.yml
+  gridinit_cmd status
 }
 
 function configure_aws() {
@@ -32,6 +33,22 @@ function configure_oioswift() {
     sed -i "s/USER/$(id -un)/g" "$1"
 }
 
+function run_test() {
+    local conf=conf/$1
+    configure_oioswift $conf
+
+    coverage run -p runserver.py $conf -v &
+    sleep 1
+    PID=$(jobs -p)
+
+    bash tests/functional/$2
+    RET=$?
+
+    for pid in $PID; do
+        kill $pid
+        wait $pid
+    done
+}
 
 export OIO_NS="OPENIO" OIO_ACCOUNT="test_account" OIO_USER=USER-$RANDOM OIO_PATH=PATH-$RANDOM
 
@@ -39,19 +56,10 @@ install_deps
 compile_sds
 run_sds
 configure_aws
-configure_oioswift conf/s3_container_hierarchy.cfg
 
-coverage run -p runserver.py conf/s3_container_hierarchy.cfg -v &
-sleep 1
-PID=$(jobs -p)
-
-bash tests/functional/s3_container_hierarchy_v2.sh
-RET=$?
-
-for pid in $PID; do
-    kill $pid
-    wait $pid
-done
+run_test s3_container_hierarchy.cfg s3_container_hierarchy_v2.sh
+run_test s3_fastcopy.cfg s3_acl_metadata.sh
+run_test s3_normal.cfg s3_acl_metadata.sh
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET
