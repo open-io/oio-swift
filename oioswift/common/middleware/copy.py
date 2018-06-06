@@ -24,7 +24,9 @@ from six.moves.urllib.parse import quote, unquote
 from swift.common.middleware.copy import ServerSideCopyMiddleware, \
         _check_copy_from_header
 from swift.common.swob import HTTPException, Request
-from swift.proxy.controllers.base import get_object_info
+from swift.common.utils import config_true_value
+from swift.common.request_helpers import copy_header_subset
+from swift.proxy.controllers.base import _prepare_pre_auth_info_request
 
 
 class OioServerSideCopyMiddleware(ServerSideCopyMiddleware):
@@ -37,11 +39,11 @@ class OioServerSideCopyMiddleware(ServerSideCopyMiddleware):
         """Check is fastcopy is possible and allowed."""
 
         if req.method != 'PUT' or 'X-Copy-From' not in req.headers:
-            return False
+            return False, None
 
         fast_copy_forbidden = req.environ.get('oio.forbid_fast_copy')
         if fast_copy_forbidden:
-            return False
+            return False, None
 
         self.logger.debug("COPY: checking if fast copy is allowed")
 
@@ -54,7 +56,7 @@ class OioServerSideCopyMiddleware(ServerSideCopyMiddleware):
                 req.headers.get('X-Amz-Copy-Source-Range'):
             self.logger.debug(
                 "COPY: fast copy not available (reason=Range header)")
-            return False
+            return False, None
 
         # now check if object is a SLO:
         # when a SLO is used as source without range read,
@@ -72,19 +74,21 @@ class OioServerSideCopyMiddleware(ServerSideCopyMiddleware):
                              src_container_name,
                              src_obj_name))
         try:
-            obj_inf = get_object_info(req.environ, self.app,
-                                      path=src_path,
-                                      swift_source='SSC')
-            is_slo = obj_inf.get('sysmeta', {}).get('slo-size', False)
+            req = _prepare_pre_auth_info_request(req.environ, src_path, 'SSC')
+            resp = req.get_response(self.app)
+
+            is_slo = resp.headers.get('x-static-large-object', False)
+
             if is_slo:
                 self.logger.debug(
                     "COPY: fast copy not available (reason=source is a SLO)")
-            return not is_slo
+                resp = None
+            return not is_slo, resp
         except Exception as exc:
             self.logger.debug("COPY: fast copy not available (reason=%s)", exc)
             # something bad has happened
             # leave other responsabilities to other middleware
-            return False
+            return False, None
 
     def __call__(self, env, start_response):
         req = Request(env)
@@ -101,10 +105,24 @@ class OioServerSideCopyMiddleware(ServerSideCopyMiddleware):
             # Check if fastcopy is possible
             # only plain object as source and destination
             # FIXME: handle COPY method (with Destination-* headers)
-            if self.fast_copy_allowed(req):
+            check, source_resp = self.fast_copy_allowed(req)
+            if check:
                 self.logger.debug("COPY: fast copy allowed")
                 env['HTTP_OIO_COPY_FROM'] = unquote(env['HTTP_X_COPY_FROM'])
                 del env['HTTP_X_COPY_FROM']
+                # handle metadata
+                if not config_true_value(req.headers.get('x-fresh-metadata',
+                                                         'false')):
+
+                    # cf copy middlware
+                    exclude_headers = ('x-static-large-object', 'etag',
+                                       'x-object-manifest', 'content-type',
+                                       'x-timestamp', 'x-backend-timestamp')
+                    # copy original headers but don't overwrite source headers
+                    copy_header_subset(
+                        source_resp, req,
+                        lambda k: k.lower() not in exclude_headers
+                        and k.lower() not in req.headers)
 
                 def _start_response(status, headers, exc_info=None):
                     headers.append(('X-Copied-From-Account',
