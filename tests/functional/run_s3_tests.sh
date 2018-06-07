@@ -41,8 +41,7 @@ function run_test() {
     sleep 1
     PID=$(jobs -p)
 
-    bash tests/functional/$2
-    RET=$?
+    bash tests/functional/$2 || RET=1
 
     for pid in $PID; do
         kill $pid
@@ -56,6 +55,8 @@ install_deps
 compile_sds
 run_sds
 configure_aws
+
+RET=0
 
 run_test s3_container_hierarchy.cfg s3_container_hierarchy_v2.sh
 run_test s3_fastcopy.cfg s3_acl_metadata.sh
