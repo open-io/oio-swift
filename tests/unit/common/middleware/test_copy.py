@@ -17,6 +17,7 @@
 
 import os.path
 import sys
+from six.moves import urllib
 
 from swift.common import swob
 from swift.common.swob import Request
@@ -59,12 +60,48 @@ class TestOioServerSideCopyMiddleware(TestServerSideCopyMiddleware):
         self.assertNotIn('swift.orig_req_method', req.environ)
 
     def test_static_large_object_manifest(self):
-        self.skipTest('To be fixed')
-
-    def test_static_large_object(self):
         self.app.register('HEAD', '/v1/a/c/o', swob.HTTPOk,
                           {'X-Static-Large-Object': 'True',
                            'Etag': 'should not be sent'})
+        self.app.register('GET', '/v1/a/c/o', swob.HTTPOk,
+                          {'X-Static-Large-Object': 'True',
+                           'Etag': 'should not be sent'}, 'passed')
+        self.app.register('PUT', '/v1/a/c/o2?multipart-manifest=put',
+                          swob.HTTPCreated, {})
+        req = Request.blank('/v1/a/c/o2?multipart-manifest=get',
+                            environ={'REQUEST_METHOD': 'PUT'},
+                            headers={'Content-Length': '0',
+                                     'X-Copy-From': 'c/o'})
+        status, headers, body = self.call_ssc(req)
+        self.assertEqual(status, '201 Created')
+        self.assertTrue(('X-Copied-From', 'c/o') in headers)
+        self.assertEqual(3, len(self.app.calls))
+        self.assertEqual('HEAD', self.app.calls[0][0])
+        self.assertEqual('GET', self.app.calls[1][0])
+        get_path, qs = self.app.calls[1][1].split('?')
+        params = urllib.parse.parse_qs(qs)
+        self.assertDictEqual(
+            {'format': ['raw'], 'multipart-manifest': ['get']}, params)
+        self.assertEqual(get_path, '/v1/a/c/o')
+        self.assertEqual(self.app.calls[2],
+                         ('PUT', '/v1/a/c/o2?multipart-manifest=put'))
+        req_headers = self.app.headers[2]
+        self.assertNotIn('X-Static-Large-Object', req_headers)
+        self.assertNotIn('Etag', req_headers)
+        self.assertEqual(len(self.authorized), 2)
+        self.assertEqual('GET', self.authorized[0].method)
+        self.assertEqual('/v1/a/c/o', self.authorized[0].path)
+        self.assertEqual('PUT', self.authorized[1].method)
+        self.assertEqual('/v1/a/c/o2', self.authorized[1].path)
+
+    def test_static_large_object(self):
+        # Compared to the original copy middleware, we do an extra HEAD request
+        self.app.register('HEAD', '/v1/a/c/o', swob.HTTPOk,
+                          {'X-Static-Large-Object': 'True',
+                           'Etag': 'should not be sent'}, 'passed')
+        self.app.register('GET', '/v1/a/c/o', swob.HTTPOk,
+                          {'X-Static-Large-Object': 'True',
+                           'Etag': 'should not be sent'}, 'passed')
         self.app.register('PUT', '/v1/a/c/o2',
                           swob.HTTPCreated, {})
         req = Request.blank('/v1/a/c/o2',
@@ -76,13 +113,16 @@ class TestOioServerSideCopyMiddleware(TestServerSideCopyMiddleware):
         self.assertTrue(('X-Copied-From', 'c/o') in headers)
         self.assertEqual(self.app.calls, [
             ('HEAD', '/v1/a/c/o'),
+            ('GET', '/v1/a/c/o'),
             ('PUT', '/v1/a/c/o2')])
         req_headers = self.app.headers[1]
         self.assertNotIn('X-Static-Large-Object', req_headers)
         self.assertNotIn('Etag', req_headers)
-        self.assertEqual(len(self.authorized), 1)
-        self.assertEqual('PUT', self.authorized[0].method)
-        self.assertEqual('/v1/a/c/o2', self.authorized[0].path)
+        self.assertEqual(len(self.authorized), 2)
+        self.assertEqual('GET', self.authorized[0].method)
+        self.assertEqual('/v1/a/c/o', self.authorized[0].path)
+        self.assertEqual('PUT', self.authorized[1].method)
+        self.assertEqual('/v1/a/c/o2', self.authorized[1].path)
 
     def test_basic_put_with_x_copy_from_across_container(self):
         self.app.register('HEAD', '/v1/a/c1/o1', swob.HTTPOk, {})
