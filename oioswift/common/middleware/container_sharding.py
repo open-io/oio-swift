@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import json
+import importlib
 from paste.deploy import loadwsgi
 from six.moves.urllib.parse import parse_qs, quote_plus, urlencode
 from swift.common.swob import Request
@@ -36,24 +37,45 @@ class ContainerShardingMiddleware(AutoContainerBase):
 
     DELIMITER = '/'
     ENCODED_DELIMITER = '%2F'
-    SWIFT_SOURCE = 'CH'
+    SWIFT_SOURCE = 'SHARD'
 
-    def __init__(self, app, conf, acct, create_dir_placeholders=False,
-                 recursive_placeholders=False, **kwargs):
+    def __init__(self, app, conf, acct, **kwargs):
         super(ContainerShardingMiddleware, self).__init__(
             app, acct, **kwargs)
-        self.create_dir_placeholders = create_dir_placeholders
-        self.recursive_placeholders = recursive_placeholders
-        LOG.debug("%s: create_dir_placeholders set to %s (recursive %d)",
-                  self.SWIFT_SOURCE, self.create_dir_placeholders,
-                  self.recursive_placeholders)
-
+        LOG.debug(self.SWIFT_SOURCE)
         self.check_pipeline(conf)
+
+        #
+        self.__redis_mod = importlib.import_module('redis')
+        self.__redis_sentinel_mod = importlib.import_module('redis.sentinel')
+
+        host = "127.0.0.1:6379"
+        prefix = "swiftsharding:"
+        self._redis_host, self._redis_port = host.rsplit(':', 1)
+        self._redis_port = int(self._redis_port)
+        self._prefix = prefix
+        sentinel_hosts = None
+        master_name = ""
+        if isinstance(sentinel_hosts, basestring):
+            self._sentinel_hosts = [(h, int(p)) for h, p, in (hp.split(':', 2)
+                                    for hp in sentinel_hosts.split(','))]
+        else:
+            self._sentinel_hosts = sentinel_hosts
+        if self._sentinel_hosts and not master_name:
+            raise ValueError("missing parameter 'master_name'")
+        self._master_name = master_name
+
+        self._conn = None
+        self._sentinel = None
+
+        if self._sentinel_hosts:
+            self._sentinel = self.__redis_sentinel_mod.Sentinel(
+                self._sentinel_hosts)
 
     def check_pipeline(self, conf):
         """
         Check that proxy-server.conf has an appropriate pipeline
-        for container_hierarchy.
+        for container_sharding
         """
         if conf.get('__file__', None) is None:
             return
@@ -86,49 +108,31 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 'Invalid pipeline %r: %s must be placed after SLO'
                 % (pipeline, MIDDLEWARE_NAME))
 
-    def _create_dir_marker(self, env, account, container, obj):
-        """
-        Create an empty object to mark a subdirectory. This is required to
-        quickly recurse on subdirectories, since with this middleware they
-        are stored on separate containers.
-        """
+    @property
+    def conn(self):
+        if self._sentinel:
+            return self._sentinel.master_for(self._master_name)
+        if not self._conn:
+            self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
+                                                      port=self._redis_port)
+        return self._conn
 
-        items = container.split(self.ENCODED_DELIMITER)
+    def key(self, account, container, path):
+        return self._prefix + account + ":" + container + ":" + path
 
-        while items:
-            path = quote_plus(self.DELIMITER.join(
-                ('', 'v1', account, container, obj)))
-            req = make_subrequest(
-                env, method='PUT', path=path, body='',
-                swift_source=self.SWIFT_SOURCE)
-            req.headers['If-None-Match'] = '*'
-            req.headers['Content-Length'] = '0'
-            LOG.debug("%s: Create placeholder %s in %s",
-                      self.SWIFT_SOURCE, obj, container)
-            resp = req.get_response(self.app)
-            if resp.status_int == HTTP_PRECONDITION_FAILED:
-                LOG.debug('%s: directory placeholder already present '
-                          'in %s', self.SWIFT_SOURCE, container)
-                close_if_possible(resp.app_iter)
-                break
-
-            if not resp.is_success:
-                LOG.warn('%s: Failed to create directory placeholder '
-                         'in %s: %s',
-                         self.SWIFT_SOURCE, container, resp.status)
-            close_if_possible(resp.app_iter)
-
-            if not self.recursive_placeholders:
-                break
-
-            if items:
-                obj = items.pop() + self.DELIMITER
-                container = self.ENCODED_DELIMITER.join(items)
+    def _create_dir_marker(self, env, account, container, path):
+        key = self.key(account, container, path)
+        print("SHARD: create", key)
+        res = self.conn.set(key, "1")
+        assert res
+        return res
 
     def _can_delete_dir_marker(self, req, account, container, obj):
         """
         Check if a directory placeholder can be deleted:
         the sub-container must be empty.
+        """
+        return False
         """
         container2 = container + self.ENCODED_DELIMITER + obj[:-1]
         LOG.debug("%s: checking if '%s' is empty",
@@ -143,6 +147,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
                         recursive=False,
                         limit=1))
         return empty
+        """
 
     def _build_empty_response(self, start_response, status='200 OK'):
         """Build a response with no body and the specified status."""
@@ -151,10 +156,115 @@ class ContainerShardingMiddleware(AutoContainerBase):
         return []  # empty body
 
     def _build_object_listing(self, start_response, env,
-                              account, container, obj,
+                              account, container, prefix,
                               limit=None,
                               recursive=False, marker=None):
+
+        print("SHARD: listing with", account, container, prefix, limit, recursive, marker)
+        def header_cb(header_dict):
+            oheaders.update(header_dict)
+
         oheaders = dict()
+        all_objs = []
+
+        prefix = prefix[0]
+
+        # have we to parse root container ?
+        parse_root = self.DELIMITER not in prefix
+        print(self.SWIFT_SOURCE, "should we parse root container ?", parse_root)
+
+        prefix_key = self.key(account, container, '')
+        key = self.key(account, container, prefix) + '*'
+        print("key => ", key)
+        matches = [k[len(prefix_key):] for k in self.conn.keys(key)]
+
+
+        if parse_root:
+            matches.append("")
+
+        if not prefix.endswith(self.DELIMITER) and self.DELIMITER in prefix:
+            pfx = prefix[:prefix.rindex(self.DELIMITER)+1]
+            key = self.key(account, container, pfx)
+            if self.conn.exists(key):
+                matches.append(key[len(prefix_key):])
+
+
+        """
+        if we have
+        d1/d2/d3/
+        da/db/dc/
+        da/dbc
+        and ask listing for da/ with delimiter /
+        we should only returns
+        da/db/
+        da/dbc
+        """
+
+        """
+        if we have
+        d1/d2/d3/ with magic object
+        d1/d2/d3/m0/ with magic
+        listing with prefix d1/d2/d3/m must returns both !!!
+        => we have to list keys like d1/d2/d3/*
+           to return d1/d2/d3/ and d1/d2/d3/m0
+           we have also to ignore entries like d1/d2/d3/d..
+        """
+
+        already_done = set()
+
+        len_pfx = len(prefix)
+        cnt_delimiter = len(prefix.split('/'))
+        print(self.SWIFT_SOURCE, "cnt_delimiter", cnt_delimiter)
+        print(self.SWIFT_SOURCE, "we should parse", ' '.join(matches))
+        for entry in matches:
+            print(self.SWIFT_SOURCE, "Checking", entry)
+            if self.DELIMITER in entry[len_pfx:] and not recursive:
+                # append subdir entry
+                # all_objs.append(
+                subdir = '/'.join(entry.split("/")[:cnt_delimiter]) + '/'
+                print(self.SWIFT_SOURCE, "generate subdir for", entry, ":", subdir)
+                if subdir in already_done:
+                    continue
+
+                already_done.add(subdir)
+                all_objs.append(
+                    {
+                        'subdir': subdir
+                    }
+                )
+            else:
+                # FIXME: adapt prefix
+                # FIXME: adapt marker
+                # convert container
+                # xxx
+                _prefix = ''
+                if len(entry) < len(prefix):
+                    _prefix = prefix[len(entry):]
+                _marker = ''
+
+                if entry:
+                    ret = self._list_objects(env, account,
+                                             [container] + entry.strip('/').split('/'), header_cb,
+                                             _prefix, _marker)
+                else:
+                    ret = self._list_objects(env, account,
+                                             [container], header_cb, _prefix, _marker)
+                print(self.SWIFT_SOURCE, "found ==>", ret)
+                for x in ret:
+                    all_objs.append(x)
+
+        all_objs = sorted(all_objs,
+                          key=lambda entry: entry.get('name',
+                                                      entry.get('subdir')))
+        body = json.dumps(all_objs)
+
+        oheaders['Content-Length'] = len(body)
+        start_response("200 OK", oheaders.items())
+
+        return [body]
+        """
+        oheaders = dict()
+
 
         def header_cb(header_dict):
             oheaders.update(header_dict)
@@ -176,6 +286,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
         oheaders['Content-Length'] = len(body)
         start_response("200 OK", oheaders.items())
         return [body]
+        """
 
     def _fake_container_and_obj(self, container, obj_parts, is_listing=False):
         """
@@ -194,20 +305,19 @@ class ContainerShardingMiddleware(AutoContainerBase):
         return container, obj
 
     def _list_objects(self, env, account, ct_parts, header_cb,
-                      prefix='', recursive=True, limit=DEFAULT_LIMIT,
+                      prefix='', limit=DEFAULT_LIMIT,
                       marker=None):
         """
-        If `recursive` is set (the default), for each subdirectory marker
-        encountered, make a listing subrequest, and yield object list.
-
-        If `recursive` is False, list objects and directory markers (but
-        do not recurse).
+        returns items
         """
         sub_path = quote_plus(self.DELIMITER.join(
             ('', 'v1', account, self.ENCODED_DELIMITER.join(ct_parts))))
+        '''
         LOG.debug("%s: listing objects from '%s' "
                   "(limit=%d, prefix=%s, marker=%s)",
                   self.SWIFT_SOURCE, sub_path, limit, prefix, marker)
+        '''
+        print(self.SWIFT_SOURCE, "===>", sub_path)
         sub_req = make_subrequest(env.copy(), method='GET', path=sub_path,
                                   body='',
                                   swift_source=self.SWIFT_SOURCE)
@@ -222,36 +332,38 @@ class ContainerShardingMiddleware(AutoContainerBase):
         resp = sub_req.get_response(self.app)
         obj_prefix = ''
         if len(ct_parts) > 1:
-            obj_prefix = self.DELIMITER.join(ct_parts[1:] + ('',))
+            print(self.SWIFT_SOURCE, "real listing", ct_parts)
+            obj_prefix = self.DELIMITER.join(ct_parts[1:] + ['',])
 
         if not resp.is_success or resp.content_length == 0:
+            """
             LOG.warn("Failed to list '%s'%s: %s", obj_prefix,
                      ' (recursively)' if recursive else '',
-                     resp.status)
+                      resp.status)
+            """
+            LOG.warn("%s: Failed to list or nothing to do ?",
+                     self.SWIFT_SOURCE)
             return
         with closing_if_possible(resp.app_iter):
             items = json.loads(resp.body)
         if header_cb:
             header_cb(resp.headers)
-        subdirs = [x['subdir'][:-1] for x in items if 'subdir' in x]
+
         for obj in items:
             if 'name' in obj:
                 obj['name'] = obj_prefix + obj['name']
+                print(obj)
                 yield obj
+            """ should not be necessary any more
             elif not recursive and 'subdir' in obj:
                 obj['subdir'] = obj_prefix + obj['subdir']
                 yield obj
-
-        if recursive:
-            for subdir in subdirs:
-                for obj in self._list_objects(
-                        env, account, ct_parts + (subdir, ), header_cb):
-                    yield obj
+            """
 
     def should_bypass(self, env):
         # Pre authentication from swift3
         return (env.get('REQUEST_METHOD') == 'TEST' or
-                super(ContainerHierarchyMiddleware, self).should_bypass(env))
+                super(ContainerShardingMiddleware, self).should_bypass(env))
 
     def __call__(self, env, start_response):
         if self.should_bypass(env):
@@ -259,11 +371,9 @@ class ContainerShardingMiddleware(AutoContainerBase):
 
         req = Request(env)
 
-        # bypass CH for +segments
+        # bypass CS for +segments
         # TODO it should be allowed because segments will be put
         # in same container # but it forbid to remove bucket
-        # (rework how placeholder are managed for +segments
-        # by disable creation of placeholder ?)
         if '%2Bsegments' in req.path:
             return self.app(env, start_response)
 
@@ -272,9 +382,15 @@ class ContainerShardingMiddleware(AutoContainerBase):
         if container is None:
             return self.app(env, start_response)
 
+        if container == "org":
+            return self.app(env, start_response)
+
+
         env2 = env.copy()
         qs = parse_qs(req.query_string or '')
         prefix = qs.get('prefix')  # returns a list or None
+        if not prefix:
+            prefix = ['']
         marker = qs.get('marker')
         limit = qs.get('limit')
         LOG.debug("%s: Got %s request for container=%s, "
@@ -283,18 +399,13 @@ class ContainerShardingMiddleware(AutoContainerBase):
                   marker)
         must_recurse = False
 
-        # Rework Oio-Copy-From to use correct source (container, obj)
-        if 'Oio-Copy-From' in req.headers and req.method == 'PUT':
-            _, c_container, c_obj = req.headers['Oio-Copy-From'].split('/', 2)
-            c_container, c_obj = \
-                self._fake_container_and_obj(c_container, c_obj.split('/'))
-            # update Headers
-            req.headers['Oio-Copy-From'] = '/' + c_container + '/' + c_obj
-            env2['HTTP_OIO_COPY_FROM'] = '/' + c_container + '/' + c_obj
+        # TODO Oio-Copy-From to use correct source (container, obj)
 
         if obj is None:
+            # TODO/FIXME
             LOG.debug("%s: -> is a listing request", self.SWIFT_SOURCE)
             must_recurse = req.method == 'GET' and 'delimiter' not in qs
+            """
             if not prefix:
                 obj_parts = ['']
             else:
@@ -305,9 +416,11 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 env2['QUERY_STRING'] = urlencode(qs, True)
                 container, obj = self._fake_container_and_obj(
                     container, obj_parts, is_listing=True)
+            """
             if not marker:
                 marker = None
             else:
+                # FIXME: it is broken
                 marker = marker[0].strip('/').split(self.DELIMITER)[-1]
             if not limit:
                 limit = DEFAULT_LIMIT
@@ -316,23 +429,27 @@ class ContainerShardingMiddleware(AutoContainerBase):
         else:
             LOG.debug("%s: -> is NOT listing request", self.SWIFT_SOURCE)
             obj_parts = obj.split(self.DELIMITER)
-            if (len(obj_parts) > 1 and
-                    self.create_dir_placeholders):
-                ct = self.ENCODED_DELIMITER.join([container] + obj_parts[:-2])
-                obj = obj_parts[-2] + self.DELIMITER
+            if len(obj_parts) > 1:
+                # ct = self.ENCODED_DELIMITER.join([container] + obj_parts[:-2])
+                # obj = obj_parts[-2] + self.DELIMITER
+                path = self.DELIMITER.join(obj_parts[:-1]) + self.DELIMITER
                 if req.method == 'PUT':
-                    self._create_dir_marker(env2, account, ct, obj)
+                    self._create_dir_marker(env2, account, container, path)
                 elif req.method == 'DELETE' and not obj_parts[-1]:
+                    # FIXME
+                    """
                     if not self._can_delete_dir_marker(req, account, ct, obj):
                         return self._build_empty_response(
                             start_response, '204 No content')
+                    """
             container, obj = self._fake_container_and_obj(container, obj_parts)
 
         LOG.debug("%s: Converted to container=%s, obj=%s, qs=%s",
                   self.SWIFT_SOURCE, container, obj, qs)
         if must_recurse:
+            print("SHARD => RECURSE LISTING MODE")
             res = self._build_object_listing(start_response, env,
-                                             account, container, obj,
+                                             account, container, prefix,
                                              limit=limit, recursive=True,
                                              marker=marker)
         elif not (qs.get('prefix') or qs.get('delimiter')):
@@ -343,8 +460,9 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 env2['PATH_INFO'] = "/v1/%s/%s" % (account, container)
             res = self.app(env2, start_response)
         else:
+            print("SHARD => SIMPLE LISTING MODE")
             res = self._build_object_listing(start_response, env,
-                                             account, container, obj,
+                                             account, container, prefix,
                                              limit=limit,
                                              recursive=False, marker=marker)
 
@@ -368,17 +486,17 @@ def filter_factory(global_conf, **local_config):
     account_first = config_true_value(local_config.get('account_first'))
     swift3_compat = config_true_value(local_config.get('swift3_compat'))
     strip_v1 = config_true_value(local_config.get('strip_v1'))
+    """
     create_dir_placeholders = config_true_value(
         local_config.get('create_dir_placeholders'))
     recursive_placeholders = config_true_value(
         local_config.get('recursive_placeholders'))
+    """
 
     def factory(app):
         return ContainerShardingMiddleware(
             app, global_conf, acct,
             strip_v1=strip_v1,
             account_first=account_first,
-            swift3_compat=swift3_compat,
-            create_dir_placeholders=create_dir_placeholders,
-            recursive_placeholders=recursive_placeholders)
+            swift3_compat=swift3_compat)
     return factory
