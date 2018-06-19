@@ -24,6 +24,7 @@ from swift.common.utils import (
     clean_content_type, config_true_value, Timestamp, public,
     close_if_possible, closing_if_possible)
 from swift.common.constraints import check_metadata, check_object_creation
+from swift.common.header_key_dict import HeaderKeyDict
 from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPConflict, HTTPPreconditionFailed, HTTPRequestTimeout, \
@@ -449,6 +450,17 @@ class ObjectController(BaseObjectController):
         resp = HTTPCreated(request=req, etag=checksum)
         return resp
 
+    def _get_footers(self, req):
+        """
+        Get extra metadata that may be generated during upload by some
+        middlewares (e.g. checksum of cyphered data).
+        """
+        footers = HeaderKeyDict()
+        footer_callback = req.environ.get(
+            'swift.callback.update_footers', lambda _footer: None)
+        footer_callback(footers)
+        return footers
+
     def _store_object(self, req, data_source, headers):
         content_type = req.headers.get('content-type', 'octet/stream')
         storage = self.app.storage
@@ -477,11 +489,20 @@ class ObjectController(BaseObjectController):
         metadata = self.load_object_metadata(headers)
         oio_headers = {'X-oio-req-id': self.trans_id}
         try:
+            # FIXME(FVE): use 'properties' instead of 'metadata'
+            # as soon as we require oio>=4.2.0
             _chunks, _size, checksum = storage.object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
                 mime_type=content_type, policy=policy, headers=oio_headers,
                 etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
+            # TODO(FVE): when oio-sds supports it, do that in a callback
+            # passed to object_create (or whatever upload method supports it)
+            footer_md = self.load_object_metadata(self._get_footers(req))
+            if footer_md:
+                storage.object_set_properties(
+                    self.account_name, self.container_name, self.object_name,
+                    properties=footer_md)
         except exceptions.Conflict:
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
