@@ -1,6 +1,6 @@
 mock
 nose
-oio>=3.3.0
+oio>=4.1.0
 coverage
 codecov
 awscli
