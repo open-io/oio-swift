@@ -7,6 +7,7 @@ function run_sds() {
   oio-reset.sh -v -v -N "$OIO_NS" \
     -f third_party/oio-sds/etc/bootstrap-preset-SINGLE.yml
   gridinit_cmd status
+  openio cluster wait
 }
 
 function configure_aws() {

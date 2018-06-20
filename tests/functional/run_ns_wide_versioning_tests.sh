@@ -14,6 +14,7 @@ function run_sds() {
     -f third_party/oio-sds/etc/bootstrap-meta1-1digits.yml \
     -f third_party/oio-sds/etc/bootstrap-option-cache.yml \
     -f third_party/oio-sds/etc/bootstrap-option-versioning.yml
+  openio cluster wait
 }
 
 export OIO_NS="OPENIO" OIO_ACCOUNT="test_account" OIO_USER=USER-$RANDOM OIO_PATH=PATH-$RANDOM
