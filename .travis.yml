@@ -8,6 +8,10 @@ env:
     - TEST_SUITE=encryption
     - TEST_SUITE=ns-wide-versioning
     - TEST_SUITE=s3
+    - TEST_SUITE=unit SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=encryption SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=ns-wide-versioning SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=s3 SWIFT_BRANCH=stable/pike
 
 install:
   - sudo apt-add-repository "deb http://archive.ubuntu.com/ubuntu trusty-backports main restricted universe multiverse"
@@ -17,6 +21,7 @@ install:
   - virtualenv $HOME/venv
   - source $HOME/venv/bin/activate
   - pip install --upgrade pip setuptools virtualenv tox flake8
+  - test -n "$SWIFT_BRANCH" && git config --local submodule.third_party/swift.branch "$SWIFT_BRANCH" || true
   - git submodule update --init --remote
   - ( grep -v PyECLib third_party/oio-sds/all-requirements.txt ; grep -v eventlet third_party/swift/requirements.txt ) > deps-requirements.txt
   - pip install --upgrade -r deps-requirements.txt

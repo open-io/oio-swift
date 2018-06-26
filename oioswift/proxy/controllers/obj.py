@@ -316,6 +316,8 @@ class ObjectController(BaseObjectController):
 
         self._update_content_type(req)
 
+        self._update_x_timestamp(req)
+
         # check constraints on object name and request headers
         error_response = check_object_creation(req, self.object_name) or \
             check_content_type(req)
@@ -324,8 +326,6 @@ class ObjectController(BaseObjectController):
 
         if req.headers.get('Oio-Copy-From'):
             return self._link_object(req)
-
-        self._update_x_timestamp(req)
 
         data_source = req.environ['wsgi.input']
         if req.content_length:
@@ -562,20 +562,6 @@ class ObjectController(BaseObjectController):
                 req.headers.pop('x-detect-content-type')
             else:
                 req.content_type_manually_set = False
-
-    def _update_x_timestamp(self, req):
-        if 'x-timestamp' in req.headers:
-            try:
-                req_timestamp = Timestamp(req.headers['X-Timestamp'])
-            except ValueError:
-                raise HTTPBadRequest(
-                    request=req, content_type='text/plain',
-                    body='X-Timestamp should be a UNIX timestamp float value; '
-                         'was %r' % req.headers['x-timestamp'])
-            req.headers['X-Timestamp'] = req_timestamp.internal
-        else:
-            req.headers['X-Timestamp'] = Timestamp(time.time()).internal
-        return None
 
     @public
     @cors_validation

@@ -41,5 +41,5 @@ setup(
             'tempauth=oioswift.common.middleware.tempauth:filter_factory',
         ],
     },
-    install_requires=['swift>=2.13.0', 'oio>=4.1.0']
+    install_requires=['swift>=2.13.0', 'oio>=4.2.0']
 )

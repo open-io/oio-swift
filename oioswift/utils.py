@@ -15,7 +15,7 @@
 
 from functools import wraps
 
-from swift.common.swob import HTTPMethodNotAllowed, HTTPNotAcceptable, \
+from swift.common.swob import HTTPMethodNotAllowed, \
     HTTPNotFound, \
     HTTPNotModified, HTTPPreconditionFailed, HTTPServiceUnavailable
 
@@ -31,18 +31,6 @@ except ImportError:
 
 _FORMAT_MAP = {"xml": 'application/xml', "json": 'application/json',
                "plain": 'text/plain'}
-
-
-def get_listing_content_type(req):
-    req_format = req.params.get('format')
-    if req_format:
-        req.accept = _FORMAT_MAP.get(req_format.lower(),
-                                     _FORMAT_MAP.get('plain'))
-    req_format = req.accept.best_match(
-        ['text/plain', 'application/json', 'application/xml', 'text/xml'])
-    if not req_format:
-        raise HTTPNotAcceptable()
-    return req_format
 
 
 def _mixed_join(iterable, sentinel):
