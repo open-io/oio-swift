@@ -78,6 +78,7 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
             if 'prefix' in qs:
                 prefix, _ = swift3_split_object_name_version(qs['prefix'][0])
                 qs['prefix'] = prefix
+            qs['format'] = 'json'
             sub_env['QUERY_STRING'] = urlencode(qs, True)
             sub_env['oio.query'] = {'versions': True}
 
