@@ -192,9 +192,16 @@ class ContainerController(SwiftContainerController):
         if 'subdir' in record:
             return {'subdir': record['name']}
 
+        props = record.get('properties', {})
+        # This metadata is added by encryption middleware.
+        if 'x-object-sysmeta-container-update-override-etag' in props:
+            etag = props['x-object-sysmeta-container-update-override-etag']
+        else:
+            etag = record['hash'].lower()
+
         response = {'name': record['name'],
                     'bytes': record['size'],
-                    'hash': record['hash'].lower(),
+                    'hash': etag,
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': record.get(
                         'mime_type', 'application/octet-stream')}
