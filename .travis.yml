@@ -5,6 +5,7 @@ language: python
 env:
   matrix:
     - TEST_SUITE=unit
+    - TEST_SUITE=encryption
     - TEST_SUITE=ns-wide-versioning
     - TEST_SUITE=s3
 
