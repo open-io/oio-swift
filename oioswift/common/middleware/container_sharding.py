@@ -120,20 +120,42 @@ class ContainerShardingMiddleware(AutoContainerBase):
     def key(self, account, container, path):
         return self._prefix + account + ":" + container + ":" + path
 
-    def _create_dir_marker(self, env, account, container, path):
+    def _create_dir_marker(self, req, account, container, path):
         key = self.key(account, container, path)
-        print("SHARD: create", key)
+        LOG.debug("%s: create key %s", self.SWIFT_SOURCE, key)
+        # should we increase number of objects ?
+        # but we should manage in this case all error case
+        # to avoid false counter
         res = self.conn.set(key, "1")
         assert res
         return res
 
+    def _remove_dir_marker(self, req, account, container, path):
+        # and decrease it here ?
+        key = self.key(account, container, path)
+        LOG.debug("%s: should remove path %s (key %s)",
+            self.SWIFT_SOURCE, path, key)
+        # key = self.key(account, container, path)
+        # res = self.conn.delete(key)
+        empty = not any(self._list_objects(
+                        req.environ.copy(),
+                        account,
+                        [container] + path.split('/')[:-1],
+                        None,
+                        limit=1))
+
+
+        print("SHARD is empty ?", empty)
+        if empty:
+            key = self.key(account, container, path)
+            res = self.conn.delete(key)
+
     def _can_delete_dir_marker(self, req, account, container, obj):
         """
-        Check if a directory placeholder can be deleted:
+        Check if an entry redis can be deleted:
         the sub-container must be empty.
         """
-        return False
-        """
+
         container2 = container + self.ENCODED_DELIMITER + obj[:-1]
         LOG.debug("%s: checking if '%s' is empty",
                   self.SWIFT_SOURCE, container2)
@@ -144,10 +166,8 @@ class ContainerShardingMiddleware(AutoContainerBase):
                         account,
                         tuple(container2.split(self.ENCODED_DELIMITER)),
                         None,
-                        recursive=False,
                         limit=1))
         return empty
-        """
 
     def _build_empty_response(self, start_response, status='200 OK'):
         """Build a response with no body and the specified status."""
@@ -160,7 +180,10 @@ class ContainerShardingMiddleware(AutoContainerBase):
                               limit=None,
                               recursive=False, marker=None):
 
-        print("SHARD: listing with", account, container, prefix, limit, recursive, marker)
+        LOG.debug("%s: listing with %s %s %s %s %s %s",
+            self.SWIFT_SOURCE, account, container, prefix, limit,
+            recursive, marker)
+
         def header_cb(header_dict):
             oheaders.update(header_dict)
 
@@ -217,12 +240,12 @@ class ContainerShardingMiddleware(AutoContainerBase):
         print(self.SWIFT_SOURCE, "cnt_delimiter", cnt_delimiter)
         print(self.SWIFT_SOURCE, "we should parse", ' '.join(matches))
         for entry in matches:
-            print(self.SWIFT_SOURCE, "Checking", entry)
+            # print(self.SWIFT_SOURCE, "Checking", entry)
             if self.DELIMITER in entry[len_pfx:] and not recursive:
                 # append subdir entry
                 # all_objs.append(
                 subdir = '/'.join(entry.split("/")[:cnt_delimiter]) + '/'
-                print(self.SWIFT_SOURCE, "generate subdir for", entry, ":", subdir)
+                # print(self.SWIFT_SOURCE, "generate subdir for", entry, ":", subdir)
                 if subdir in already_done:
                     continue
 
@@ -426,6 +449,8 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 limit = DEFAULT_LIMIT
             else:
                 limit = int(limit[0])
+            container2 = container
+            obj2 = obj
         else:
             LOG.debug("%s: -> is NOT listing request", self.SWIFT_SOURCE)
             obj_parts = obj.split(self.DELIMITER)
@@ -434,38 +459,47 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 # obj = obj_parts[-2] + self.DELIMITER
                 path = self.DELIMITER.join(obj_parts[:-1]) + self.DELIMITER
                 if req.method == 'PUT':
-                    self._create_dir_marker(env2, account, container, path)
-                elif req.method == 'DELETE' and not obj_parts[-1]:
-                    # FIXME
+                    self._create_dir_marker(req, account, container, path)
+                elif req.method == 'DELETE': #and not obj_parts[-1]:
+                    # there is two cases to manage:
+                    # - case for DEL d1/d2/d3/ (it should not be necessary anymore)
+                    # (and in fact should fake response when creating empty object with final /)
+                    # - case DEL s1/s2/s3/o where O is the last object inside s1/s2/s3/
+                    # we have to remove s1/s2/s3/ from
+                    self._remove_dir_marker(req, account, container, path)
                     """
                     if not self._can_delete_dir_marker(req, account, ct, obj):
                         return self._build_empty_response(
                             start_response, '204 No content')
                     """
-            container, obj = self._fake_container_and_obj(container, obj_parts)
+                    pass
+            container2, obj2 = self._fake_container_and_obj(container, obj_parts)
 
         LOG.debug("%s: Converted to container=%s, obj=%s, qs=%s",
-                  self.SWIFT_SOURCE, container, obj, qs)
+                  self.SWIFT_SOURCE, container2, obj2, qs)
         if must_recurse:
             print("SHARD => RECURSE LISTING MODE")
             res = self._build_object_listing(start_response, env,
-                                             account, container, prefix,
+                                             account, container2, prefix,
                                              limit=limit, recursive=True,
                                              marker=marker)
-        elif not (qs.get('prefix') or qs.get('delimiter')):
-            # should be other operation that listing
-            if obj:
-                env2['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container, obj)
-            else:
-                env2['PATH_INFO'] = "/v1/%s/%s" % (account, container)
-            res = self.app(env2, start_response)
-        else:
+        elif qs.get('prefix') or qs.get('delimiter'):
             print("SHARD => SIMPLE LISTING MODE")
             res = self._build_object_listing(start_response, env,
-                                             account, container, prefix,
+                                             account, container2, prefix,
                                              limit=limit,
                                              recursive=False, marker=marker)
+        else:
+            # should be other operation that listing
+            if obj:
+                env2['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container2, obj2)
+            else:
+                env2['PATH_INFO'] = "/v1/%s/%s" % (account, container2)
+            print(self.SWIFT_SOURCE, "XXX")
+            res = self.app(env2, start_response)
 
+            if req.method == 'DELETE':
+               self._remove_dir_marker(req, account, container, path)
         return res
 
 
