@@ -30,7 +30,9 @@ setup(
         ],
         'paste.filter_factory': [
             'autocontainer=oioswift.common.middleware.autocontainer:filter_factory',
+            'encryption=oioswift.common.middleware.crypto:filter_factory',
             'hashedcontainer=oioswift.common.middleware.hashedcontainer:filter_factory',
+            'keymaster=oioswift.common.middleware.crypto.keymaster:filter_factory',
             'regexcontainer=oioswift.common.middleware.regexcontainer:filter_factory',
             'versioned_writes=oioswift.common.middleware.versioned_writes:filter_factory',
             'container_hierarchy=oioswift.common.middleware.container_hierarchy:filter_factory',
