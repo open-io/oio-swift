@@ -392,12 +392,6 @@ class ContainerShardingMiddleware(AutoContainerBase):
 
         req = Request(env)
 
-        # bypass CS for +segments
-        # TODO it should be allowed because segments will be put
-        # in same container # but it forbid to remove bucket
-        if '%2Bsegments' in req.path:
-            return self.app(env, start_response)
-
         account, container, obj = self._extract_path(req.path_info)
         # allow global listing on account
         if container is None:
