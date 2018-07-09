@@ -193,7 +193,10 @@ class ContainerShardingMiddleware(AutoContainerBase):
         prefix = prefix[0]
 
         # have we to parse root container ?
-        parse_root = self.DELIMITER not in prefix
+        # / must be absent from prefix AND marker
+        LOG.warn("%s: prefix=> '%s'", self.SWIFT_SOURCE, prefix)
+        LOG.warn("%s: marker=> '%s'", self.SWIFT_SOURCE, marker)
+        parse_root = self.DELIMITER not in prefix and (not marker or self.DELIMITER not in marker)
         print(self.SWIFT_SOURCE, "should we parse root container ?", parse_root)
 
         prefix_key = self.key(account, container, '')
@@ -201,37 +204,34 @@ class ContainerShardingMiddleware(AutoContainerBase):
         print("key => ", key)
         matches = [k[len(prefix_key):] for k in self.conn.keys(key)]
 
-
         if parse_root:
             matches.append("")
 
+        # if prefix is something like dir1/dir2/dir3/ob
         if not prefix.endswith(self.DELIMITER) and self.DELIMITER in prefix:
             pfx = prefix[:prefix.rindex(self.DELIMITER)+1]
             key = self.key(account, container, pfx)
             if self.conn.exists(key):
+                # then we must append dir1/dir2/dir3/
+                # to be able to retrieve object1 and object2 from this container
                 matches.append(key[len(prefix_key):])
 
-
-        """
-        if we have
-        d1/d2/d3/
-        da/db/dc/
-        da/dbc
-        and ask listing for da/ with delimiter /
-        we should only returns
-        da/db/
-        da/dbc
-        """
-
-        """
-        if we have
-        d1/d2/d3/ with magic object
-        d1/d2/d3/m0/ with magic
-        listing with prefix d1/d2/d3/m must returns both !!!
-        => we have to list keys like d1/d2/d3/*
-           to return d1/d2/d3/ and d1/d2/d3/m0
-           we have also to ignore entries like d1/d2/d3/d..
-        """
+        # =>
+        if marker:
+            # we should ignore all keys that are before marker to
+            # avoid useles lookup
+            m = matches
+            # not sure if it is necessary
+            marker_ = marker[:marker.rindex('/')] + '/'
+            LOG.warn("%s: marker %s to %s", self.SWIFT_SOURCE, marker, marker_)
+            matches = []
+            for entry in m:
+                if entry < marker_:
+                    LOG.warn("%s: ignore %s (before marker %s)", self.SWIFT_SOURCE, entry, marker_)
+                    continue
+                if entry == marker_ and not recursive:
+                    continue
+                matches.append(entry)
 
         already_done = set()
 
@@ -239,6 +239,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
         cnt_delimiter = len(prefix.split('/'))
         print(self.SWIFT_SOURCE, "cnt_delimiter", cnt_delimiter)
         print(self.SWIFT_SOURCE, "we should parse", ' '.join(matches))
+
         for entry in matches:
             # print(self.SWIFT_SOURCE, "Checking", entry)
             if self.DELIMITER in entry[len_pfx:] and not recursive:
@@ -256,23 +257,30 @@ class ContainerShardingMiddleware(AutoContainerBase):
                     }
                 )
             else:
-                # FIXME: adapt prefix
                 # FIXME: adapt marker
-                # convert container
-                # xxx
                 _prefix = ''
                 if len(entry) < len(prefix):
                     _prefix = prefix[len(entry):]
-                _marker = ''
+                _marker = None
+
+                if marker:
+                    LOG.warn("%s: marker %s vs prefix %s", self.SWIFT_SOURCE,
+                             marker, entry)
+                    LOG.warn("%s ===> %s vs %s",
+                        self.SWIFT_SOURCE, marker[:marker.rindex('/')], entry.rstrip('/'))
+
+                if marker and entry.rstrip('/') == marker[:marker.rindex('/')]:#prefix.startswith(marker):
+                    _marker = marker[marker.rindex('/'):].lstrip('/')
+                    LOG.warn("%s: use marker: %s from %s",
+                        self.SWIFT_SOURCE, _marker, marker)
 
                 if entry:
                     ret = self._list_objects(env, account,
                                              [container] + entry.strip('/').split('/'), header_cb,
-                                             _prefix, _marker)
+                                             _prefix, limit=DEFAULT_LIMIT, marker=_marker)
                 else:
                     ret = self._list_objects(env, account,
-                                             [container], header_cb, _prefix, _marker)
-                print(self.SWIFT_SOURCE, "found ==>", ret)
+                                             [container], header_cb, _prefix, limit=DEFAULT_LIMIT, marker=_marker)
                 for x in ret:
                     all_objs.append(x)
 
@@ -352,20 +360,16 @@ class ContainerShardingMiddleware(AutoContainerBase):
         if marker:
             params['marker'] = marker
         sub_req.params = params
+        LOG.warn("%s: XXX marker before getting response %s", self.SWIFT_SOURCE, marker)
         resp = sub_req.get_response(self.app)
         obj_prefix = ''
         if len(ct_parts) > 1:
-            print(self.SWIFT_SOURCE, "real listing", ct_parts)
+            # print(self.SWIFT_SOURCE, "real listing", ct_parts)
             obj_prefix = self.DELIMITER.join(ct_parts[1:] + ['',])
 
         if not resp.is_success or resp.content_length == 0:
-            """
-            LOG.warn("Failed to list '%s'%s: %s", obj_prefix,
-                     ' (recursively)' if recursive else '',
-                      resp.status)
-            """
-            LOG.warn("%s: Failed to list or nothing to do ?",
-                     self.SWIFT_SOURCE)
+            LOG.warn("%s: Failed to list %s",
+                     self.SWIFT_SOURCE, sub_path)
             return
         with closing_if_possible(resp.app_iter):
             items = json.loads(resp.body)
@@ -375,13 +379,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
         for obj in items:
             if 'name' in obj:
                 obj['name'] = obj_prefix + obj['name']
-                print(obj)
                 yield obj
-            """ should not be necessary any more
-            elif not recursive and 'subdir' in obj:
-                obj['subdir'] = obj_prefix + obj['subdir']
-                yield obj
-            """
 
     def should_bypass(self, env):
         # Pre authentication from swift3
@@ -428,23 +426,11 @@ class ContainerShardingMiddleware(AutoContainerBase):
             # TODO/FIXME
             LOG.debug("%s: -> is a listing request", self.SWIFT_SOURCE)
             must_recurse = req.method == 'GET' and 'delimiter' not in qs
-            """
-            if not prefix:
-                obj_parts = ['']
-            else:
-                obj_parts = prefix[0].split(self.DELIMITER)
-                # Get rid of the prefix, since objects are created
-                # with only their basename (not the whole URL)
-                qs['prefix'] = ''
-                env2['QUERY_STRING'] = urlencode(qs, True)
-                container, obj = self._fake_container_and_obj(
-                    container, obj_parts, is_listing=True)
-            """
             if not marker:
                 marker = None
             else:
                 # FIXME: it is broken
-                marker = marker[0].strip('/').split(self.DELIMITER)[-1]
+                marker = marker[0] #.strip('/').split(self.DELIMITER)[-1]
             if not limit:
                 limit = DEFAULT_LIMIT
             else:
@@ -466,7 +452,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
                     # (and in fact should fake response when creating empty object with final /)
                     # - case DEL s1/s2/s3/o where O is the last object inside s1/s2/s3/
                     # we have to remove s1/s2/s3/ from
-                    self._remove_dir_marker(req, account, container, path)
+                    # self._remove_dir_marker(req, account, container, path)
                     """
                     if not self._can_delete_dir_marker(req, account, ct, obj):
                         return self._build_empty_response(
@@ -495,10 +481,10 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 env2['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container2, obj2)
             else:
                 env2['PATH_INFO'] = "/v1/%s/%s" % (account, container2)
-            print(self.SWIFT_SOURCE, "XXX")
             res = self.app(env2, start_response)
 
-            if req.method == 'DELETE':
+            if req.method == 'DELETE' and res == '':
+                # only remove marker if everything is ok
                self._remove_dir_marker(req, account, container, path)
         return res
 
