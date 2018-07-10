@@ -415,6 +415,13 @@ class ContainerShardingMiddleware(AutoContainerBase):
         must_recurse = False
 
         # TODO Oio-Copy-From to use correct source (container, obj)
+        if 'Oio-Copy-From' in req.headers and req.method == 'PUT':
+            _, c_container, c_obj = req.headers['Oio-Copy-From'].split('/', 2)
+            c_container, c_obj = \
+                self._fake_container_and_obj(c_container, c_obj.split('/'))
+            # update Headers
+            req.headers['Oio-Copy-From'] = '/' + c_container + '/' + c_obj
+            env2['HTTP_OIO_COPY_FROM'] = '/' + c_container + '/' + c_obj
 
         if obj is None:
             # TODO/FIXME
