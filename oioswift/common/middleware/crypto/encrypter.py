@@ -14,25 +14,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from swift.common.middleware.crypto.encrypter import Encrypter as OrigEncrypter
-from swift.common.swob import header_to_environ_key, HTTPBadRequest, Request
+from swift.common.swob import header_to_environ_key, HTTPException, Request
 from swift.common.utils import config_true_value
+from swift.common.middleware.crypto.crypto_utils import CRYPTO_KEY_CALLBACK
+from swift.common.middleware.crypto.encrypter import Encrypter as OrigEncrypter
 
-from oioswift.common.middleware.crypto.crypto_utils import KEY_HEADER, \
-    decode_secret
+from oioswift.common.middleware.crypto.crypto_utils import KEY_HEADER
+from oioswift.common.middleware.crypto.keymaster import MISSING_KEY_MSG
 
 
 ENCRYPTION_KEY_ENV_KEY = header_to_environ_key(KEY_HEADER)
 
 
 class Encrypter(OrigEncrypter):
-
-    def check_key(self, b64_key):
-        """Check that the key has the proper format and length."""
-        try:
-            decode_secret(b64_key)
-        except ValueError:
-            raise HTTPBadRequest('Invalid secret key')
 
     def __call__(self, env, start_response):
         if config_true_value(env.get('swift.crypto.override')):
@@ -47,10 +41,22 @@ class Encrypter(OrigEncrypter):
         except ValueError:
             return self.app(env, start_response)
 
-        b64_key = env.get(ENCRYPTION_KEY_ENV_KEY)
-        if b64_key is None:
-            env['swift.crypto.override'] = True
-        else:
-            self.check_key(b64_key)
+        fetch_crypto_keys = env.get(CRYPTO_KEY_CALLBACK)
+        if fetch_crypto_keys is not None:
+            try:
+                fetch_crypto_keys()
+            except HTTPException as exc:
+                if MISSING_KEY_MSG in exc.body:
+                    if req.method in ('PUT', 'POST'):
+                        # No key, just upload without encryption
+                        env['swift.crypto.override'] = True
+                    # else:
+                    #   let the thing fail later,
+                    #   if a key is required for decoding
+                else:
+                    raise
+            except Exception:
+                # Let the parent class handle other exceptions
+                pass
         res = super(Encrypter, self).__call__(env, start_response)
         return res
