@@ -25,6 +25,8 @@ from swift.common.middleware.crypto.keymaster import \
 from oioswift.common.middleware.crypto.crypto_utils import decode_secret, \
     KEY_HEADER
 
+MISSING_KEY_MSG = 'Missing %s header' % KEY_HEADER
+
 
 class KeyMasterContext(OrigKeyMasterContext):
 
@@ -46,7 +48,7 @@ class KeyMasterContext(OrigKeyMasterContext):
 
         b64_secret = self.req.headers.get(KEY_HEADER)
         if not b64_secret:
-            raise HTTPBadRequest('Missing %s header' % KEY_HEADER)
+            raise HTTPBadRequest(MISSING_KEY_MSG)
         try:
             secret = decode_secret(b64_secret)
         except ValueError:
