@@ -28,6 +28,9 @@ LOG = None
 MIDDLEWARE_NAME = 'container_sharding'
 DEFAULT_LIMIT = 10000
 
+OBJ = 'obj'  # redis key represent a real empty object that ends with /
+CNT = 'cnt'  # redis key show a redirection to a container
+
 
 class ContainerShardingMiddleware(AutoContainerBase):
     """
@@ -116,11 +119,17 @@ class ContainerShardingMiddleware(AutoContainerBase):
                                                       port=self._redis_port)
         return self._conn
 
-    def key(self, account, container, path):
-        return self._prefix + account + ":" + container + ":" + path
+    def key(self, account, container, mode=None, path=None):
+        # assert mode in (OBJ, CNT, '', '*')
+        ret = self._prefix + account + ":" + container + ":"
+        if mode:
+            ret += mode + ":"
+            if path:
+                ret += path
+        return ret
 
-    def _create_dir_marker(self, req, account, container, path):
-        key = self.key(account, container, path)
+    def _create_marker(self, req, account, container, mode, path):
+        key = self.key(account, container, mode, path)
         LOG.debug("%s: create key %s", self.SWIFT_SOURCE, key)
         # TODO: should we increase number of objects ?
         # but we should manage in this case all error case
@@ -129,22 +138,22 @@ class ContainerShardingMiddleware(AutoContainerBase):
         if not res:
             LOG.warn("%s: failed to create key %s", self.SWIFT_SOURCE, key)
 
-    def _remove_dir_marker(self, req, account, container, path):
+    def _remove_marker(self, req, account, container, mode, path):
         # and decrease it here ?
-        key = self.key(account, container, path)
+        key = self.key(account, container, mode, path)
         LOG.debug("%s: should remove path %s (key %s)",
                   self.SWIFT_SOURCE, path, key)
-        empty = not any(self._list_objects(
-                        req.environ.copy(),
-                        account,
-                        [container] + path.split('/')[:-1],
-                        None,
-                        limit=1))
+        if mode == CNT:
+            empty = not any(self._list_objects(
+                            req.environ.copy(),
+                            account,
+                            [container] + path.split('/')[:-1],
+                            None,
+                            limit=1))
 
-        if not empty:
-            return
+            if not empty:
+                return
 
-        key = self.key(account, container, path)
         res = self.conn.delete(key)
         if not res:
             LOG.warn("%s: failed to remove key %s", self.SWIFT_SOURCE, key)
@@ -198,17 +207,21 @@ class ContainerShardingMiddleware(AutoContainerBase):
         LOG.debug("%s: parse root container ? %s",
                   self.SWIFT_SOURCE, parse_root)
 
-        prefix_key = self.key(account, container, '')
-        key = self.key(account, container, prefix) + '*'
-        matches = [k[len(prefix_key):] for k in self.conn.keys(key)]
+        prefix_key = self.key(account, container)
+        key = self.key(account, container, '*', prefix) + '*'
+        matches = [k[len(prefix_key):].split(':', 2)
+                   for k in self.conn.keys(key)]
+        # matches = [k[len(prefix_key):] for k in self.conn.keys(key)]
+
+        LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
 
         if parse_root:
-            matches.append("")
+            matches.append((CNT, ""))
 
         # if prefix is something like dir1/dir2/dir3/ob
         if not prefix.endswith(self.DELIMITER) and self.DELIMITER in prefix:
             pfx = prefix[:prefix.rindex(self.DELIMITER)+1]
-            key = self.key(account, container, pfx)
+            key = self.key(account, container, CNT, pfx)
             if self.conn.exists(key):
                 # then we must append dir1/dir2/dir3/ to be able to retrieve
                 # object1 and object2 from this container
@@ -237,9 +250,9 @@ class ContainerShardingMiddleware(AutoContainerBase):
         len_pfx = len(prefix)
         cnt_delimiter = len(prefix.split('/'))
 
-        for entry in matches:
+        for mode, entry in matches:
             if self.DELIMITER in entry[len_pfx:] and not recursive:
-                # append subdir entry
+                # append subdir entry, no difference between CNT and OBJ
                 subdir = '/'.join(entry.split("/")[:cnt_delimiter]) + '/'
                 if subdir in already_done:
                     continue
@@ -260,7 +273,13 @@ class ContainerShardingMiddleware(AutoContainerBase):
                     LOG.warn("%s: use marker: %s from %s",
                              self.SWIFT_SOURCE, _marker, marker)
 
-                if entry:
+                if mode == "obj":
+                    ret = [{'name': entry,
+                            'bytes': 0,
+                            'hash': '"dede"',
+                            'last_modified': '2018-04-20T09:40:59.000000'}]
+
+                elif entry:
                     ret = self._list_objects(
                         env, account,
                         [container] + entry.strip('/').split('/'), header_cb,
@@ -401,22 +420,27 @@ class ContainerShardingMiddleware(AutoContainerBase):
             obj_parts = obj.split(self.DELIMITER)
             if len(obj_parts) > 1:
                 path = self.DELIMITER.join(obj_parts[:-1]) + self.DELIMITER
+                is_dir = obj.endswith('/')
+                # TODO (MBO) we should accept create key d1/d2/ only
+                # for empty object
                 if req.method == 'PUT':
-                    self._create_dir_marker(req, account, container, path)
-                elif req.method == 'DELETE':
-                    # there is two cases to manage:
-                    # - case for d1/d2/d3/:
-                    # it should not be necessary anymore, and in fact should
-                    # fake response when creating empty object with final / ?
-                    # - case s1/s2/s3/o where O is the last object
-                    # this is managed at end of function to execute only
-                    # in success
-                    """
-                    if not self._can_delete_dir_marker(req, account, ct, obj):
-                        return self._build_empty_response(
-                            start_response, '204 No content')
-                    """
-                    pass
+                    LOG.error("SHARD: CREATE MARKER FOR %s => is_dir %s",
+                              obj, obj.endswith('/'))
+                    self._create_marker(req, account, container,
+                                        OBJ if is_dir else CNT, path)
+                    if is_dir:
+                        oheaders = {'Content-Length': 0,
+                                    'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
+                        start_response("201 Created", oheaders.items())
+                        return ['']
+
+                elif req.method == 'DELETE' and is_dir:
+                    self._remove_marker(req, account, container, OBJ, path)
+                    oheaders = {'Content-Length': 0,
+                                'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
+                    start_response("204 No Content", oheaders.items())
+                    return ['']
+
             container2, obj2 = self._fake_container_and_obj(container,
                                                             obj_parts)
 
@@ -443,7 +467,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
 
             if req.method == 'DELETE' and res == '':
                 # only remove marker if everything is ok
-                self._remove_dir_marker(req, account, container, path)
+                self._remove_marker(req, account, container, CNT, path)
         return res
 
 
