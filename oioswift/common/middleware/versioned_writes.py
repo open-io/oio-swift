@@ -65,9 +65,14 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
                                                   orig_container)
             info = get_container_info(sub_env, self.app,
                                       swift_source='VW')
-            if info.get('sysmeta', {}).get('versions-location') != \
-                    container_name:
-                # We were wrong, do a standard listing
+            vers_loc = info.get('sysmeta', {}).get('versions-location')
+            # Sometimes we receive versioned listing requests whereas
+            # versioning is not enabled (vers_loc is None or empty).
+            if vers_loc and vers_loc != container_name:
+                # The container specified in the request ends with the
+                # versioning suffix, but user has asked the versions to
+                # be saved elsewhere, thus we will consider this as a
+                # regular listing request.
                 orig_container = container_name
 
         if orig_container != container_name:
