@@ -60,8 +60,9 @@ configure_aws
 RET=0
 
 run_test s3_container_hierarchy.cfg s3_container_hierarchy_v2.sh
-run_test s3_fastcopy.cfg s3_acl_metadata.sh
-run_test s3_normal.cfg s3_acl_metadata.sh
+run_test s3_fastcopy.cfg s3-acl-metadata.sh
+run_test s3-default.cfg s3-acl-metadata.sh
+run_test s3-default.cfg s3-versioning.sh
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET

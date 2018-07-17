@@ -13,7 +13,7 @@ install:
   - sudo apt-add-repository "deb http://archive.ubuntu.com/ubuntu trusty-backports main restricted universe multiverse"
   - sudo apt-add-repository "deb http://mirror.openio.io/pub/repo/openio/sds/17.04/ubuntu/trusty ./"
   - sudo apt-get update -qq
-  - sudo apt-get install -y --force-yes python-virtualenv liberasurecode-dev libssl-dev libattr1-dev libleveldb1 libleveldb-dev libzookeeper-mt-dev
+  - sudo apt-get install -y --force-yes python-virtualenv jq liberasurecode-dev libssl-dev libattr1-dev libleveldb1 libleveldb-dev libzookeeper-mt-dev
   - virtualenv $HOME/venv
   - source $HOME/venv/bin/activate
   - pip install --upgrade pip setuptools virtualenv tox flake8
