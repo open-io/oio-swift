@@ -28,7 +28,7 @@ def filter_factory(global_conf, **local_conf):
     enabled = not config_true_value(conf.get('disable_encryption', 'false'))
     register_swift_info('encryption', admin=True, enabled=enabled)
 
-    from swift.common.middleware.crypto.decrypter import Decrypter
+    from oioswift.common.middleware.crypto.decrypter import Decrypter
     from oioswift.common.middleware.crypto.encrypter import Encrypter
 
     def encryption_filter(app):
