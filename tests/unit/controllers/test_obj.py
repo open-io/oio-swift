@@ -25,7 +25,7 @@ def fake_stream(l):
 def fake_prepare_meta():
     return {
         'x-oio-content-meta-mime-type': '',
-        'id': '',
+        'id': '020B129446710500769508970D5B1781',
         'version': 42,
         'policy': 'SINGLE',
         'chunk_method': 'plain/nb_copy=1',
