@@ -16,7 +16,38 @@
 
 from swift.common.swob import Request, HTTPException
 from swift.common.middleware.crypto.decrypter import \
-    Decrypter as OrigDecrypter, DecrypterObjContext
+    Decrypter as OrigDecrypter, DecrypterObjContext as OrigDecrypterObjContext
+from swift.common.utils import config_true_value
+from swift.proxy.controllers.base import get_object_info
+
+
+class DecrypterObjContext(OrigDecrypterObjContext):
+
+    def get_decryption_keys(self, req):
+        """
+        Determine if a response should be decrypted, and if so then fetch keys.
+
+        :param req: a Request object
+        :returns: a dict of decryption keys
+        """
+        if config_true_value(req.environ.get('swift.crypto.override')):
+            self.logger.debug('No decryption is necessary because of override')
+            return None
+
+        info = get_object_info(req.environ, self.app, swift_source='DCRYPT')
+        if 'crypto-etag' not in info['sysmeta']:
+            # object is not cyphered
+            return None
+
+        try:
+            return self.get_keys(req.environ)
+        except HTTPException:
+            # FIXME(FVE): check swift_source, accept if it is internal
+            # FIXME(FVE): move that code to avoid printing an error
+            if req.method == 'HEAD':
+                return None
+            else:
+                raise
 
 
 class Decrypter(OrigDecrypter):

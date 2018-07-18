@@ -13,6 +13,7 @@ configure_aws
 RET=0
 
 run_functional_test s3-versioning-encryption.cfg encryption-tests.sh
+run_functional_test s3-versioning-custom-encryption.cfg custom-encryption-tests.sh
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET
