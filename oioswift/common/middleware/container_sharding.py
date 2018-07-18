@@ -119,8 +119,8 @@ class ContainerShardingMiddleware(AutoContainerBase):
                                                       port=self._redis_port)
         return self._conn
 
-    def key(self, account, container, mode=None, path=None):
-        # assert mode in (OBJ, CNT, '', '*')
+    def key(self, account, container, mode, path=None):
+        """returns Redis key"""
         ret = self._prefix + account + ":" + container + ":"
         if mode:
             ret += mode + ":"
@@ -128,7 +128,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 ret += path
         return ret
 
-    def _create_marker(self, req, account, container, mode, path):
+    def _create_key(self, req, account, container, mode, path):
         key = self.key(account, container, mode, path)
         LOG.debug("%s: create key %s", self.SWIFT_SOURCE, key)
         # TODO: should we increase number of objects ?
@@ -138,12 +138,10 @@ class ContainerShardingMiddleware(AutoContainerBase):
         if not res:
             LOG.warn("%s: failed to create key %s", self.SWIFT_SOURCE, key)
 
-    def _remove_marker(self, req, account, container, mode, path):
-        # and decrease it here ?
+    def _remove_key(self, req, account, container, mode, path):
         key = self.key(account, container, mode, path)
-        LOG.debug("%s: should remove path %s (key %s)",
-                  self.SWIFT_SOURCE, path, key)
         if mode == CNT:
+            # remove container key only if empty
             empty = not any(self._list_objects(
                             req.environ.copy(),
                             account,
@@ -154,34 +152,10 @@ class ContainerShardingMiddleware(AutoContainerBase):
             if not empty:
                 return
 
+        LOG.debug("%s: remove key %s (key %s)", self.SWIFT_SOURCE, path, key)
         res = self.conn.delete(key)
         if not res:
             LOG.warn("%s: failed to remove key %s", self.SWIFT_SOURCE, key)
-
-    def _can_delete_dir_marker(self, req, account, container, obj):
-        """
-        Check if an entry redis can be deleted:
-        the sub-container must be empty.
-        """
-
-        container2 = container + self.ENCODED_DELIMITER + obj[:-1]
-        LOG.debug("%s: checking if '%s' is empty",
-                  self.SWIFT_SOURCE, container2)
-        # Check if there is any object (or placeholder) before
-        # accepting deletion.
-        empty = not any(self._list_objects(
-                        req.environ.copy(),
-                        account,
-                        tuple(container2.split(self.ENCODED_DELIMITER)),
-                        None,
-                        limit=1))
-        return empty
-
-    def _build_empty_response(self, start_response, status='200 OK'):
-        """Build a response with no body and the specified status."""
-        oheaders = {'Content-Length': 0}
-        start_response(status, oheaders.items())
-        return []  # empty body
 
     def _build_object_listing(self, start_response, env,
                               account, container, prefix,
@@ -207,7 +181,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
         LOG.debug("%s: parse root container ? %s",
                   self.SWIFT_SOURCE, parse_root)
 
-        prefix_key = self.key(account, container)
+        prefix_key = self.key(account, container, "")
         key = self.key(account, container, '*', prefix) + '*'
         matches = [k[len(prefix_key):].split(':', 2)
                    for k in self.conn.keys(key)]
@@ -232,18 +206,25 @@ class ContainerShardingMiddleware(AutoContainerBase):
         if marker:
             m = matches
             marker_ = marker[:marker.rindex('/')] + '/'
-            LOG.warn("%s: marker %s to %s",
-                     self.SWIFT_SOURCE, marker, marker_)
+            LOG.debug("%s: convert marker %s to %s",
+                      self.SWIFT_SOURCE, marker, marker_)
             matches = []
-            for entry in m:
+            for mode, entry in m:
                 if entry < marker_:
-                    LOG.warn("%s: ignore %s (before marker %s)",
-                             self.SWIFT_SOURCE, entry, marker_)
+                    LOG.debug("%s: marker ignore %s: before)",
+                              self.SWIFT_SOURCE, entry)
                     continue
                 if entry == marker_ and not recursive:
-                    # marker is something like d1/
+                    # marker is something like d1/ but we d1/d2/d3/ key
+                    LOG.debug("%s: marker ignore %s: not recursive",
+                              self.SWIFT_SOURCE, entry)
                     continue
-                matches.append(entry)
+                if mode == OBJ and entry == marker_:
+                    LOG.debug("%s: marker ignore %s: skip object",
+                              self.SWIFT_SOURCE, entry, marker_)
+                    continue
+                matches.append((mode, entry))
+        matches.sort()
 
         already_done = set()
 
@@ -267,17 +248,18 @@ class ContainerShardingMiddleware(AutoContainerBase):
                     _prefix = prefix[len(entry):]
 
                 # transmit marker only to exact container
+                # otherwise we will have incorrect listings
                 _marker = None
                 if marker and entry.rstrip('/') == marker[:marker.rindex('/')]:
                     _marker = marker[marker.rindex('/'):].lstrip('/')
-                    LOG.warn("%s: use marker: %s from %s",
-                             self.SWIFT_SOURCE, _marker, marker)
+                    LOG.debug("%s: convert marker %s to %s",
+                              self.SWIFT_SOURCE, marker, _marker)
 
                 if mode == "obj":
                     ret = [{'name': entry,
                             'bytes': 0,
-                            'hash': '"dede"',
-                            'last_modified': '2018-04-20T09:40:59.000000'}]
+                            'hash': '"d41d8cd98f00b204e9800998ecf8427e"',
+                            'last_modified': '1970-01-01T00:00:00.000000'}]
 
                 elif entry:
                     ret = self._list_objects(
@@ -294,6 +276,14 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 for x in ret:
                     all_objs.append(x)
 
+            # it suppose to have proper order but it will help a lot
+            # quick test with page-size 2 to list 10 directories with 10 objets
+            # with break: 2.1s vs without break 3.8s
+            if len(all_objs) > limit:
+                break
+
+        LOG.debug("%s: got %d items / limit was %d", self.SWIFT_SOURCE,
+                  len(all_objs), limit)
         all_objs = sorted(all_objs,
                           key=lambda entry: entry.get('name',
                                                       entry.get('subdir')))
@@ -426,8 +416,8 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 if req.method == 'PUT':
                     LOG.error("SHARD: CREATE MARKER FOR %s => is_dir %s",
                               obj, obj.endswith('/'))
-                    self._create_marker(req, account, container,
-                                        OBJ if is_dir else CNT, path)
+                    self._create_key(req, account, container,
+                                     OBJ if is_dir else CNT, path)
                     if is_dir:
                         oheaders = {'Content-Length': 0,
                                     'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
@@ -435,7 +425,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
                         return ['']
 
                 elif req.method == 'DELETE' and is_dir:
-                    self._remove_marker(req, account, container, OBJ, path)
+                    self._remove_key(req, account, container, OBJ, path)
                     oheaders = {'Content-Length': 0,
                                 'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
                     start_response("204 No Content", oheaders.items())
