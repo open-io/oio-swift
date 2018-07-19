@@ -19,21 +19,56 @@ import hmac
 import os
 
 from swift.common.swob import Request, HTTPException, HTTPBadRequest
-from swift.common.middleware.crypto.keymaster import \
-    KeyMaster as OrigKeyMaster, KeyMasterContext as OrigKeyMasterContext
+from swift.common import wsgi
+from swift.common.middleware.crypto import keymaster
 
 from oioswift.common.middleware.crypto.crypto_utils import decode_secret, \
-    KEY_HEADER
+    KEY_HEADER, ALGO_ENV_KEY, KEY_ENV_KEY, KEY_MD5_ENV_KEY
 
 MISSING_KEY_MSG = 'Missing %s header' % KEY_HEADER
 
 
-class KeyMasterContext(OrigKeyMasterContext):
+def make_encrypted_env(env, method=None, path=None, agent='Swift',
+                       query_string=None, swift_source=None):
+    """Same as :py:func:`make_env` but with encryption env, if available."""
+    newenv = wsgi.make_env(
+        env, method=method, path=path, agent=agent, query_string=query_string,
+        swift_source=swift_source)
+    for name in (ALGO_ENV_KEY, KEY_ENV_KEY, KEY_MD5_ENV_KEY):
+        if name in env:
+            newenv[name] = env[name]
+    return newenv
+
+
+def make_encrypted_subrequest(env, method=None, path=None, body=None,
+                              headers=None, agent='Swift', swift_source=None,
+                              make_env=make_encrypted_env):
+    """
+    Same as :py:func:`make_subrequest` but with encryption env, if available.
+    """
+    return wsgi.make_subrequest(
+        env, method=method, path=path, body=body, headers=headers, agent=agent,
+        swift_source=swift_source, make_env=make_env)
+
+
+class KeyMasterContext(keymaster.KeyMasterContext):
 
     def __init__(self, keymaster, req, account, container, obj=None):
         super(KeyMasterContext, self).__init__(keymaster, account,
                                                container, obj)
         self.req = req
+
+    def _fetch_object_secret(self):
+        b64_secret = self.req.headers.get(KEY_HEADER)
+        if not b64_secret:
+            raise HTTPBadRequest(MISSING_KEY_MSG)
+        try:
+            secret = decode_secret(b64_secret)
+        except ValueError:
+            raise HTTPBadRequest('%s header must be a base64 '
+                                 'encoding of exactly 32 raw bytes' %
+                                 KEY_HEADER)
+        return secret
 
     def fetch_crypto_keys(self, *args, **kwargs):
         """
@@ -46,24 +81,15 @@ class KeyMasterContext(OrigKeyMasterContext):
         if self._keys:
             return self._keys
 
-        b64_secret = self.req.headers.get(KEY_HEADER)
-        if not b64_secret:
-            raise HTTPBadRequest(MISSING_KEY_MSG)
-        try:
-            secret = decode_secret(b64_secret)
-        except ValueError:
-            raise HTTPBadRequest('%s header must be a base64 '
-                                 'encoding of exactly 32 raw bytes' %
-                                 KEY_HEADER)
-
         self._keys = {}
         account_path = os.path.join(os.sep, self.account)
 
         if self.container:
             path = os.path.join(account_path, self.container)
-            self._keys['container'] = self.keymaster.create_key(path, secret)
+            self._keys['container'] = self.keymaster.create_key(path, None)
 
             if self.obj:
+                secret = self._fetch_object_secret()
                 path = os.path.join(path, self.obj)
                 self._keys['object'] = self.keymaster.create_key(path, secret)
 
@@ -72,17 +98,7 @@ class KeyMasterContext(OrigKeyMasterContext):
         return self._keys
 
 
-class KeyMaster(OrigKeyMaster):
-
-    def __init__(self, app, conf):
-        self.app = app
-        self.root_secret = None
-
-    def _get_root_secret(self, conf):
-        # Implemented since Queens (not used in Pike)
-        # Called in constructor to fill the `root_secret` field,
-        # returning None is fine.
-        pass
+class KeyMaster(keymaster.KeyMaster):
 
     def __call__(self, env, start_response):
         req = Request(env)
@@ -103,8 +119,15 @@ class KeyMaster(OrigKeyMaster):
         # anything else
         return self.app(env, start_response)
 
-    def create_key(self, key_id, secret):
-        return hmac.new(secret, key_id,
+    def create_key(self, key_id, secret=None):
+        """
+        Derive an encryption key.
+
+        :param key_id: initialization vector for the new key
+        :param secret: secret key to derive. If `None`, use
+            `self.root_secret`.
+        """
+        return hmac.new(secret or self.root_secret, key_id,
                         digestmod=hashlib.sha256).digest()
 
 
@@ -113,6 +136,10 @@ def filter_factory(global_conf, **local_conf):
     conf.update(local_conf)
 
     def keymaster_filter(app):
+        # The default make_subrequest function won't let the encryption
+        # headers pass through, therefore we must patch it.
+        from swift.common import request_helpers
+        request_helpers.make_subrequest = make_encrypted_subrequest
         return KeyMaster(app, conf)
 
     return keymaster_filter

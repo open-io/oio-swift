@@ -14,16 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from swift.common.swob import header_to_environ_key, HTTPException, Request
+from swift.common.swob import HTTPException, Request
 from swift.common.utils import config_true_value
 from swift.common.middleware.crypto.crypto_utils import CRYPTO_KEY_CALLBACK
 from swift.common.middleware.crypto.encrypter import Encrypter as OrigEncrypter
 
-from oioswift.common.middleware.crypto.crypto_utils import KEY_HEADER
 from oioswift.common.middleware.crypto.keymaster import MISSING_KEY_MSG
-
-
-ENCRYPTION_KEY_ENV_KEY = header_to_environ_key(KEY_HEADER)
 
 
 class Encrypter(OrigEncrypter):
