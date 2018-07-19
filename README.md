@@ -3,6 +3,8 @@ oioswift
 
 OpenIO SDS Swift Gateway.
 
+[![Build Status][build_status_svg]][repo] [![Codecov][codecov_svg]][codecov]
+
 Features
 --------
 Included:
@@ -63,4 +65,7 @@ Resources:
 *   [OpenStack Swift API](http://developer.openstack.org/api-ref-objectstorage-v1.html)
 
 
-    
+[build_status_svg]: https://travis-ci.org/open-io/oio-swift.svg?branch=master
+[repo]: https://travis-ci.org/open-io/oio-swift
+[codecov_svg]: https://codecov.io/gh/open-io/oio-swift/branch/master/graph/badge.svg
+[codecov]: https://codecov.io/gh/open-io/oio-swift
