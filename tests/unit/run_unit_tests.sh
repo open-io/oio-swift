@@ -11,4 +11,5 @@ coverage run --source=oioswift,tests -a $(which nosetests) -v \
     tests/unit/common/middleware/test_container_sharding.py \
     tests/unit/common/middleware/test_regexcontainer.py
 
+
 ./oio-check-version.sh
