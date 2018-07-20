@@ -16,9 +16,10 @@
 from functools import partial
 import collections
 from six.moves.urllib.parse import parse_qs, quote_plus
-from swift.common.swob import HTTPBadRequest
+from swift.common.swob import HTTPBadRequest, Request
 from swift.common.utils import config_true_value, split_path
 from swift.common.wsgi import reiterate
+from swift.common.request_helpers import get_sys_meta_prefix
 from oio.common.autocontainer import ContainerBuilder
 
 
@@ -70,6 +71,12 @@ class AutoContainerBase(object):
             obj = tail
 
         return account, container, obj
+
+    def _save_bucket_name(self, env):
+        req = Request(env)
+        account, container, obj = self._extract_path(req.path_info)
+        sys_meta_key = '%soio-bucket-name' % get_sys_meta_prefix('object')
+        req.headers[sys_meta_key] = container
 
     def _convert_path(self, path):
         account, container, obj = self._extract_path(path)
@@ -208,6 +215,8 @@ class AutoContainerBase(object):
             alt_checker=check_obj)
 
     def __call__(self, env, start_response):
+        self._save_bucket_name(env)
+
         if self.should_bypass(env):
             return self.app(env, start_response)
 

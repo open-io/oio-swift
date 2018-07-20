@@ -258,6 +258,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             return self.app(env, start_response)
 
         req = Request(env)
+        super(ContainerHierarchyMiddleware, self)._save_bucket_name(env)
 
         # bypass CH for +segments
         # TODO it should be allowed because segments will be put
