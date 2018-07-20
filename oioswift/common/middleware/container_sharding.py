@@ -40,29 +40,30 @@ class ContainerShardingMiddleware(AutoContainerBase):
     DELIMITER = '/'
     ENCODED_DELIMITER = '%2F'
     SWIFT_SOURCE = 'SHARD'
+    PREFIX = 'CS:'
 
     def __init__(self, app, conf, acct, **kwargs):
+        redis_host = kwargs.pop('redis_host', None)
+        sentinel_hosts = kwargs.pop('sentinel_hosts', None)
+        master_name = kwargs.pop('sentinel_name', None)
+
         super(ContainerShardingMiddleware, self).__init__(
             app, acct, **kwargs)
         LOG.debug(self.SWIFT_SOURCE)
         self.check_pipeline(conf)
 
-        #
         self.__redis_mod = importlib.import_module('redis')
         self.__redis_sentinel_mod = importlib.import_module('redis.sentinel')
+        self._sentinel_hosts = None
 
-        host = "127.0.0.1:6379"
-        prefix = "swiftsharding:"
-        self._redis_host, self._redis_port = host.rsplit(':', 1)
-        self._redis_port = int(self._redis_port)
-        self._prefix = prefix
-        sentinel_hosts = None
-        master_name = ""
-        if isinstance(sentinel_hosts, basestring):
+        if redis_host:
+            self._redis_host, self._redis_port = redis_host.rsplit(':', 1)
+            self._redis_port = int(self._redis_port)
+        else:
+            if isinstance(sentinel_hosts, basestring):
+                sentinel_hosts = sentinel_hosts.split(',')
             self._sentinel_hosts = [(h, int(p)) for h, p, in (hp.split(':', 2)
                                     for hp in sentinel_hosts.split(','))]
-        else:
-            self._sentinel_hosts = sentinel_hosts
         if self._sentinel_hosts and not master_name:
             raise ValueError("missing parameter 'master_name'")
         self._master_name = master_name
@@ -121,7 +122,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
 
     def key(self, account, container, mode, path=None):
         """returns Redis key"""
-        ret = self._prefix + account + ":" + container + ":"
+        ret = self.PREFIX + account + ":" + container + ":"
         if mode:
             ret += mode + ":"
             if path:
@@ -478,11 +479,17 @@ def filter_factory(global_conf, **local_config):
     account_first = config_true_value(local_config.get('account_first'))
     swift3_compat = config_true_value(local_config.get('swift3_compat'))
     strip_v1 = config_true_value(local_config.get('strip_v1'))
+    redis_host = local_config.get('redis_host')
+    sentinel_hosts = local_config.get('sentinel_hosts')
+    sentinel_name = local_config.get('sentinel_name')
 
     def factory(app):
         return ContainerShardingMiddleware(
             app, global_conf, acct,
             strip_v1=strip_v1,
             account_first=account_first,
-            swift3_compat=swift3_compat)
+            swift3_compat=swift3_compat,
+            redis_host=redis_host,
+            sentinel_hosts=sentinel_hosts,
+            sentinel_name=sentinel_name)
     return factory
