@@ -32,6 +32,67 @@ OBJ = 'obj'  # redis key represent a real empty object that ends with /
 CNT = 'cnt'  # redis key show a redirection to a container
 
 
+class RedisDb(object):
+    def __init__(self, redis_host=None,
+                 sentinel_hosts=None, sentinel_name=None):
+        self.__redis_mod = importlib.import_module('redis')
+        self.__redis_sentinel_mod = importlib.import_module('redis.sentinel')
+        self._sentinel_hosts = None
+        self._sentinel = None
+        self._conn = None
+
+        if redis_host:
+            self._redis_host, self._redis_port = redis_host.rsplit(':', 1)
+            self._redis_port = int(self._redis_port)
+            return
+
+        if not sentinel_name:
+            raise ValueError("missing parameter 'sentinel_name'")
+
+        if isinstance(sentinel_hosts, basestring):
+            sentinel_hosts = sentinel_hosts.split(',')
+        self._sentinel_hosts = [(h, int(p)) for h, p, in (hp.split(':', 2)
+                                for hp in sentinel_hosts.split(','))]
+        self._master_name = sentinel_name
+
+        self._sentinel = self.__redis_sentinel_mod.Sentinel(
+            self._sentinel_hosts)
+
+    @property
+    def conn(self):
+        if self._sentinel:
+            return self._sentinel.master_for(self._master_name)
+        if not self._conn:
+            self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
+                                                      port=self._redis_port)
+        return self._conn
+
+    def set(self, key, val):
+        return self.conn.set(key, val)
+
+    def delete(self, key):
+        return self.conn.delete(key)
+
+    def keys(self, pattern):
+        return self.conn.keys(pattern)
+
+
+class FakeRedis(object):
+    """Fake Redis stubb for unit test"""
+    def __init__(self):
+        LOG.warn("**FakeRedis stub in use **")
+        self._keys = {}
+
+    def set(self, key, val):
+        self._keys[key] = val
+
+    def delete(self, key):
+        self._keys.pop(key, None)
+
+    def keys(self, pattern):
+        raise NotImplemented()
+
+
 class ContainerShardingMiddleware(AutoContainerBase):
     """
     Middleware that will spawn a container for each level of object path.
@@ -45,35 +106,20 @@ class ContainerShardingMiddleware(AutoContainerBase):
     def __init__(self, app, conf, acct, **kwargs):
         redis_host = kwargs.pop('redis_host', None)
         sentinel_hosts = kwargs.pop('sentinel_hosts', None)
-        master_name = kwargs.pop('sentinel_name', None)
+        sentinel_name = kwargs.pop('sentinel_name', None)
 
         super(ContainerShardingMiddleware, self).__init__(
             app, acct, **kwargs)
         LOG.debug(self.SWIFT_SOURCE)
         self.check_pipeline(conf)
 
-        self.__redis_mod = importlib.import_module('redis')
-        self.__redis_sentinel_mod = importlib.import_module('redis.sentinel')
-        self._sentinel_hosts = None
-
-        if redis_host:
-            self._redis_host, self._redis_port = redis_host.rsplit(':', 1)
-            self._redis_port = int(self._redis_port)
+        if redis_host or sentinel_hosts:
+            self.conn = RedisDb(
+                redis_host=redis_host,
+                sentinel_hosts=sentinel_hosts,
+                sentinel_name=sentinel_name)
         else:
-            if isinstance(sentinel_hosts, basestring):
-                sentinel_hosts = sentinel_hosts.split(',')
-            self._sentinel_hosts = [(h, int(p)) for h, p, in (hp.split(':', 2)
-                                    for hp in sentinel_hosts.split(','))]
-        if self._sentinel_hosts and not master_name:
-            raise ValueError("missing parameter 'master_name'")
-        self._master_name = master_name
-
-        self._conn = None
-        self._sentinel = None
-
-        if self._sentinel_hosts:
-            self._sentinel = self.__redis_sentinel_mod.Sentinel(
-                self._sentinel_hosts)
+            self.conn = FakeRedis()
 
     def check_pipeline(self, conf):
         """
@@ -111,6 +157,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 'Invalid pipeline %r: %s must be placed after SLO'
                 % (pipeline, MIDDLEWARE_NAME))
 
+    """
     @property
     def conn(self):
         if self._sentinel:
@@ -119,6 +166,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
             self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
                                                       port=self._redis_port)
         return self._conn
+    """
 
     def key(self, account, container, mode, path=None):
         """returns Redis key"""
@@ -184,6 +232,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
 
         prefix_key = self.key(account, container, "")
         key = self.key(account, container, '*', prefix) + '*'
+        print("XXX", self.conn.keys(key))
         matches = [k[len(prefix_key):].split(':', 2)
                    for k in self.conn.keys(key)]
         # matches = [k[len(prefix_key):] for k in self.conn.keys(key)]
