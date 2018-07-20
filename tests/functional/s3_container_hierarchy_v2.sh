@@ -79,6 +79,13 @@ sleep 0.5
 OUT=$( openio container list -f csv --quote none -c Name --oio-account AUTH_demo | grep ${BUCKET} )
 echo ${OUT} | grep ${BUCKET}+segments
 
+# CHECK BUCKET NAME METADATA
+OUT=$( openio object show ${BUCKET} small --oio-account AUTH_demo -f shell | grep oio-bucket-name | cut -d = -f 2)
+if [ ${OUT} != \"${BUCKET}\" ]
+then
+    echo "ERROR: bucket name not on metadata"
+    exit 1
+fi
 # SUBDIR
 
 echo aa > aa
