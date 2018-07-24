@@ -30,7 +30,8 @@ from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPConflict, HTTPPreconditionFailed, HTTPRequestTimeout, \
     HTTPUnprocessableEntity, HTTPClientDisconnect, HTTPCreated, \
     HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator
-from swift.common.request_helpers import is_sys_or_user_meta
+from swift.common.request_helpers import is_sys_or_user_meta, \
+    is_object_transient_sysmeta
 from swift.proxy.controllers.base import set_object_info_cache, \
         delay_denial, cors_validation
 from swift.proxy.controllers.obj import check_content_type
@@ -216,6 +217,7 @@ class ObjectController(BaseObjectController):
         if properties:
             for k, v in properties.iteritems():
                 if is_sys_or_user_meta('object', k) or \
+                        is_object_transient_sysmeta(k) or \
                         k.lower() in self.allowed_headers:
                     resp.headers[str(k)] = v
         resp.headers['etag'] = metadata['hash'].lower()
@@ -240,7 +242,8 @@ class ObjectController(BaseObjectController):
         metadata = {}
         metadata.update(
             (k.lower(), v) for k, v in headers.iteritems()
-            if is_sys_or_user_meta('object', k))
+            if is_sys_or_user_meta('object', k) or
+            is_object_transient_sysmeta(k))
         for header_key in self.allowed_headers:
             if header_key in headers:
                 headers_lower = header_key.lower()

@@ -91,11 +91,14 @@ class DecrypterObjContext(decrypter.DecrypterObjContext):
         # if it does then they will be overwritten by any decrypted headers
         # that map to the same x-object-meta- header names i.e. decrypted
         # headers win over unexpected, unencrypted headers.
-        mod_hdr_pairs.extend(self.decrypt_user_metadata(keys))
+        try:
+            mod_hdr_pairs.extend(self.decrypt_user_metadata(keys))
 
-        mod_hdr_names = {h.lower() for h, v in mod_hdr_pairs}
-        mod_hdr_pairs.extend([(h, v) for h, v in self._response_headers
-                              if h.lower() not in mod_hdr_names])
+            mod_hdr_names = {h.lower() for h, v in mod_hdr_pairs}
+            mod_hdr_pairs.extend([(h, v) for h, v in self._response_headers
+                                  if h.lower() not in mod_hdr_names])
+        except KeyError:
+            self.app.logger.debug('Not able to dcrypt user metadata')
         return mod_hdr_pairs
 
 
