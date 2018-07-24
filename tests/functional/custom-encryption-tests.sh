@@ -67,6 +67,11 @@ echo "Checking reported checksum of obj_1_cyphered"
 OBJ_1_ETAG=$(${AWS} s3api head-object --bucket "$BUCKET" --key "obj_1_cyphered" ${ENC_OPTS_EXT} | sed -n -E -e "${ETAG_REGEX}")
 [ "$OBJ_1_ETAG" == "$OBJ_1_CHECKSUM" ]
 
+echo "Adding some metadata, and checking it"
+${AWS} s3api copy-object --bucket "$BUCKET" --key "obj_1_cyphered" --copy-source "${BUCKET}/obj_1_cyphered" ${ENC_OPTS_EXT} --metadata "a=b" --metadata-directive REPLACE
+OBJ_1_MD=$(${AWS} s3api head-object --bucket "$BUCKET" --key "obj_1_cyphered" ${ENC_OPTS_EXT} | jq ".Metadata")
+echo "$OBJ_1_MD" | grep '"a": "b"'
+
 echo "Downloading it"
 ${AWS} s3 cp "s3://$BUCKET/obj_1_cyphered" ./ ${ENC_OPTS}
 

@@ -115,6 +115,13 @@ class KeyMaster(keymaster.KeyMaster):
                 return km_context.handle_request(req, start_response)
             except HTTPException as err_resp:
                 return err_resp(env, start_response)
+            except KeyError as err:
+                if 'object' in err.args:
+                    self.app.logger.debug(
+                        'Missing encryption key, cannot handle request')
+                    raise HTTPBadRequest(MISSING_KEY_MSG)
+                else:
+                    raise
 
         # anything else
         return self.app(env, start_response)
