@@ -38,6 +38,7 @@ setup(
             'container_hierarchy=oioswift.common.middleware.container_hierarchy:filter_factory',
             'copy=oioswift.common.middleware.copy:filter_factory',
             'verb_acl=oioswift.common.middleware.verb_acl:filter_factory',
+            'tempauth=oioswift.common.middleware.tempauth:filter_factory',
         ],
     },
     install_requires=['swift>=2.13.0', 'oio>=4.1.0']
