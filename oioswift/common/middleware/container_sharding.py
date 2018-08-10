@@ -74,7 +74,7 @@ class RedisDb(object):
         return self.conn.delete(key)
 
     def keys(self, pattern):
-        return self.conn.keys(pattern)
+        return self.conn.scan_iter(pattern)
 
 
 class FakeRedis(object):
@@ -415,9 +415,6 @@ class ContainerShardingMiddleware(AutoContainerBase):
         account, container, obj = self._extract_path(req.path_info)
         # allow global listing on account
         if container is None:
-            return self.app(env, start_response)
-
-        if container == "org":
             return self.app(env, start_response)
 
         env2 = env.copy()
