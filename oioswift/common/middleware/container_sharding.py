@@ -157,17 +157,6 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 'Invalid pipeline %r: %s must be placed after SLO'
                 % (pipeline, MIDDLEWARE_NAME))
 
-    """
-    @property
-    def conn(self):
-        if self._sentinel:
-            return self._sentinel.master_for(self._master_name)
-        if not self._conn:
-            self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
-                                                      port=self._redis_port)
-        return self._conn
-    """
-
     def key(self, account, container, mode, path=None):
         """returns Redis key"""
         ret = self.PREFIX + account + ":" + container + ":"
@@ -232,10 +221,8 @@ class ContainerShardingMiddleware(AutoContainerBase):
 
         prefix_key = self.key(account, container, "")
         key = self.key(account, container, '*', prefix) + '*'
-        print("XXX", self.conn.keys(key))
         matches = [k[len(prefix_key):].split(':', 2)
                    for k in self.conn.keys(key)]
-        # matches = [k[len(prefix_key):] for k in self.conn.keys(key)]
 
         LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
 
@@ -252,7 +239,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 matches.append(key[len(prefix_key):])
 
         # we should ignore all keys that are before marker to
-        # avoid useles lookup or false listing
+        # avoid useless lookup or false listing
         if marker:
             m = matches
             marker_ = marker[:marker.rindex('/')] + '/'
@@ -326,7 +313,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 for x in ret:
                     all_objs.append(x)
 
-            # it suppose to have proper order but it will help a lot
+            # it suppose to have proper order but it will help a lot !
             # quick test with page-size 2 to list 10 directories with 10 objets
             # with break: 2.1s vs without break 3.8s
             if len(all_objs) > limit:
@@ -430,7 +417,6 @@ class ContainerShardingMiddleware(AutoContainerBase):
                   marker)
         must_recurse = False
 
-        # TODO Oio-Copy-From to use correct source (container, obj)
         if 'Oio-Copy-From' in req.headers and req.method == 'PUT':
             _, c_container, c_obj = req.headers['Oio-Copy-From'].split('/', 2)
             c_container, c_obj = \
