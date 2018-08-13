@@ -297,7 +297,8 @@ class AccountController(SwiftAccountController):
         headers['X-oio-req-id'] = self.trans_id
         try:
             self.app.storage.account_set_properties(
-                self.account_name, metadata, headers=headers)
+                account=self.account_name, properties=metadata,
+                headers=headers)
             return HTTPNoContent(request=req)
         except (exceptions.NotFound, exceptions.NoSuchAccount):
             if self.app.account_autocreate:

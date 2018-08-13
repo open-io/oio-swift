@@ -153,7 +153,7 @@ class TestAccountController(unittest.TestCase):
         req = Request.blank('/v1/a', headers=hdrs_in, method='POST')
         self.storage.account_set_properties = Mock()
         req.get_response(self.app)
-        meta = self.storage.account_set_properties.call_args[0][1]
+        meta = self.storage.account_set_properties.call_args[1]['properties']
         self.assertEqual(meta[sys_meta_key], 'foo')
         self.assertEqual(meta[user_meta_key], 'bar')
 
