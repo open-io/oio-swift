@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016-2017 OpenIO SAS
+# Copyright (c) 2016-2018 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,13 @@ from swift.common.utils import public, Timestamp, \
     override_bytes_from_content_type
 from swift.common.constraints import check_metadata
 from swift.common import constraints
+try:
+    from swift.common.middleware.listing_formats import \
+        get_listing_content_type
+except ImportError:
+    # Before Queens
+    from swift.common.request_helpers import get_listing_content_type
+
 from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import Response, HTTPBadRequest, HTTPNotFound, \
     HTTPNoContent, HTTPConflict, HTTPPreconditionFailed, HTTPForbidden, \
@@ -34,7 +41,7 @@ from swift.proxy.controllers.base import clear_info_cache, \
 
 from oio.common import exceptions
 
-from oioswift.utils import get_listing_content_type, \
+from oioswift.utils import \
     handle_oio_no_such_container, handle_oio_timeout, \
     handle_service_busy
 
@@ -195,13 +202,13 @@ class ContainerController(SwiftContainerController):
         props = record.get('properties', {})
         # This metadata is added by encryption middleware.
         if 'x-object-sysmeta-container-update-override-etag' in props:
-            etag = props['x-object-sysmeta-container-update-override-etag']
+            hash_ = props['x-object-sysmeta-container-update-override-etag']
         else:
-            etag = record['hash'].lower()
+            hash_ = record['hash'].lower()
 
         response = {'name': record['name'],
                     'bytes': record['size'],
-                    'hash': etag,
+                    'hash': hash_,
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': record.get(
                         'mime_type', 'application/octet-stream')}

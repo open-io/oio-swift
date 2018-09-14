@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016 OpenIO SAS
+# Copyright (c) 2016-2018 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,13 @@
 import time
 from xml.sax import saxutils
 
-from swift.common.request_helpers import get_listing_content_type
+try:
+    from swift.common.middleware.listing_formats import \
+        get_listing_content_type
+except ImportError:
+    # Before Queens
+    from swift.common.request_helpers import get_listing_content_type
+
 from swift.common.utils import public, Timestamp, json
 from swift.common.constraints import check_metadata
 from swift.common import constraints

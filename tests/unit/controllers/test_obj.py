@@ -11,7 +11,8 @@ from oio.common import exceptions as exc
 from oio.common import green as oiogreen
 from oio.common.http import CustomHttpConnection
 from swift.proxy.controllers.base import get_info as _real_get_info
-from swift.common.swob import Request
+from swift.common import swob
+from swift.common.utils import Timestamp
 from oioswift.common.ring import FakeRing
 from oioswift import server as proxy_server
 from tests.unit import FakeStorageAPI, FakeMemcache, debug_logger
@@ -25,7 +26,7 @@ def fake_stream(l):
 def fake_prepare_meta():
     return {
         'x-oio-content-meta-mime-type': '',
-        'id': '',
+        'id': '1234',
         'version': 42,
         'policy': 'SINGLE',
         'chunk_method': 'plain/nb_copy=1',
@@ -41,6 +42,16 @@ class FakePutResponse(object):
 
     def getheader(self, header):
         return self.headers.get(header)
+
+
+class Request(swob.Request):
+
+    @classmethod
+    def blank(cls, *args, **kwargs):
+        req = super(Request, cls).blank(*args, **kwargs)
+        if 'X-Timestamp' not in req.headers:
+            req.headers['X-Timestamp'] = Timestamp.now().normal
+        return req
 
 
 def fake_http_connect(*args, **kwargs):
@@ -362,7 +373,7 @@ class TestObjectController(unittest.TestCase):
         # FIXME: we should be able to create the exception without code
         self.storage.object_create = Mock(side_effect=exc.Conflict(409))
         resp = req.get_response(self.app)
-        self.assertEqual(resp.status_int, 409)
+        self.assertEqual(409, resp.status_int)
 
     def test_exception_during_transfer_data(self):
         class FakeReader(object):
