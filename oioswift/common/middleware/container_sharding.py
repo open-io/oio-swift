@@ -488,9 +488,9 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 env2['PATH_INFO'] = "/v1/%s/%s" % (account, container2)
             res = self.app(env2, start_response)
 
-            if req.method == 'DELETE' and res == '':
+            if req.method == 'DELETE' and res == ['']:
                 # only remove marker if everything is ok
-                self._remove_marker(req, account, container, CNT, path)
+                self._remove_key(req, account, container, CNT, path)
         return res
 
 
