@@ -52,7 +52,7 @@ class RedisDb(object):
         if isinstance(sentinel_hosts, basestring):
             sentinel_hosts = sentinel_hosts.split(',')
         self._sentinel_hosts = [(h, int(p)) for h, p, in (hp.split(':', 2)
-                                for hp in sentinel_hosts.split(','))]
+                                for hp in sentinel_hosts)]
         self._master_name = sentinel_name
 
         self._sentinel = self.__redis_sentinel_mod.Sentinel(
