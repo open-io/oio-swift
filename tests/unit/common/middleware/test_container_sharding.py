@@ -114,23 +114,36 @@ class OioContainerSharding(unittest.TestCase):
         self.assertEqual(resp[0], '200 OK')
 
     def test_delete_object(self):
-        self.app._responses = {}
-        self.app.register('DELETE', '/v1/a/d1%2Fd2%2Fd3/o', swob.HTTPOk, {})
+        self.app.register(
+            'PUT', '/v1/a/c%2Fd1%2Fd2%2Fd3/o', swob.HTTPCreated, {})
 
-        req = Request.blank('/v1/a/d1/d2/d3/o', method='DELETE')
+        req = Request.blank('/v1/a/c/d1/d2/d3/o', method='PUT')
         resp = self.call_ch(req)
+        self.assertEqual(resp[0], '201 Created')
+        self.assertIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
 
         self.app.register(
-            'GET', '/v1/a/d1%2Fd2%2Fd3?delimiter=%2F&limit=1&prefix=&format=json', # noqa
-            swob.HTTPOk, {})
+            'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?delimiter=%2F&limit=1&prefix=&format=json', # noqa
+            swob.HTTPOk, {}, json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": "o",
+                         "content_type": "application/octet-stream"}]))
         self.app.register(
-            'DELETE', '/v1/a/d1%2Fd2/d3/', swob.HTTPNoContent, {})
+            'DELETE', '/v1/a/c%2Fd1%2Fd2%2Fd3/o', swob.HTTPNoContent, {})
 
-        # distcp job create and remove its own placeholder and we want
-        # to refuse them if any object are still available
-        req = Request.blank('/v1/a/d1/d2/d3/', method='DELETE')
+        req = Request.blank('/v1/a/c/d1/d2/d3/o', method='DELETE')
         resp = self.call_ch(req)
         self.assertEqual(resp[0], '204 No Content')
+        self.assertIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
+
+        self.app.register(
+            'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?delimiter=%2F&limit=1&prefix=&format=json', # noqa
+            swob.HTTPOk, {}, json.dumps([]))
+
+        req = Request.blank('/v1/a/c/d1/d2/d3/o', method='DELETE')
+        resp = self.call_ch(req)
+        self.assertEqual(resp[0], '204 No Content')
+        self.assertNotIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
 
     def test_fake_directory(self):
         req = Request.blank('/v1/a/d1/d2/d3/', method='PUT')
@@ -138,4 +151,122 @@ class OioContainerSharding(unittest.TestCase):
         self.assertIn('CS:a:d1:obj:d2/d3/', self.ch.conn._keys)
         req = Request.blank('/v1/a/d1/d2/d3/', method='DELETE')
         resp = self.call_ch(req)
+        self.assertEqual(resp[0], "204 No Content")
         self.assertNotIn('CS:a:d1:obj:d2/d3/', self.ch.conn._keys)
+
+    def _listing(self, is_recursive):
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/', 'CS:a:bucket:cnt:d1/d2/'])
+        self.ch.conn.exist = mock.MagicMock(return_value=True)
+        self.app.register(
+            'GET',
+            '/v1/a/bucket%2Fd1?prefix=d&limit=10000&delimiter=%2F&format=json', # noqa
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": "o1",
+                         "content_type": "application/octet-stream"}]))
+        if is_recursive:
+            self.app.register(
+                'GET',
+                '/v1/a/bucket%2Fd1%2Fd2?prefix=&limit=10000&delimiter=%2F&format=json', # noqa
+                swob.HTTPOk, {},
+                json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                             "last_modified": "2018-04-20T09:40:59.000000",
+                             "bytes": 0, "name": "o2",
+                             "content_type": "application/octet-stream"}]))
+        recursive = '' if is_recursive else '&delimiter=%2F'
+        req = Request.blank('/v1/a/bucket?prefix=d1/d&limit=10%s' % recursive,
+                            method='GET')
+        resp = self.call_ch(req)
+
+        names = [item.get('name', item.get('subdir'))
+                 for item in json.loads(resp[2])]
+        return names
+
+    def test_listing_with_prefix(self):
+        names = self._listing(False)
+        self.assertIn('d1/o1', names)
+        self.assertIn('d1/d2/', names)
+
+    def test_listing_with_prefix_recursive(self):
+        names = self._listing(True)
+        self.assertIn('d1/o1', names)
+        self.assertIn('d1/d2/o2', names)
+
+    def test_listing_root_container(self):
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/'])
+        self.app.register(
+            'GET',
+            '/v1/a/bucket?prefix=d&limit=10000&delimiter=%2F&format=json', # noqa
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": "d0",
+                         "content_type": "application/octet-stream"}]))
+        req = Request.blank('/v1/a/bucket?prefix=d&limit=10&delimiter=%2F',
+                            method='GET')
+        resp = self.call_ch(req)
+        names = [item.get('name', item.get('subdir'))
+                 for item in json.loads(resp[2])]
+        self.assertIn("d0", names)
+        self.assertIn("d1/", names)
+
+    def test_listing_with_marker(self):
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/',
+                          'CS:a:bucket:cnt:d2/',
+                          ])
+        req = Request.blank('/v1/a/bucket?limit=10&delimiter=%2F&marker=d1/',
+                            method='GET')
+        resp = self.call_ch(req)
+        names = [item.get('name', item.get('subdir'))
+                 for item in json.loads(resp[2])]
+        self.assertNotIn('d1/', names)
+        self.assertIn('d2/', names)
+
+    def test_listing_with_marker_multi_container(self):
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/',
+                          'CS:a:bucket:cnt:d2/',
+                          ])
+
+        # with marker aa (as we inspect d1/)
+        self.app.register(
+            'GET',
+            '/v1/a/bucket%2Fd1?marker=aa&delimiter=%2F&limit=10000&prefix=&format=json', # noqa
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": "d0",
+                         "content_type": "application/octet-stream"}]))
+        # without marker on second container
+        self.app.register(
+            'GET',
+            '/v1/a/bucket%2Fd2?delimiter=%2F&limit=10000&prefix=&format=json', # noqa
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": "d0",
+                         "content_type": "application/octet-stream"}]))
+        req = Request.blank('/v1/a/bucket?limit=10&marker=d1/aa',
+                            method='GET')
+        resp = self.call_ch(req)
+        names = [item.get('name', item.get('subdir'))
+                 for item in json.loads(resp[2])]
+        self.assertIn('d1/d0', names)
+        self.assertIn('d2/d0', names)
+
+    def test_duplicate_obj_cnt(self):
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/cnt/',
+                          'CS:a:bucket:obj:d1/obj/',
+                          ])
+        req = Request.blank('/v1/a/bucket?limit=10&delimiter=%2F&marker=d1/',
+                            method='GET')
+        resp = self.call_ch(req)
+        names = [item.get('name', item.get('subdir'))
+                 for item in json.loads(resp[2])]
+        self.assertIn('d1/', names)
+        self.assertEqual(1, len(names))
