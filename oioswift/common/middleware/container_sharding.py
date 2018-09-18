@@ -93,7 +93,7 @@ class FakeRedis(object):
         self._keys.pop(key, None)
 
     def keys(self, pattern):
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def exists(self, key):
         return key in self._keys
@@ -242,7 +242,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
             if self.conn.exists(key):
                 # then we must append dir1/dir2/dir3/ to be able to retrieve
                 # object1 and object2 from this container
-                matches.append(key[len(prefix_key):])
+                matches.append((CNT, key[len(prefix_key) + 4:]))
 
         # we should ignore all keys that are before marker to
         # avoid useless lookup or false listing
@@ -361,6 +361,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
         """
         sub_path = quote_plus(self.DELIMITER.join(
             ('', 'v1', account, self.ENCODED_DELIMITER.join(ct_parts))))
+
         LOG.debug("%s: listing objects from '%s' "
                   "(limit=%d, prefix=%s, marker=%s)",
                   self.SWIFT_SOURCE, sub_path, limit, prefix, marker)
@@ -374,6 +375,8 @@ class ContainerShardingMiddleware(AutoContainerBase):
         params['format'] = 'json'
         if marker:
             params['marker'] = marker
+        else:
+            params.pop('marker', None)
         sub_req.params = params
         resp = sub_req.get_response(self.app)
         obj_prefix = ''
@@ -492,8 +495,8 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 env2['PATH_INFO'] = "/v1/%s/%s" % (account, container2)
             res = self.app(env2, start_response)
 
-            if req.method == 'DELETE' and res == ['']:
-                # only remove marker if everything is ok
+            if req.method == 'DELETE' and len(obj_parts) > 1:
+                # only remove marker
                 self._remove_key(req, account, container, CNT, path)
         return res
 
