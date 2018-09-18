@@ -131,3 +131,11 @@ class OioContainerSharding(unittest.TestCase):
         req = Request.blank('/v1/a/d1/d2/d3/', method='DELETE')
         resp = self.call_ch(req)
         self.assertEqual(resp[0], '204 No Content')
+
+    def test_fake_directory(self):
+        req = Request.blank('/v1/a/d1/d2/d3/', method='PUT')
+        resp = self.call_ch(req)
+        self.assertIn('CS:a:d1:obj:d2/d3/', self.ch.conn._keys)
+        req = Request.blank('/v1/a/d1/d2/d3/', method='DELETE')
+        resp = self.call_ch(req)
+        self.assertNotIn('CS:a:d1:obj:d2/d3/', self.ch.conn._keys)
