@@ -453,8 +453,6 @@ class ContainerShardingMiddleware(AutoContainerBase):
                 # TODO (MBO) we should accept create key d1/d2/ only
                 # for empty object
                 if req.method == 'PUT':
-                    LOG.error("SHARD: CREATE MARKER FOR %s => is_dir %s",
-                              obj, obj.endswith('/'))
                     self._create_key(req, account, container,
                                      OBJ if is_dir else CNT, path)
                     if is_dir:
