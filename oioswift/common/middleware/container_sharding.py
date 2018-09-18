@@ -76,6 +76,9 @@ class RedisDb(object):
     def keys(self, pattern):
         return self.conn.scan_iter(pattern)
 
+    def exists(self, key):
+        return self.conn.exists(key)
+
 
 class FakeRedis(object):
     """Fake Redis stubb for unit test"""
@@ -91,6 +94,9 @@ class FakeRedis(object):
 
     def keys(self, pattern):
         raise NotImplemented()
+
+    def exists(self, key):
+        return key in self._keys
 
 
 class ContainerShardingMiddleware(AutoContainerBase):
