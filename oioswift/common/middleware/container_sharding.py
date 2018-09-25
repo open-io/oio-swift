@@ -452,7 +452,7 @@ class ContainerShardingMiddleware(AutoContainerBase):
             obj_parts = obj.split(self.DELIMITER)
             if len(obj_parts) > 1:
                 path = self.DELIMITER.join(obj_parts[:-1]) + self.DELIMITER
-                is_dir = obj.endswith('/')
+                is_dir = obj.endswith(self.DELIMITER)
                 # TODO (MBO) we should accept create key d1/d2/ only
                 # for empty object
                 if req.method == 'PUT':

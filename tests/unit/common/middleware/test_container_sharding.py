@@ -124,7 +124,8 @@ class OioContainerSharding(unittest.TestCase):
 
         self.app.register(
             'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?delimiter=%2F&limit=1&prefix=&format=json', # noqa
-            swob.HTTPOk, {}, json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
                          "bytes": 0, "name": "o",
                          "content_type": "application/octet-stream"}]))
