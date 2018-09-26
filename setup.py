@@ -36,7 +36,6 @@ setup(
             'regexcontainer=oioswift.common.middleware.regexcontainer:filter_factory',
             'versioned_writes=oioswift.common.middleware.versioned_writes:filter_factory',
             'container_hierarchy=oioswift.common.middleware.container_hierarchy:filter_factory',
-            'container_sharding=oioswift.common.middleware.container_sharding:filter_factory',
             'copy=oioswift.common.middleware.copy:filter_factory',
             'verb_acl=oioswift.common.middleware.verb_acl:filter_factory',
             'tempauth=oioswift.common.middleware.tempauth:filter_factory',
