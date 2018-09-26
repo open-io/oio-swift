@@ -14,11 +14,11 @@
 # limitations under the License.
 
 import json
+import importlib
 from paste.deploy import loadwsgi
-from six.moves.urllib.parse import parse_qs, quote_plus, urlencode
+from six.moves.urllib.parse import parse_qs, quote_plus
 from swift.common.swob import Request
-from swift.common.http import HTTP_PRECONDITION_FAILED
-from swift.common.utils import config_true_value, close_if_possible, \
+from swift.common.utils import config_true_value, \
     closing_if_possible, get_logger
 from swift.common.wsgi import make_subrequest, loadcontext, PipelineWrapper
 from oioswift.common.middleware.autocontainerbase import AutoContainerBase
@@ -28,6 +28,76 @@ LOG = None
 MIDDLEWARE_NAME = 'container_hierarchy'
 DEFAULT_LIMIT = 10000
 
+OBJ = 'obj'  # redis key represent a real empty object that ends with /
+CNT = 'cnt'  # redis key show a redirection to a container
+
+
+class RedisDb(object):
+    def __init__(self, redis_host=None,
+                 sentinel_hosts=None, sentinel_name=None):
+        self.__redis_mod = importlib.import_module('redis')
+        self.__redis_sentinel_mod = importlib.import_module('redis.sentinel')
+        self._sentinel_hosts = None
+        self._sentinel = None
+        self._conn = None
+
+        if redis_host:
+            self._redis_host, self._redis_port = redis_host.rsplit(':', 1)
+            self._redis_port = int(self._redis_port)
+            return
+
+        if not sentinel_name:
+            raise ValueError("missing parameter 'sentinel_name'")
+
+        if isinstance(sentinel_hosts, basestring):
+            sentinel_hosts = sentinel_hosts.split(',')
+        self._sentinel_hosts = [(h, int(p)) for h, p, in (hp.rsplit(':', 1)
+                                for hp in sentinel_hosts)]
+        self._master_name = sentinel_name
+
+        self._sentinel = self.__redis_sentinel_mod.Sentinel(
+            self._sentinel_hosts)
+
+    @property
+    def conn(self):
+        if self._sentinel:
+            return self._sentinel.master_for(self._master_name)
+        if not self._conn:
+            self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
+                                                      port=self._redis_port)
+        return self._conn
+
+    def set(self, key, val):
+        return self.conn.set(key, val)
+
+    def delete(self, key):
+        return self.conn.delete(key)
+
+    def keys(self, pattern):
+        return self.conn.scan_iter(pattern)
+
+    def exists(self, key):
+        return self.conn.exists(key)
+
+
+class FakeRedis(object):
+    """Fake Redis stubb for unit test"""
+    def __init__(self):
+        LOG.warn("**FakeRedis stub in use **")
+        self._keys = {}
+
+    def set(self, key, val):
+        self._keys[key] = val
+
+    def delete(self, key):
+        self._keys.pop(key, None)
+
+    def keys(self, pattern):
+        raise NotImplementedError()
+
+    def exists(self, key):
+        return key in self._keys
+
 
 class ContainerHierarchyMiddleware(AutoContainerBase):
     """
@@ -36,24 +106,31 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
     DELIMITER = '/'
     ENCODED_DELIMITER = '%2F'
-    SWIFT_SOURCE = 'CH'
+    SWIFT_SOURCE = 'SHARD'
+    PREFIX = 'CS:'
 
-    def __init__(self, app, conf, acct, create_dir_placeholders=False,
-                 recursive_placeholders=False, **kwargs):
+    def __init__(self, app, conf, acct, **kwargs):
+        redis_host = kwargs.pop('redis_host', None)
+        sentinel_hosts = kwargs.pop('sentinel_hosts', None)
+        sentinel_name = kwargs.pop('sentinel_name', None)
+
         super(ContainerHierarchyMiddleware, self).__init__(
             app, acct, **kwargs)
-        self.create_dir_placeholders = create_dir_placeholders
-        self.recursive_placeholders = recursive_placeholders
-        LOG.debug("%s: create_dir_placeholders set to %s (recursive %d)",
-                  self.SWIFT_SOURCE, self.create_dir_placeholders,
-                  self.recursive_placeholders)
-
+        LOG.debug(self.SWIFT_SOURCE)
         self.check_pipeline(conf)
+
+        if redis_host or sentinel_hosts:
+            self.conn = RedisDb(
+                redis_host=redis_host,
+                sentinel_hosts=sentinel_hosts,
+                sentinel_name=sentinel_name)
+        else:
+            self.conn = FakeRedis()
 
     def check_pipeline(self, conf):
         """
         Check that proxy-server.conf has an appropriate pipeline
-        for container_hierarchy.
+        for container_hierarcht
         """
         if conf.get('__file__', None) is None:
             return
@@ -86,95 +163,178 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 'Invalid pipeline %r: %s must be placed after SLO'
                 % (pipeline, MIDDLEWARE_NAME))
 
-    def _create_dir_marker(self, env, account, container, obj):
-        """
-        Create an empty object to mark a subdirectory. This is required to
-        quickly recurse on subdirectories, since with this middleware they
-        are stored on separate containers.
-        """
+    def key(self, account, container, mode, path=None):
+        """returns Redis key"""
+        ret = self.PREFIX + account + ":" + container + ":"
+        if mode:
+            ret += mode + ":"
+            if path:
+                ret += path
+        return ret
 
-        items = container.split(self.ENCODED_DELIMITER)
+    def _create_key(self, req, account, container, mode, path):
+        key = self.key(account, container, mode, path)
+        LOG.debug("%s: create key %s", self.SWIFT_SOURCE, key)
+        # TODO: should we increase number of objects ?
+        # but we should manage in this case all error case
+        # to avoid false counter
+        res = self.conn.set(key, "1")
+        if not res:
+            LOG.warn("%s: failed to create key %s", self.SWIFT_SOURCE, key)
 
-        while items:
-            path = quote_plus(self.DELIMITER.join(
-                ('', 'v1', account, container, obj)))
-            req = make_subrequest(
-                env, method='PUT', path=path, body='',
-                swift_source=self.SWIFT_SOURCE)
-            req.headers['If-None-Match'] = '*'
-            req.headers['Content-Length'] = '0'
-            LOG.debug("%s: Create placeholder %s in %s",
-                      self.SWIFT_SOURCE, obj, container)
-            resp = req.get_response(self.app)
-            if resp.status_int == HTTP_PRECONDITION_FAILED:
-                LOG.debug('%s: directory placeholder already present '
-                          'in %s', self.SWIFT_SOURCE, container)
-                close_if_possible(resp.app_iter)
-                break
+    def _remove_key(self, req, account, container, mode, path):
+        key = self.key(account, container, mode, path)
+        if mode == CNT:
+            # remove container key only if empty
+            empty = not any(self._list_objects(
+                            req.environ.copy(),
+                            account,
+                            [container] + path.split('/')[:-1],
+                            None,
+                            limit=1))
 
-            if not resp.is_success:
-                LOG.warn('%s: Failed to create directory placeholder '
-                         'in %s: %s',
-                         self.SWIFT_SOURCE, container, resp.status)
-            close_if_possible(resp.app_iter)
+            if not empty:
+                return
 
-            if not self.recursive_placeholders:
-                break
-
-            if items:
-                obj = items.pop() + self.DELIMITER
-                container = self.ENCODED_DELIMITER.join(items)
-
-    def _can_delete_dir_marker(self, req, account, container, obj):
-        """
-        Check if a directory placeholder can be deleted:
-        the sub-container must be empty.
-        """
-        container2 = container + self.ENCODED_DELIMITER + obj[:-1]
-        LOG.debug("%s: checking if '%s' is empty",
-                  self.SWIFT_SOURCE, container2)
-        # Check if there is any object (or placeholder) before
-        # accepting deletion.
-        empty = not any(self._list_objects(
-                        req.environ.copy(),
-                        account,
-                        tuple(container2.split(self.ENCODED_DELIMITER)),
-                        None,
-                        recursive=False,
-                        limit=1))
-        return empty
-
-    def _build_empty_response(self, start_response, status='200 OK'):
-        """Build a response with no body and the specified status."""
-        oheaders = {'Content-Length': 0}
-        start_response(status, oheaders.items())
-        return []  # empty body
+        LOG.debug("%s: remove key %s (key %s)", self.SWIFT_SOURCE, path, key)
+        res = self.conn.delete(key)
+        if not res:
+            LOG.warn("%s: failed to remove key %s", self.SWIFT_SOURCE, key)
 
     def _build_object_listing(self, start_response, env,
-                              account, container, obj,
+                              account, container, prefix,
                               limit=None,
                               recursive=False, marker=None):
-        oheaders = dict()
+
+        LOG.debug("%s: listing with %s %s %s %s %s %s",
+                  self.SWIFT_SOURCE, account, container, prefix, limit,
+                  recursive, marker)
 
         def header_cb(header_dict):
             oheaders.update(header_dict)
 
-        all_objs = [x for x in self._list_objects(
-                    env, account,
-                    tuple(container.split(self.ENCODED_DELIMITER)),
-                    header_cb, prefix=obj or '', marker=marker,
-                    limit=limit, recursive=recursive)]
-        # results must be sorted or paginated listing are broken
+        oheaders = dict()
+        all_objs = []
+
+        prefix = prefix[0]
+
+        # have we to parse root container ?
+        # / must be absent from prefix AND marker
+        parse_root = self.DELIMITER not in prefix and \
+            (not marker or self.DELIMITER not in marker)
+        LOG.debug("%s: parse root container ? %s",
+                  self.SWIFT_SOURCE, parse_root)
+
+        prefix_key = self.key(account, container, "")
+        key = self.key(account, container, '*', prefix) + '*'
+        matches = [k[len(prefix_key):].split(':', 2)
+                   for k in self.conn.keys(key)]
+
+        LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
+
+        if parse_root:
+            matches.append((CNT, ""))
+
+        # if prefix is something like dir1/dir2/dir3/ob
+        if not prefix.endswith(self.DELIMITER) and self.DELIMITER in prefix:
+            pfx = prefix[:prefix.rindex(self.DELIMITER)+1]
+            key = self.key(account, container, CNT, pfx)
+            if self.conn.exists(key):
+                # then we must append dir1/dir2/dir3/ to be able to retrieve
+                # object1 and object2 from this container
+                matches.append((CNT, key[len(prefix_key) + 4:]))
+
+        # we should ignore all keys that are before marker to
+        # avoid useless lookup or false listing
+        if marker:
+            m = matches
+            marker_ = marker[:marker.rindex('/')] + '/'
+            LOG.debug("%s: convert marker %s to %s",
+                      self.SWIFT_SOURCE, marker, marker_)
+            matches = []
+            for mode, entry in m:
+                if entry < marker_:
+                    LOG.debug("%s: marker ignore %s: before)",
+                              self.SWIFT_SOURCE, entry)
+                    continue
+                if entry == marker_ and not recursive:
+                    # marker is something like d1/ but we d1/d2/d3/ key
+                    LOG.debug("%s: marker ignore %s: not recursive",
+                              self.SWIFT_SOURCE, entry)
+                    continue
+                if mode == OBJ and entry == marker_:
+                    LOG.debug("%s: marker ignore %s: skip object",
+                              self.SWIFT_SOURCE, entry, marker_)
+                    continue
+                matches.append((mode, entry))
+        matches.sort()
+
+        already_done = set()
+
+        len_pfx = len(prefix)
+        cnt_delimiter = len(prefix.split('/'))
+
+        for mode, entry in matches:
+            if self.DELIMITER in entry[len_pfx:] and not recursive:
+                # append subdir entry, no difference between CNT and OBJ
+                subdir = '/'.join(entry.split("/")[:cnt_delimiter]) + '/'
+                if subdir in already_done:
+                    continue
+
+                already_done.add(subdir)
+                all_objs.append({
+                        'subdir': subdir
+                })
+            else:
+                _prefix = ''
+                if len(entry) < len(prefix):
+                    _prefix = prefix[len(entry):]
+
+                # transmit marker only to exact container
+                # otherwise we will have incorrect listings
+                _marker = None
+                if marker and entry.rstrip('/') == marker[:marker.rindex('/')]:
+                    _marker = marker[marker.rindex('/'):].lstrip('/')
+                    LOG.debug("%s: convert marker %s to %s",
+                              self.SWIFT_SOURCE, marker, _marker)
+
+                if mode == "obj":
+                    ret = [{'name': entry,
+                            'bytes': 0,
+                            'hash': '"d41d8cd98f00b204e9800998ecf8427e"',
+                            'last_modified': '1970-01-01T00:00:00.000000'}]
+
+                elif entry:
+                    ret = self._list_objects(
+                        env, account,
+                        [container] + entry.strip('/').split('/'), header_cb,
+                        _prefix, limit=DEFAULT_LIMIT, marker=_marker)
+                else:
+                    # manage root container
+                    # TODO: rewrite condition
+                    ret = self._list_objects(
+                        env, account,
+                        [container], header_cb, _prefix, limit=DEFAULT_LIMIT,
+                        marker=_marker)
+                for x in ret:
+                    all_objs.append(x)
+
+            # it suppose to have proper order but it will help a lot !
+            # quick test with page-size 2 to list 10 directories with 10 objets
+            # with break: 2.1s vs without break 3.8s
+            if len(all_objs) > limit:
+                break
+
+        LOG.debug("%s: got %d items / limit was %d", self.SWIFT_SOURCE,
+                  len(all_objs), limit)
         all_objs = sorted(all_objs,
                           key=lambda entry: entry.get('name',
                                                       entry.get('subdir')))
         body = json.dumps(all_objs)
-        oheaders['X-Container-Object-Count'] = len(all_objs)
-        # FIXME: aggregate X-Container-Bytes-Used
-        # FIXME: aggregate X-Container-Object-Count
-        # FIXME: send main bucket X-Timestamp
+
         oheaders['Content-Length'] = len(body)
         start_response("200 OK", oheaders.items())
+
         return [body]
 
     def _fake_container_and_obj(self, container, obj_parts, is_listing=False):
@@ -194,17 +354,14 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         return container, obj
 
     def _list_objects(self, env, account, ct_parts, header_cb,
-                      prefix='', recursive=True, limit=DEFAULT_LIMIT,
+                      prefix='', limit=DEFAULT_LIMIT,
                       marker=None):
         """
-        If `recursive` is set (the default), for each subdirectory marker
-        encountered, make a listing subrequest, and yield object list.
-
-        If `recursive` is False, list objects and directory markers (but
-        do not recurse).
+        returns items
         """
         sub_path = quote_plus(self.DELIMITER.join(
             ('', 'v1', account, self.ENCODED_DELIMITER.join(ct_parts))))
+
         LOG.debug("%s: listing objects from '%s' "
                   "(limit=%d, prefix=%s, marker=%s)",
                   self.SWIFT_SOURCE, sub_path, limit, prefix, marker)
@@ -218,35 +375,27 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         params['format'] = 'json'
         if marker:
             params['marker'] = marker
+        else:
+            params.pop('marker', None)
         sub_req.params = params
         resp = sub_req.get_response(self.app)
         obj_prefix = ''
         if len(ct_parts) > 1:
-            obj_prefix = self.DELIMITER.join(ct_parts[1:] + ('',))
+            obj_prefix = self.DELIMITER.join(ct_parts[1:] + ['', ])
 
         if not resp.is_success or resp.content_length == 0:
-            LOG.warn("Failed to list '%s'%s: %s", obj_prefix,
-                     ' (recursively)' if recursive else '',
-                     resp.status)
+            LOG.warn("%s: Failed to list %s",
+                     self.SWIFT_SOURCE, sub_path)
             return
         with closing_if_possible(resp.app_iter):
             items = json.loads(resp.body)
         if header_cb:
             header_cb(resp.headers)
-        subdirs = [x['subdir'][:-1] for x in items if 'subdir' in x]
+
         for obj in items:
             if 'name' in obj:
                 obj['name'] = obj_prefix + obj['name']
                 yield obj
-            elif not recursive and 'subdir' in obj:
-                obj['subdir'] = obj_prefix + obj['subdir']
-                yield obj
-
-        if recursive:
-            for subdir in subdirs:
-                for obj in self._list_objects(
-                        env, account, ct_parts + (subdir, ), header_cb):
-                    yield obj
 
     def should_bypass(self, env):
         # Pre authentication from swift3
@@ -258,15 +407,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             return self.app(env, start_response)
 
         req = Request(env)
-        super(ContainerHierarchyMiddleware, self)._save_bucket_name(env)
-
-        # bypass CH for +segments
-        # TODO it should be allowed because segments will be put
-        # in same container # but it forbid to remove bucket
-        # (rework how placeholder are managed for +segments
-        # by disable creation of placeholder ?)
-        if '%2Bsegments' in req.path:
-            return self.app(env, start_response)
 
         account, container, obj = self._extract_path(req.path_info)
         # allow global listing on account
@@ -276,6 +416,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         env2 = env.copy()
         qs = parse_qs(req.query_string or '')
         prefix = qs.get('prefix')  # returns a list or None
+        if not prefix:
+            prefix = ['']
         marker = qs.get('marker')
         limit = qs.get('limit')
         LOG.debug("%s: Got %s request for container=%s, "
@@ -284,7 +426,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                   marker)
         must_recurse = False
 
-        # Rework Oio-Copy-From to use correct source (container, obj)
         if 'Oio-Copy-From' in req.headers and req.method == 'PUT':
             _, c_container, c_obj = req.headers['Oio-Copy-From'].split('/', 2)
             c_container, c_obj = \
@@ -296,59 +437,67 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         if obj is None:
             LOG.debug("%s: -> is a listing request", self.SWIFT_SOURCE)
             must_recurse = req.method == 'GET' and 'delimiter' not in qs
-            if not prefix:
-                obj_parts = ['']
-            else:
-                obj_parts = prefix[0].split(self.DELIMITER)
-                # Get rid of the prefix, since objects are created
-                # with only their basename (not the whole URL)
-                qs['prefix'] = ''
-                env2['QUERY_STRING'] = urlencode(qs, True)
-                container, obj = self._fake_container_and_obj(
-                    container, obj_parts, is_listing=True)
             if not marker:
                 marker = None
             else:
-                marker = marker[0].strip('/').split(self.DELIMITER)[-1]
+                marker = marker[0]
             if not limit:
                 limit = DEFAULT_LIMIT
             else:
                 limit = int(limit[0])
+            container2 = container
+            obj2 = obj
         else:
             LOG.debug("%s: -> is NOT listing request", self.SWIFT_SOURCE)
             obj_parts = obj.split(self.DELIMITER)
-            if (len(obj_parts) > 1 and
-                    self.create_dir_placeholders):
-                ct = self.ENCODED_DELIMITER.join([container] + obj_parts[:-2])
-                obj = obj_parts[-2] + self.DELIMITER
+            if len(obj_parts) > 1:
+                path = self.DELIMITER.join(obj_parts[:-1]) + self.DELIMITER
+                is_dir = obj.endswith(self.DELIMITER)
+                # TODO (MBO) we should accept create key d1/d2/ only
+                # for empty object
                 if req.method == 'PUT':
-                    self._create_dir_marker(env2, account, ct, obj)
-                elif req.method == 'DELETE' and not obj_parts[-1]:
-                    if not self._can_delete_dir_marker(req, account, ct, obj):
-                        return self._build_empty_response(
-                            start_response, '204 No content')
-            container, obj = self._fake_container_and_obj(container, obj_parts)
+                    self._create_key(req, account, container,
+                                     OBJ if is_dir else CNT, path)
+                    if is_dir:
+                        oheaders = {'Content-Length': 0,
+                                    'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
+                        start_response("201 Created", oheaders.items())
+                        return ['']
+
+                elif req.method == 'DELETE' and is_dir:
+                    self._remove_key(req, account, container, OBJ, path)
+                    oheaders = {'Content-Length': 0,
+                                'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
+                    start_response("204 No Content", oheaders.items())
+                    return ['']
+
+            container2, obj2 = self._fake_container_and_obj(container,
+                                                            obj_parts)
 
         LOG.debug("%s: Converted to container=%s, obj=%s, qs=%s",
-                  self.SWIFT_SOURCE, container, obj, qs)
+                  self.SWIFT_SOURCE, container2, obj2, qs)
         if must_recurse:
             res = self._build_object_listing(start_response, env,
-                                             account, container, obj,
+                                             account, container2, prefix,
                                              limit=limit, recursive=True,
                                              marker=marker)
-        elif not (qs.get('prefix') or qs.get('delimiter')):
-            # should be other operation that listing
-            if obj:
-                env2['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container, obj)
-            else:
-                env2['PATH_INFO'] = "/v1/%s/%s" % (account, container)
-            res = self.app(env2, start_response)
-        else:
+        elif qs.get('prefix') or qs.get('delimiter'):
             res = self._build_object_listing(start_response, env,
-                                             account, container, obj,
+                                             account, container2, prefix,
                                              limit=limit,
                                              recursive=False, marker=marker)
+        else:
+            # should be other operation that listing
+            if obj:
+                env2['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container2,
+                                                      obj2)
+            else:
+                env2['PATH_INFO'] = "/v1/%s/%s" % (account, container2)
+            res = self.app(env2, start_response)
 
+            if req.method == 'DELETE' and len(obj_parts) > 1:
+                # only remove marker
+                self._remove_key(req, account, container, CNT, path)
         return res
 
 
@@ -369,10 +518,9 @@ def filter_factory(global_conf, **local_config):
     account_first = config_true_value(local_config.get('account_first'))
     swift3_compat = config_true_value(local_config.get('swift3_compat'))
     strip_v1 = config_true_value(local_config.get('strip_v1'))
-    create_dir_placeholders = config_true_value(
-        local_config.get('create_dir_placeholders'))
-    recursive_placeholders = config_true_value(
-        local_config.get('recursive_placeholders'))
+    redis_host = local_config.get('redis_host')
+    sentinel_hosts = local_config.get('sentinel_hosts')
+    sentinel_name = local_config.get('sentinel_name')
 
     def factory(app):
         return ContainerHierarchyMiddleware(
@@ -380,6 +528,7 @@ def filter_factory(global_conf, **local_config):
             strip_v1=strip_v1,
             account_first=account_first,
             swift3_compat=swift3_compat,
-            create_dir_placeholders=create_dir_placeholders,
-            recursive_placeholders=recursive_placeholders)
+            redis_host=redis_host,
+            sentinel_hosts=sentinel_hosts,
+            sentinel_name=sentinel_name)
     return factory
