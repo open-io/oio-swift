@@ -80,14 +80,18 @@ function configure_oioswift() {
 
 function run_functional_test() {
     local conf="conf/$1"
-    local test_suite="tests/functional/$2"
+    shift
+    local test_suites=$(for suite in $*; do echo "tests/functional/${suite}"; done)
     configure_oioswift $conf
 
     coverage run -p runserver.py $conf -v &
     sleep 1
     PID=$(jobs -p)
 
-    bash "$test_suite" || RET=1
+    for suite in $test_suites
+    do
+      bash "$suite" || RET=1
+    done
 
     for pid in $PID; do
         kill $pid
