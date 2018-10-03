@@ -13,8 +13,9 @@ RET=0
 
 run_functional_test s3_container_hierarchy.cfg s3_container_hierarchy_v2.sh
 run_functional_test s3_fastcopy.cfg s3-acl-metadata.sh
-run_functional_test s3-default.cfg s3-acl-metadata.sh
-run_functional_test s3-default.cfg s3-versioning.sh
+# Run all suites in the same environment.
+# They do not share buckets so this should be OK.
+run_functional_test s3-default.cfg s3-acl-metadata.sh s3-versioning.sh s3-tagging.sh
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET
