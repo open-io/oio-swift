@@ -425,6 +425,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                   self.SWIFT_SOURCE, req.method, container, obj, prefix,
                   marker)
         must_recurse = False
+        obj_parts = ()
 
         if 'Oio-Copy-From' in req.headers and req.method == 'PUT':
             _, c_container, c_obj = req.headers['Oio-Copy-From'].split('/', 2)
