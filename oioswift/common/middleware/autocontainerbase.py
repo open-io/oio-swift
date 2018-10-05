@@ -57,18 +57,21 @@ class AutoContainerBase(object):
         obj = path[1:]
         container = None
 
-        if self.strip_v1:
-            version, tail = split_path('/' + obj, 1, 2, True)
-            if version in ('v1', 'v1.0'):
+        try:
+            if self.strip_v1:
+                version, tail = split_path('/' + obj, 1, 2, True)
+                if version in ('v1', 'v1.0'):
+                    obj = tail
+
+            if obj is not None and self.account_first:
+                account, tail = split_path('/' + obj, 1, 2, True)
                 obj = tail
 
-        if self.account_first:
-            account, tail = split_path('/' + obj, 1, 2, True)
-            obj = tail
-
-        if obj is not None and self.swift3_compat:
-            container, tail = split_path('/' + obj, 1, 2, True)
-            obj = tail
+            if obj is not None and self.swift3_compat:
+                container, tail = split_path('/' + obj, 1, 2, True)
+                obj = tail
+        except ValueError:
+            raise HTTPBadRequest()
 
         return account, container, obj
 
