@@ -62,10 +62,17 @@ except ImportError:
 ALGO_HEADER = 'X-Amz-Server-Side-Encryption-Customer-Algorithm'
 KEY_HEADER = 'X-Amz-Server-Side-Encryption-Customer-Key'
 KEY_MD5_HEADER = 'X-Amz-Server-Side-Encryption-Customer-Key-Md5'
+SRC_ALGO_HEADER = 'X-Amz-Copy-Source-Server-Side-Encryption-Customer-Algorithm'
+SRC_KEY_HEADER = 'X-Amz-Copy-Source-Server-Side-Encryption-Customer-Key'
+SRC_KEY_MD5_HEADER = \
+    'X-Amz-Copy-Source-Server-Side-Encryption-Customer-Key-Md5'
 
 ALGO_ENV_KEY = header_to_environ_key(ALGO_HEADER)
 KEY_ENV_KEY = header_to_environ_key(KEY_HEADER)
 KEY_MD5_ENV_KEY = header_to_environ_key(KEY_MD5_HEADER)
+SRC_ALGO_ENV_KEY = header_to_environ_key(SRC_ALGO_HEADER)
+SRC_KEY_ENV_KEY = header_to_environ_key(SRC_KEY_HEADER)
+SRC_KEY_MD5_ENV_KEY = header_to_environ_key(SRC_KEY_MD5_HEADER)
 
 
 def decode_secret(b64_secret):

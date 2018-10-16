@@ -22,10 +22,9 @@ from swift.common.swob import Request, HTTPException, HTTPBadRequest
 from swift.common import wsgi
 from swift.common.middleware.crypto import keymaster
 
-from oioswift.common.middleware.crypto.crypto_utils import decode_secret, \
-    KEY_HEADER, ALGO_ENV_KEY, KEY_ENV_KEY, KEY_MD5_ENV_KEY
+from oioswift.common.middleware.crypto import crypto_utils
 
-MISSING_KEY_MSG = 'Missing %s header' % KEY_HEADER
+MISSING_KEY_MSG = 'Missing %s header' % crypto_utils.KEY_HEADER
 
 
 def make_encrypted_env(env, method=None, path=None, agent='Swift',
@@ -34,7 +33,10 @@ def make_encrypted_env(env, method=None, path=None, agent='Swift',
     newenv = wsgi.make_env(
         env, method=method, path=path, agent=agent, query_string=query_string,
         swift_source=swift_source)
-    for name in (ALGO_ENV_KEY, KEY_ENV_KEY, KEY_MD5_ENV_KEY):
+    for name in (crypto_utils.ALGO_ENV_KEY, crypto_utils.SRC_ALGO_ENV_KEY,
+                 crypto_utils.KEY_ENV_KEY, crypto_utils.SRC_KEY_ENV_KEY,
+                 crypto_utils.KEY_MD5_ENV_KEY,
+                 crypto_utils.SRC_KEY_MD5_ENV_KEY):
         if name in env:
             newenv[name] = env[name]
     return newenv
@@ -59,15 +61,19 @@ class KeyMasterContext(keymaster.KeyMasterContext):
         self.req = req
 
     def _fetch_object_secret(self):
-        b64_secret = self.req.headers.get(KEY_HEADER)
+        if (self.req.method == 'GET' and
+                crypto_utils.SRC_KEY_HEADER in self.req.headers):
+            b64_secret = self.req.headers.get(crypto_utils.SRC_KEY_HEADER)
+        else:
+            b64_secret = self.req.headers.get(crypto_utils.KEY_HEADER)
         if not b64_secret:
             raise HTTPBadRequest(MISSING_KEY_MSG)
         try:
-            secret = decode_secret(b64_secret)
+            secret = crypto_utils.decode_secret(b64_secret)
         except ValueError:
             raise HTTPBadRequest('%s header must be a base64 '
                                  'encoding of exactly 32 raw bytes' %
-                                 KEY_HEADER)
+                                 crypto_utils.KEY_HEADER)
         return secret
 
     def fetch_crypto_keys(self, *args, **kwargs):

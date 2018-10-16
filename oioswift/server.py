@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from swift.common import storage_policy
+from swift.common import request_helpers, storage_policy
+from oioswift.common.request_helpers import OioSegmentedIterable
 from oioswift.common.storage_policy import POLICIES
 from oioswift.common.ring import FakeRing
 from oioswift.proxy.controllers.container import ContainerController
@@ -36,6 +37,7 @@ swift.proxy.server.AccountController = AccountController
 swift.proxy.server.ContainerController = ContainerController
 swift.proxy.server.ObjectControllerRouter = ObjectControllerRouter
 
+request_helpers.SegmentedIterable = OioSegmentedIterable
 
 swift.common.utils.validate_hash_conf = lambda: None
 

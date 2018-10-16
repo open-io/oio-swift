@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from swift.common.swob import Request, HTTPException
+from swift.common.swob import Request, HTTPException, HTTPForbidden
 from swift.common.middleware.crypto import decrypter
 from swift.common.utils import config_true_value
 from swift.proxy.controllers.base import get_object_info
@@ -67,6 +67,7 @@ class DecrypterObjContext(decrypter.DecrypterObjContext):
         # Decrypt plaintext etag and place in Etag header for client response
         etag_header = 'X-Object-Sysmeta-Crypto-Etag'
         encrypted_etag = self._response_header_value(etag_header)
+        decrypted_etag = None
         if encrypted_etag and 'object' in keys:
             decrypted_etag = self._decrypt_header(
                 etag_header, encrypted_etag, keys['object'], required=True)
@@ -75,14 +76,17 @@ class DecrypterObjContext(decrypter.DecrypterObjContext):
         etag_header = 'X-Object-Sysmeta-Container-Update-Override-Etag'
         encrypted_etag = self._response_header_value(etag_header)
         if encrypted_etag and 'container' in keys:
-            decrypted_etag = self._decrypt_header(
+            decrypted_etag_override = self._decrypt_header(
                 etag_header, encrypted_etag, keys['container'])
-            mod_hdr_pairs.append((etag_header, decrypted_etag))
+            if decrypted_etag and decrypted_etag_override != decrypted_etag:
+                self.app.logger.debug('Failed ETag verification')
+                raise HTTPForbidden('Invalid key')
+            mod_hdr_pairs.append((etag_header, decrypted_etag_override))
             # The real swift saves the cyphered ETag in the 'ETag' field,
             # whereas we store the ETag of the cyphered object.
             # The ETag of the cyphered object is of no use for previous
             # middlewares, so we replace it with the plaintext ETag.
-            mod_hdr_pairs.append(('ETag', decrypted_etag))
+            mod_hdr_pairs.append(('ETag', decrypted_etag_override))
 
         # Decrypt all user metadata. Encrypted user metadata values are stored
         # in the x-object-transient-sysmeta-crypto-meta- namespace. Those are
@@ -98,7 +102,7 @@ class DecrypterObjContext(decrypter.DecrypterObjContext):
             mod_hdr_pairs.extend([(h, v) for h, v in self._response_headers
                                   if h.lower() not in mod_hdr_names])
         except KeyError:
-            self.app.logger.debug('Not able to dcrypt user metadata')
+            self.app.logger.debug('Not able to decrypt user metadata')
         return mod_hdr_pairs
 
 
