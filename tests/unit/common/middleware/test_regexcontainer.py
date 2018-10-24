@@ -19,11 +19,11 @@ class OioRegexContainer(unittest.TestCase):
             'swift3_compat': 'true',
             'account_first': 'true',
             'stop_at_first_match': 'true',
-            'pattern1': '(\d{3})/(\d{3})/(\d)\d\d/\d\d(\d)/',
-            'pattern2': '(\d{3})/(\d)\d\d/\d\d(\d)/',
-            'pattern3': '^(cloud)/([0-9a-f][0-9a-f])',
-            'pattern4': '^(cloud)/([0-9a-f])',
-            'pattern9': '^/?([^/]+)',
+            'pattern1': r'(\d{3})/(\d{3})/(\d)\d\d/\d\d(\d)/',
+            'pattern2': r'(\d{3})/(\d)\d\d/\d\d(\d)/',
+            'pattern3': r'^(cloud)/([0-9a-f][0-9a-f])',
+            'pattern4': r'^(cloud)/([0-9a-f])',
+            'pattern9': r'^/?([^/]+)',
         }
 
         if hasattr(ContainerBuilder, 'alternatives'):
