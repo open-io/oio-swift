@@ -22,6 +22,7 @@ setup(
         'oioswift',
         'oioswift.common',
         'oioswift.common.middleware',
+        'oioswift.common.middleware.crypto',
         'oioswift.proxy',
         'oioswift.proxy.controllers'],
     entry_points={
