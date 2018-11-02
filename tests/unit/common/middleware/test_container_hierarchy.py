@@ -4,7 +4,7 @@ import mock
 import sys
 import unittest
 from swift.common import swob, utils
-from swift.common.swob import Request
+from swift.common.swob import Request, HTTPException
 from oioswift.common.middleware import container_hierarchy
 
 # Hack PYTHONPATH so "test" is swift's test directory
@@ -271,3 +271,21 @@ class OioContainerHierarchy(unittest.TestCase):
                  for item in json.loads(resp[2])]
         self.assertIn('d1/', names)
         self.assertEqual(1, len(names))
+
+    def test_remove_bucket(self):
+        self.app.register(
+            'DELETE',
+            '/v1/a/bucket',
+            swob.HTTPNoContent, {},
+            "")
+        req = Request.blank('/v1/a/bucket',
+                            method='DELETE')
+        resp = self.call_ch(req)
+        self.assertEqual(resp[0], "204 No Content")
+
+    def test_invalid_path(self):
+        req = Request.blank('/v1/a/',
+                            method='GET')
+        with self.assertRaises(HTTPException) as cm:
+            self.call_ch(req)
+        self.assertEqual(cm.exception.status, "400 Bad Request")
