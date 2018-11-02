@@ -507,9 +507,6 @@ def filter_factory(global_conf, **local_config):
     conf.update(local_config)
     global LOG
     LOG = get_logger(conf)
-    LOG.warn('%s middleware is proof-of-concept '
-             'and not suitable for production use!',
-             MIDDLEWARE_NAME)
 
     acct = conf.get('sds_default_account')
 
