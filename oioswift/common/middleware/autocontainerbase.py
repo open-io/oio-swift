@@ -1,4 +1,4 @@
-# Copyright (C) 2017 OpenIO SAS
+# Copyright (C) 2017-2018 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -84,6 +84,7 @@ class AutoContainerBase(object):
     def _convert_path(self, path):
         account, container, obj = self._extract_path(path)
         if obj is not None:
+            # TODO(FVE): when supported, also pass account to con_builder()
             container = quote_plus(self.con_builder(obj))
         return account, container, obj
 
@@ -94,6 +95,7 @@ class AutoContainerBase(object):
         if obj is None:
             yield account, container, obj
         elif self.stop_at_first_match:
+            # TODO(FVE): when supported, also pass account to con_builder()
             yield account, quote_plus(self.con_builder(obj)) + suffix, obj
         else:
             for alt_container in self.con_builder.alternatives(obj):

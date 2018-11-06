@@ -1,8 +1,9 @@
+awscli
+codecov
+coverage
+lxml
 mock
 nose
+nose-timer
 oio>=4.1.0
-coverage
-codecov
-awscli
-lxml
 unittest2

@@ -1,4 +1,4 @@
-# Copyright (C) 2016-2017 OpenIO SAS
+# Copyright (C) 2016-2018 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,9 +23,11 @@ class HashedContainerMiddleware(AutoContainerBase):
     BYPASS_QS = "bypass-autocontainer"
     BYPASS_HEADER = "X-bypass-autocontainer"
     TRUE_VALUES = ["true", "yes", "1"]
+    EXTRA_KEYWORDS = ['offset', 'size', 'bits']
 
     def __init__(self, app, ns, acct, proxy=None,
-                 strip_v1=False, account_first=False):
+                 strip_v1=False, account_first=False,
+                 **kwargs):
         super(HashedContainerMiddleware, self).__init__(
             app, acct, strip_v1=strip_v1, account_first=account_first)
         conf = {"namespace": ns, "proxyd_url": proxy}
@@ -36,9 +38,13 @@ class HashedContainerMiddleware(AutoContainerBase):
             self.con_builder = climgr.flatns_manager
         except ImportError:
             # Old API
+            # pylint: disable=redefined-variable-type,no-member
             from oio.cli.clientmanager import ClientManager
             climgr = ClientManager(conf)
             self.con_builder = climgr.get_flatns_manager()
+        for k, v in kwargs.items():
+            if k in self.EXTRA_KEYWORDS:
+                self.con_builder.__dict__[k] = int(v)
 
 
 def filter_factory(global_conf, **local_config):
@@ -62,5 +68,6 @@ def filter_factory(global_conf, **local_config):
     def factory(app):
         return HashedContainerMiddleware(app, ns, acct, proxy,
                                          strip_v1=strip_v1,
-                                         account_first=account_first)
+                                         account_first=account_first,
+                                         **local_config)
     return factory
