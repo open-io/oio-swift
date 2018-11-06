@@ -7,4 +7,5 @@ then
   tests/unit/run_unit_tests.sh
 else
   tests/functional/run-${TEST_SUITE}-tests.sh $*
+  tests/unit/run_extra_unit_tests.sh
 fi
