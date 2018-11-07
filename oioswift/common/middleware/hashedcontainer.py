@@ -62,8 +62,8 @@ def filter_factory(global_conf, **local_config):
     if proxy is None:
         raise ConfigurationException('No OIO-SDS proxy URL configured')
 
-    strip_v1 = config_true_value(local_config.get('strip_v1'))
-    account_first = config_true_value(local_config.get('account_first'))
+    strip_v1 = config_true_value(local_config.pop('strip_v1', False))
+    account_first = config_true_value(local_config.pop('account_first', False))
 
     def factory(app):
         return HashedContainerMiddleware(app, ns, acct, proxy,
