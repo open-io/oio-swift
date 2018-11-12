@@ -92,7 +92,7 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt:d1/d2/d3/'])
         self.app.register(
             'GET',
-            '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=10000&delimiter=%2F&format=json', # noqa
+            '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -109,7 +109,7 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt:d 1/d2/'])
         self.app.register(
             'GET',
-            '/v1/a/c%2Fd 1%2Fd2?prefix=&limit=10000&delimiter=%2F&format=json', # noqa
+            '/v1/a/c%2Fd 1%2Fd2?prefix=&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -140,7 +140,7 @@ class OioContainerHierarchy(unittest.TestCase):
         self.assertIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
 
         self.app.register(
-            'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?delimiter=%2F&limit=1&prefix=&format=json', # noqa
+            'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=1&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -151,26 +151,28 @@ class OioContainerHierarchy(unittest.TestCase):
 
         req = Request.blank('/v1/a/c/d1/d2/d3/o', method='DELETE')
         resp = self.call_ch(req)
+
         self.assertEqual(resp[0], '204 No Content')
         self.assertIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
 
         self.app.register(
-            'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?delimiter=%2F&limit=1&prefix=&format=json', # noqa
+            'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=1&format=json',
             swob.HTTPOk, {}, json.dumps([]))
 
         req = Request.blank('/v1/a/c/d1/d2/d3/o', method='DELETE')
         resp = self.call_ch(req)
         self.assertEqual(resp[0], '204 No Content')
+
         self.assertNotIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
 
     def test_fake_directory(self):
-        req = Request.blank('/v1/a/d1/d2/d3/', method='PUT')
+        req = Request.blank('/v1/a/container/d2/d3/', method='PUT')
         resp = self.call_ch(req)
-        self.assertIn('CS:a:d1:obj:d2/d3/', self.ch.conn._keys)
-        req = Request.blank('/v1/a/d1/d2/d3/', method='DELETE')
+        self.assertIn('CS:a:container:obj:d2/d3/', self.ch.conn._keys)
+        req = Request.blank('/v1/a/container/d2/d3/', method='DELETE')
         resp = self.call_ch(req)
         self.assertEqual(resp[0], "204 No Content")
-        self.assertNotIn('CS:a:d1:obj:d2/d3/', self.ch.conn._keys)
+        self.assertNotIn('CS:a:container:obj:d2/d3/', self.ch.conn._keys)
 
     def _listing(self, is_recursive):
         self.ch.conn.keys = mock.MagicMock(
@@ -178,7 +180,7 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.conn.exist = mock.MagicMock(return_value=True)
         self.app.register(
             'GET',
-            '/v1/a/bucket%2Fd1?prefix=d&limit=10000&delimiter=%2F&format=json', # noqa
+            '/v1/a/bucket%2Fd1?prefix=d&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -187,7 +189,7 @@ class OioContainerHierarchy(unittest.TestCase):
         if is_recursive:
             self.app.register(
                 'GET',
-                '/v1/a/bucket%2Fd1%2Fd2?prefix=&limit=10000&delimiter=%2F&format=json', # noqa
+                '/v1/a/bucket%2Fd1%2Fd2?prefix=&limit=10000&format=json',
                 swob.HTTPOk, {},
                 json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                              "last_modified": "2018-04-20T09:40:59.000000",
@@ -217,7 +219,7 @@ class OioContainerHierarchy(unittest.TestCase):
             return_value=['CS:a:bucket:cnt:d1/'])
         self.app.register(
             'GET',
-            '/v1/a/bucket?prefix=d&limit=10000&delimiter=%2F&format=json', # noqa
+            '/v1/a/bucket?prefix=d&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -253,7 +255,7 @@ class OioContainerHierarchy(unittest.TestCase):
         # with marker aa (as we inspect d1/)
         self.app.register(
             'GET',
-            '/v1/a/bucket%2Fd1?marker=aa&delimiter=%2F&limit=10000&prefix=&format=json', # noqa
+            '/v1/a/bucket%2Fd1?marker=aa&prefix=&limit=10000&format=json', # noqa
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -262,7 +264,7 @@ class OioContainerHierarchy(unittest.TestCase):
         # without marker on second container
         self.app.register(
             'GET',
-            '/v1/a/bucket%2Fd2?delimiter=%2F&limit=10000&prefix=&format=json', # noqa
+            '/v1/a/bucket%2Fd2?prefix=&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -306,3 +308,94 @@ class OioContainerHierarchy(unittest.TestCase):
         with self.assertRaises(HTTPException) as cm:
             self.call_ch(req)
         self.assertEqual(cm.exception.status, "400 Bad Request")
+
+    def test_path(self):
+        cont = 'bucket'
+
+        path = 'dir1/dir2/object'
+        res = self.ch._fake_container_and_obj(cont, path.split('/'))
+        self.assertEqual(res, (cont + '%2Fdir1%2Fdir2', 'object'))
+
+        path = 'object'
+        res = self.ch._fake_container_and_obj(cont, path.split('/'))
+        self.assertEqual(res, (cont, 'object'))
+
+    def test_mpu_path(self):
+        cont = 'bucket+segments'
+        uploadid = 'MzNkYWZlNjItNjg3Yy00ZmIyLWIwOGYtOTA2OGVlZTA2MzA5'
+
+        path = ('dir1/dir2/object/%s/1' % uploadid).split('/')
+        res = self.ch._fake_container_and_obj(cont, path, is_mpu=True)
+        self.assertEqual(res, (cont + '%2Fdir1%2Fdir2',
+                               'object/%s/1' % uploadid))
+
+        path = ('dir1/dir2/object/' + uploadid).split('/')
+        res = self.ch._fake_container_and_obj(cont, path, is_mpu=True)
+        self.assertEqual(res, (cont + '%2Fdir1%2Fdir2',
+                               'object/' + uploadid))
+
+        path = ('object/%s/1' % uploadid).split('/')
+        res = self.ch._fake_container_and_obj(cont, path, is_mpu=True)
+        self.assertEqual(res, (cont,
+                               'object/%s/1' % uploadid))
+
+        path = ('object/' + uploadid).split('/')
+        res = self.ch._fake_container_and_obj(cont, path, is_mpu=True)
+        self.assertEqual(res, (cont,
+                               'object/' + uploadid))
+
+    def test_upload_in_progress(self):
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket+segments:cnt:d1/d2/d3/'])
+        upload = ["obj/YmYwY2I1ZDYtNjMyYi00OGNiLWEzMzEtZDdhYTk0ODZkNWU2",
+                  "root/MzNkYWZlNjItNjg3Yy00ZmIyLWIwOGYtOTA2OGVlZTA2MzA5"]
+        self.app.register(
+            'GET',
+            '/v1/a/bucket+segments%2Fd1%2Fd2%2Fd3?prefix=&limit=10000&format=json',  # noqa
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": upload[0],
+                         "content_type": "application/octet-stream"},
+                        {"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 400, "name": upload[0] + '/1',
+                         "content_type": "application/octet-stream"}]))
+        self.app.register(
+            'GET',
+            '/v1/a/bucket+segments?prefix=&limit=10000&format=json',
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": upload[1],
+                         "content_type": "application/octet-stream"},
+                        {"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 400, "name": upload[1] + '/1',
+                         "content_type": "application/octet-stream"}]))
+        req = Request.blank('/v1/a/bucket+segments',
+                            method='GET')
+        resp = self.call_ch(req)
+
+        names = [item.get('name', item.get('subdir'))
+                 for item in json.loads(resp[2])]
+        self.assertEqual(names,
+                         ['d1/d2/d3/' + upload[0],
+                          'd1/d2/d3/' + upload[0] + '/1',
+                          upload[1],
+                          upload[1] + '/1'])
+
+    def test_copy_headers(self):
+        self.app.register(
+            'PUT', '/v1/a/bucket%2Fdir1/target',
+            swob.HTTPNoContent, {},
+        )
+        req = Request.blank(
+            '/v1/a/bucket/dir1/target',
+            method='PUT',
+            headers={'Oio-Copy-From': '/v1/a/bucket/sub1/source'})
+
+        resp = self.call_ch(req)
+        self.assertEqual(resp[0], '204 No Content')
+        self.assertEqual(self.app.headers[0]['Oio-Copy-From'],
+                         "/v1%2Fa%2Fbucket%2Fsub1/source")
