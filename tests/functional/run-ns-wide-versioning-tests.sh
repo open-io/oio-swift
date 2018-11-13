@@ -22,7 +22,7 @@ install_deps
 compile_sds
 run_sds
 
-coverage run -a runserver.py conf/hashed-containers.cfg -v &
+coverage run -p runserver.py conf/hashed-containers.cfg -v &
 sleep 1
 PID=$(jobs -p)
 

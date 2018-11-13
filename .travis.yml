@@ -10,13 +10,13 @@ addons:
 
 env:
   matrix:
-    - TEST_SUITE=encryption
-    - TEST_SUITE=ns-wide-versioning
     - TEST_SUITE=s3
-    - TEST_SUITE=unit
-    - TEST_SUITE=encryption SWIFT_BRANCH=stable/pike
-    - TEST_SUITE=ns-wide-versioning SWIFT_BRANCH=stable/pike
     - TEST_SUITE=s3 SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=encryption
+    - TEST_SUITE=encryption SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=ns-wide-versioning
+    - TEST_SUITE=ns-wide-versioning SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=unit
     - TEST_SUITE=unit SWIFT_BRANCH=stable/pike
 
 before_install:
@@ -42,5 +42,4 @@ script:
   - ./tests/run_tests.sh "$TEST_SUITE"
 
 after_success:
-  - bash <(curl -s https://codecov.io/bash) -f cmake_coverage.output
-  - codecov
+  - codecov -X gcov
