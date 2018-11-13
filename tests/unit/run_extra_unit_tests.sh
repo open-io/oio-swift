@@ -3,5 +3,5 @@
 
 set -e
 
-coverage run --source=oioswift,tests -a $(which nosetests) -v --with-timer \
+coverage run --source=oioswift,tests -p $(which nosetests) -v --with-timer \
     tests/unit/common/middleware/test_hashedcontainer.py  # requires liboiocore.so
