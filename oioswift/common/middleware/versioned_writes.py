@@ -97,15 +97,21 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
 
             # Discard the latest version of each object, because it is
             # not supposed to appear in the versioning container.
+            # Also discard object prefixes, which are computed
+            # from the "main" container.
             latest = dict()
             for obj in versioned_objects:
+                if 'subdir' in obj:
+                    continue
                 ver = int(obj.get('version', '0'))
                 if ver > latest.get(obj['name'], 0):
                     latest[obj['name']] = ver
-            versioned_objects = [obj for obj in versioned_objects
-                                 if int(obj.get('version', '0')) !=
-                                 latest[obj['name']] or
-                                 is_deleted(obj)]
+            versioned_objects = [
+                obj for obj in versioned_objects
+                if 'subdir' not in obj
+                and (int(obj.get('version', '0')) != latest[obj['name']]
+                     or is_deleted(obj))
+            ]
 
             for obj in versioned_objects:
                 obj['name'] = swift3_versioned_object_name(

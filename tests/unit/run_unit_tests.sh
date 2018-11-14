@@ -2,7 +2,8 @@
 
 set -e
 
-coverage run --source=oioswift,tests -p $(which nosetests) -v --with-timer \
+coverage run --source=oioswift,tests -p $(which nosetests) -v \
+    --with-timer --timer-ok=100ms --timer-warning=1s \
     tests/unit/controllers \
     tests/unit/common/middleware/crypto \
     tests/unit/common/middleware/test_copy.py:TestOioServerSideCopyMiddleware \
