@@ -160,3 +160,29 @@ class OioVersionedWritesTestCase(test_vw.VersionedWritesTestCase):
 
     def test_denied_DELETE_of_versioned_object(self):
         self.skipTest("Disabled for oio-swift")
+
+    def test_list_no_versions_with_delimiter(self):
+        self.app.register(
+            'GET',
+            '/v1/a/c?delimiter=%2F&format=json',
+            swob.HTTPOk, {},
+            '''[
+                {"subdir": "v1/"},
+                {"hash": "8de4989188593b0419d387099c9e9872",
+                 "name": "magic",
+                 "last_modified": "2018-11-14T16:20:43.000000",
+                 "bytes": 113,
+                 "version": 1542212443748591,
+                 "content_type": "text/plain"}
+            ]''')
+        cache = FakeCache({'sysmeta': {
+            'versions-location': 'c' + versioned_writes.VERSIONING_SUFFIX}})
+        req = Request.blank(
+            '/v1/a/c' + versioned_writes.VERSIONING_SUFFIX + '?delimiter=%2F',
+            environ={'REQUEST_METHOD': 'GET', 'swift.cache': cache,
+                     'CONTENT_LENGTH': '0'})
+        status, _headers, body = self.call_vw(req)
+        self.assertEqual(status, '200 OK')
+        # Subdir should not be listed here, and the object is the latest
+        # version, and should not be listed either.
+        self.assertEqual('[]', body)
