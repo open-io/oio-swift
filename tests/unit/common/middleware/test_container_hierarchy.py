@@ -105,6 +105,23 @@ class OioContainerHierarchy(unittest.TestCase):
         data = json.loads(resp[2])
         self.assertEqual(data[0]['name'], 'd1/d2/d3/o')
 
+    def test_listing_with_space(self):
+        self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt:d 1/d2/'])
+        self.app.register(
+            'GET',
+            '/v1/a/c%2Fd 1%2Fd2?prefix=&limit=10000&delimiter=%2F&format=json', # noqa
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": "o",
+                         "content_type": "application/octet-stream"}]))
+
+        req = Request.blank('/v1/a/c?prefix=d%201%2Fd2%2F', method='GET')
+        resp = self.call_ch(req)
+
+        data = json.loads(resp[2])
+        self.assertEqual(data[0]['name'], 'd 1/d2/o')
+
     def test_global_listing(self):
         self.app.register(
             'GET', '/v1/a', swob.HTTPOk, {})

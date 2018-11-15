@@ -16,7 +16,7 @@
 import json
 import importlib
 from paste.deploy import loadwsgi
-from six.moves.urllib.parse import parse_qs, quote_plus
+from six.moves.urllib.parse import parse_qs, quote
 from swift.common.swob import Request
 from swift.common.utils import config_true_value, \
     closing_if_possible, get_logger
@@ -359,7 +359,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         """
         returns items
         """
-        sub_path = quote_plus(self.DELIMITER.join(
+        sub_path = quote(self.DELIMITER.join(
             ('', 'v1', account, self.ENCODED_DELIMITER.join(ct_parts))))
 
         LOG.debug("%s: listing objects from '%s' "
