@@ -42,6 +42,19 @@ echo ${OUT} | grep root
 echo ${OUT} | grep dir1/dir2/object
 
 
+# LISTING WITH SPACE
+
+${AWS} s3api put-object --bucket ${BUCKET} --key "directory 1/directory 2/object" --body /etc/passwd
+${AWS} s3api put-object --bucket ${BUCKET} --key "directory 1/directory 2/other one" --body /etc/passwd
+
+OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} )
+echo ${OUT} | grep object
+echo ${OUT} | grep "other one"
+
+OUT=$( ${AWS} s3 ls "s3://${BUCKET}/directory 1/directory 2/" )
+echo ${OUT} | grep object
+echo ${OUT} | grep "other one"
+
 ${AWS} s3 cp bigfile s3://${BUCKET}/subdir/bigfile
 
 ${AWS} s3 cp s3://${BUCKET}/subdir/bigfile testfile
