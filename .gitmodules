@@ -1,11 +1,13 @@
 [submodule "third_party/swift"]
 	path = third_party/swift
 	url = https://github.com/openstack/swift.git
+	# Latest stable/supported version
 	branch = stable/queens
 [submodule "third_party/oio-sds"]
 	path = third_party/oio-sds
 	url = https://github.com/open-io/oio-sds.git
-	branch = 4.2.x
+	# Latest stable/supported version
+	branch = 4.3.x
 [submodule "third_party/swift3"]
 	path = third_party/swift3
 	url = https://github.com/open-io/swift3
