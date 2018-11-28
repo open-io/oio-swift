@@ -221,7 +221,10 @@ class ObjectController(BaseObjectController):
                         is_object_transient_sysmeta(k) or \
                         k.lower() in self.allowed_headers:
                     resp.headers[str(k)] = v
-        resp.headers['etag'] = metadata['hash'].lower()
+        hash_ = metadata.get('hash')
+        if hash_ is not None:
+            hash_ = hash_.lower()
+        resp.headers['etag'] = hash_
         resp.headers['x-object-sysmeta-version-id'] = metadata['version']
         ts = Timestamp(metadata['ctime'])
         resp.last_modified = math.ceil(float(ts))
@@ -231,11 +234,11 @@ class ObjectController(BaseObjectController):
             else:
                 resp.app_iter = stream
 
-        resp.content_length = int(metadata['length'])
-        try:
-            resp.content_encoding = metadata['encoding']
-        except KeyError:
-            pass
+        length_ = metadata.get('length')
+        if length_ is not None:
+            length_ = int(length_)
+        resp.content_length = length_
+        resp.content_encoding = metadata.get('encoding')
         resp.accept_ranges = 'bytes'
         return resp
 

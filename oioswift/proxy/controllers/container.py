@@ -204,7 +204,9 @@ class ContainerController(SwiftContainerController):
         if 'x-object-sysmeta-container-update-override-etag' in props:
             hash_ = props['x-object-sysmeta-container-update-override-etag']
         else:
-            hash_ = record['hash'].lower()
+            hash_ = record.get('hash')
+            if hash_ is not None:
+                hash_ = hash_.lower()
 
         response = {'name': record['name'],
                     'bytes': record['size'],
