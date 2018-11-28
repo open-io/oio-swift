@@ -111,6 +111,16 @@ class TestObjectController(unittest.TestCase):
         self.storage.container.container_get_properties = Mock(
                 return_value={'properties': {}, 'system': {}})
 
+    def _patch_object_create(self, **kwargs):
+        if hasattr(self.storage, "object_create_ext"):
+            if 'return_value' in kwargs:
+                kwargs['return_value'] += ({'version': 1515}, )
+            self.storage.object_create_ext = Mock(**kwargs)
+            return True, self.storage.object_create_ext
+        else:
+            self.storage.object_create = Mock(**kwargs)
+            return False, self.storage.object_create
+
     def test_DELETE_simple(self):
         req = Request.blank('/v1/a/c/o', method='DELETE')
         self.storage.object_delete = Mock()
@@ -180,13 +190,16 @@ class TestObjectController(unittest.TestCase):
         req = Request.blank('/v1/a/c/o', method='PUT')
         req.headers['content-length'] = '0'
         ret_val = ({}, 0, 'd41d8cd98f00b204e9800998ecf8427e')
-        self.storage.object_create = Mock(return_value=ret_val)
+
+        _, mock = self._patch_object_create(return_value=ret_val)
+
         resp = req.get_response(self.app)
-        self.storage.object_create.assert_called_once_with(
-                'a', 'c', obj_name='o', etag='',
-                metadata={}, mime_type='application/octet-stream',
-                file_or_path=req.environ['wsgi.input'], policy=None,
-                headers=ANY)
+
+        mock.assert_called_once_with(
+                     'a', 'c', obj_name='o', etag='',
+                     metadata={}, mime_type='application/octet-stream',
+                     file_or_path=req.environ['wsgi.input'], policy=None,
+                     headers=ANY)
         self.assertEqual(201, resp.status_int)
         self.assertIn('Last-Modified', resp.headers)
         self.assertIn('Etag', resp.headers)
@@ -219,7 +232,7 @@ class TestObjectController(unittest.TestCase):
         req.headers['content-length'] = '0'
         ret_val = ({}, 0, '')
         self.storage.object_show = Mock(side_effect=exc.NoSuchObject)
-        self.storage.object_create = Mock(return_value=ret_val)
+        self._patch_object_create(return_value=ret_val)
         resp = req.get_response(self.app)
         self.assertEqual(201, resp.status_int)
 
@@ -260,10 +273,10 @@ class TestObjectController(unittest.TestCase):
                    'ctime': 554086800, 'length': 0, 'deleted': 'false'}
         self.storage.object_show = Mock(return_value=ret_val)
         ret_val2 = ({}, 0, '')
-        self.app.storage.object_create = Mock(return_value=ret_val2)
+        _, mock = self._patch_object_create(return_value=ret_val2)
         resp = req.get_response(self.app)
         self.storage.object_show.assert_called()
-        self.storage.object_create.assert_called_once()
+        mock.assert_called_once()
         self.assertEqual(201, resp.status_int)
 
     def test_PUT_error_during_transfer_data(self):
@@ -372,7 +385,7 @@ class TestObjectController(unittest.TestCase):
         req = Request.blank('/v1/a/c/o.jpg', method='PUT',
                             body='test body')
         # FIXME: we should be able to create the exception without code
-        self.storage.object_create = Mock(side_effect=exc.Conflict(409))
+        self._patch_object_create(side_effect=exc.Conflict(409))
         resp = req.get_response(self.app)
         self.assertEqual(409, resp.status_int)
 

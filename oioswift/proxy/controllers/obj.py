@@ -503,6 +503,17 @@ class ObjectController(BaseObjectController):
         footer_callback(footers)
         return footers
 
+    def _object_create(self, account, container, **kwargs):
+        storage = self.app.storage
+        if hasattr(storage, 'object_create_ext'):
+            return storage.object_create_ext(account, container, **kwargs)
+
+        _chunks, _size, checksum = storage.object_create(account, container,
+                                                         **kwargs)
+        meta = storage.object_get_properties(account, container,
+                                             kwargs['obj_name'])
+        return _chunks, _size, checksum, meta
+
     def _store_object(self, req, data_source, headers):
         content_type = req.headers.get('content-type', 'octet/stream')
         storage = self.app.storage
@@ -533,7 +544,7 @@ class ObjectController(BaseObjectController):
         try:
             # FIXME(FVE): use 'properties' instead of 'metadata'
             # as soon as we require oio>=4.2.0
-            _chunks, _size, checksum = storage.object_create(
+            _chunks, _size, checksum, _meta = self._object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
                 mime_type=content_type, policy=policy, headers=oio_headers,
@@ -544,7 +555,7 @@ class ObjectController(BaseObjectController):
             if footer_md:
                 storage.object_set_properties(
                     self.account_name, self.container_name, self.object_name,
-                    properties=footer_md)
+                    version=_meta['version'], properties=footer_md)
         except exceptions.Conflict:
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
@@ -582,10 +593,10 @@ class ObjectController(BaseObjectController):
                 {'path': req.path})
             raise HTTPInternalServerError(request=req)
 
-        # TODO(FVE): use the timestamp of the object.
-        # Unfortunately the oio-sds API does not return the actual ctime.
-        resp = HTTPCreated(request=req, etag=checksum,
-                           last_modified=int(time.time()))
+        resp = HTTPCreated(
+           request=req, etag=checksum,
+           last_modified=_meta.get('mtime', int(time.time())),
+           headers={'x-object-sysmeta-version-id': _meta['version']})
         return resp
 
     def _update_content_type(self, req):
