@@ -94,7 +94,7 @@ echo ${OUT} | grep ${BUCKET}+segments
 
 # CHECK BUCKET NAME METADATA
 OUT=$( openio object show ${BUCKET} small --oio-account AUTH_demo -f shell | grep oio-bucket-name | cut -d = -f 2)
-if [ ${OUT} != \"${BUCKET}\" ]
+if [ "${OUT}" != "\"${BUCKET}\"" ]
 then
     echo "ERROR: bucket name not on metadata"
     exit 1
