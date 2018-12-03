@@ -476,6 +476,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             env2['HTTP_OIO_COPY_FROM'] = '/' + c_container + '/' + c_obj
 
     def __call__(self, env, start_response):
+        self._save_bucket_name(env)
         if self.should_bypass(env):
             return self.app(env, start_response)
 
