@@ -1,5 +1,9 @@
 #!/bin/bash
 
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NO_COLOR='\033[0m'
+
 function install_deps() {
   if [ -n "${SKIP_BUILD}" ]; then
     return
@@ -91,7 +95,12 @@ function run_functional_test() {
 
     for suite in $test_suites
     do
-      bash "$suite" || RET=1
+      if bash "$suite"; then
+        printf "${GREEN}\n${suite}: OK\n${NO_COLOR}"
+      else
+        RET=1
+        printf "${RED}\n${suite}: FAILED\n${NO_COLOR}"
+      fi
     done
 
     for pid in $PID; do
