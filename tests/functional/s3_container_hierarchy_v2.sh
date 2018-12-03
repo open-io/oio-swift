@@ -93,7 +93,7 @@ OUT=$( openio container list -f csv --quote none -c Name --oio-account AUTH_demo
 echo ${OUT} | grep ${BUCKET}+segments
 
 # CHECK BUCKET NAME METADATA
-OUT=$( openio object show ${BUCKET} small --oio-account AUTH_demo -f shell | grep oio-bucket-name | cut -d = -f 2)
+OUT=$( openio object show ${BUCKET} small --oio-account AUTH_demo -f shell | grep oio.bucket.name | cut -d = -f 2)
 if [ "${OUT}" != "\"${BUCKET}\"" ]
 then
     echo "ERROR: bucket name not on metadata"
@@ -108,7 +108,7 @@ ${AWS} s3api put-object --bucket ${BUCKET} --key d1/d2/d3/d4/o2 --body aa
 ${AWS} s3api put-object --bucket ${BUCKET} --key v1/o2 --body aa
 sleep 0.5
 CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
-[ "$CNT" -eq 8 ]
+[ "$CNT" -eq 10 ]
 
 # COPY S3<=>S3
 
