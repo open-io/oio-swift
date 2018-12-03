@@ -46,7 +46,7 @@ function compile_sds() {
     -DAPACHE2_MODDIR="/tmp/oio/lib/apache2/module" \
     .
   make all install
-  sudo ldconfig /tmp/oio/lib{,64}
+  export PATH="$PATH:/tmp/oio/bin" LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/tmp/oio/lib"
   cd ../.. || return
 }
 
