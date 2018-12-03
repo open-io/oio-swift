@@ -48,6 +48,7 @@ install:
   - go get gopkg.in/ini.v1 gopkg.in/tylerb/graceful.v1
 
 script:
+  - set -e
   - flake8 oioswift tests
   - ./tests/run_tests.sh "$TEST_SUITE"
 

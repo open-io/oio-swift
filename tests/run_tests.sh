@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 export TEST_SUITE="${TEST_SUITE:-$1}"
 
 if [ "$TEST_SUITE" = "unit" ]
