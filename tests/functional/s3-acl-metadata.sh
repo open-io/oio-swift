@@ -9,7 +9,6 @@ BUCKET=bucket-$RANDOM
 
 echo "Bucket name: $BUCKET"
 
-set -x
 set -e
 
 ${AWS} s3api create-bucket --bucket ${BUCKET}
@@ -38,8 +37,7 @@ data=$(${AWS} s3api head-object --bucket ${BUCKET} --key copy)
 echo "$data" | grep key1
 
 # and new metadata should be ignored
-# Known issue on swift3: https://bugs.launchpad.net/swift3/+bug/1433875
-echo "$data" | grep key3 && echo "new metadata should be ignored (swift3 issue #1433875)"
+echo "$data" | grep key3 && exit 1
 
 ${AWS} s3api copy-object --bucket ${BUCKET} --copy-source ${BUCKET}/small --key copy --metadata key3=val3,key4=val4 --metadata-directive REPLACE
 
@@ -48,8 +46,7 @@ data=$(${AWS} s3api head-object --bucket ${BUCKET} --key copy)
 echo "$data" | grep key3
 
 # and old metadata should be discarded
-# Known issue on swift3: https://bugs.launchpad.net/swift3/+bug/1433875
-echo "$data" | grep key1 && echo "old metadata shoud be dropped (swift3 issue #1433875)"
+echo "$data" | grep key1 && exit 1
 
 
 ### ACL

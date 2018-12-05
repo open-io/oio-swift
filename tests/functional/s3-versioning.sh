@@ -103,7 +103,8 @@ echo "*** Enabling versioning ****"
 ${AWS} s3api put-bucket-versioning --versioning-configuration Status=Enabled --bucket "${BUCKET}"
 
 echo "*** Putting another object over the first one ***"
-${AWS} s3 cp "${OBJ_2}" "s3://${BUCKET}/obj"
+PUT_RES=$(${AWS} s3api put-object --bucket ${BUCKET} --key obj --body "${OBJ_2}")
+PUT_ID=$(jq -r ".VersionId|tonumber" <<< "$PUT_RES")
 
 echo "Listing current version, and checking"
 CUR_VERS=$(${AWS} s3api list-objects --bucket "${BUCKET}")
@@ -134,6 +135,7 @@ OBJ_2_ISLATEST=$(jq -r ".Versions[0].IsLatest|tostring" <<< "$ALL_OBJ_VERS")
 [[ "$OBJ_2_MD5" == "\"$OBJ_2_EXPECTED_MD5\"" ]]
 [[ "$OBJ_1_ISLATEST" == "false" ]]
 [[ "$OBJ_2_ISLATEST" == "true" ]]
+[[ "$OBJ_2_ID" == "$PUT_ID" ]]
 OBJ_2_EXPECTED_ID=$OBJ_2_ID
 
 echo "Fetching current version, and checking"
@@ -320,6 +322,33 @@ fi
 if ${AWS} s3api get-object --bucket "${BUCKET}" --key obj --version-id "$OBJ_2_EXPECTED_ID" obj; then
     false
 fi
+
+
+echo "*** Check objname and versions with path ***"
+
+echo "Prepare bucket"
+PUT_RES=$(${AWS} s3api put-object --bucket ${BUCKET} --key v1/v2/v3/obj --body "${OBJ_0}")
+PUT_ID1=$(jq -r ".VersionId|tonumber" <<< "$PUT_RES")
+
+PUT_RES=$(${AWS} s3api put-object --bucket ${BUCKET} --key v1/v2/v3/obj --body "${OBJ_1}")
+PUT_ID2=$(jq -r ".VersionId|tonumber" <<< "$PUT_RES")
+
+CUR_VERS=$(${AWS} s3api list-object-versions --bucket ${BUCKET})
+
+OBJ_0_KEY=$(jq -r ".Versions[0].Key|tostring" <<< "$CUR_VERS")
+OBJ_0_ID=$(jq -r ".Versions[0].VersionId|tostring" <<< "$CUR_VERS")
+OBJ_1_KEY=$(jq -r ".Versions[0].Key|tostring" <<< "$CUR_VERS")
+OBJ_1_ID=$(jq -r ".Versions[1].VersionId|tostring" <<< "$CUR_VERS")
+
+[[ "$OBJ_0_KEY" == "v1/v2/v3/obj" ]]
+[[ "$OBJ_1_KEY" == "v1/v2/v3/obj" ]]
+[[ "$PUT_ID1" == "$OBJ_1_ID" ]]
+[[ "$PUT_ID2" == "$OBJ_0_ID" ]]
+
+# OS-247
+${AWS} s3api delete-object --bucket ${BUCKET} --key v1/v2/v3/obj --version-id ${PUT_ID1}
+${AWS} s3api delete-object --bucket ${BUCKET} --key v1/v2/v3/obj --version-id ${PUT_ID2}
+
 
 echo "*** Deleting the bucket ***"
 ${AWS} s3 rb "s3://${BUCKET}"
