@@ -210,10 +210,11 @@ class ContainerController(SwiftContainerController):
 
         response = {'name': record['name'],
                     'bytes': record['size'],
-                    'hash': hash_,
                     'last_modified': Timestamp(record['ctime']).isoformat,
                     'content_type': record.get(
                         'mime_type', 'application/octet-stream')}
+        if hash_:
+            response['hash'] = hash_
         if record.get('deleted', False):
             response['content_type'] = DELETE_MARKER_CONTENT_TYPE
         if versions:
