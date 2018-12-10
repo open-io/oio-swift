@@ -21,6 +21,8 @@ from swift.common.utils import config_true_value, json, \
     register_swift_info, split_path, closing_if_possible, close_if_possible
 from swift.proxy.controllers.base import get_container_info, get_object_info
 
+from oio.common.easy_value import is_hexa
+
 
 VERSIONING_SUFFIX = '+versioning'
 
@@ -34,7 +36,7 @@ def swift3_versioned_object_name(object_name, version_id=None):
 def swift3_split_object_name_version(object_name):
     if '/' not in object_name or \
             len(object_name) < 3 or \
-            not object_name[:3].isdigit():
+            not is_hexa(object_name[:3]):
         return object_name, None
     return object_name[3:].rsplit('/', 1)
 
