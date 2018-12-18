@@ -42,6 +42,8 @@ from swift.proxy.controllers.obj import BaseObjectController as \
 
 from oio.common import exceptions
 from oio.common.http import ranges_from_http_header
+from oio.common.storage_method import STORAGE_METHODS
+from oio.api.object_storage import _sort_chunks
 
 try:
     from oio.common.exceptions import SourceReadTimeout
@@ -172,13 +174,41 @@ class ObjectController(BaseObjectController):
     def get_object_head_resp(self, req):
         storage = self.app.storage
         oio_headers = {'X-oio-req-id': self.trans_id}
+        version = req.environ.get('oio.query', {}).get('version')
         try:
-            metadata = storage.object_show(
-                self.account_name, self.container_name, self.object_name,
-                version=req.environ.get('oio.query', {}).get('version'),
-                headers=oio_headers)
+            if self.app.check_quorum:
+                metadata, chunks = storage.object_locate(
+                    self.account_name, self.container_name, self.object_name,
+                    version=version, headers=oio_headers)
+            else:
+                metadata = storage.object_show(
+                    self.account_name, self.container_name, self.object_name,
+                    version=version, headers=oio_headers)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
+
+        if self.app.check_quorum:
+            storage_method = STORAGE_METHODS.load(metadata['chunk_method'])
+            real_chunks = []
+            # TODO(mbo): make chunk_head with quorum test,
+            # it will save few HEAD requests
+            for chunk in chunks:
+                try:
+                    storage.blob_client.chunk_head(chunk['url'])
+                    real_chunks.append(chunk)
+                except Exception:
+                    pass
+
+            if not len(real_chunks):
+                self.app.logger.warn('No chunks available')
+                return HTTPBadRequest(request=req)
+
+            chunks_by_pos = _sort_chunks(real_chunks, storage_method.ec)
+            for pos, clist in chunks_by_pos.iteritems():
+                if len(clist) < storage_method.quorum:
+                    self.app.logger.warn('Quorum not reached at pos %d', pos)
+
+                    return HTTPBadRequest(request=req)
 
         resp = self.make_object_response(req, metadata)
         return resp
