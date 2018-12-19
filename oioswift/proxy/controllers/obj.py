@@ -176,7 +176,7 @@ class ObjectController(BaseObjectController):
         oio_headers = {'X-oio-req-id': self.trans_id}
         version = req.environ.get('oio.query', {}).get('version')
         try:
-            if self.app.check_quorum:
+            if self.app.check_state:
                 metadata, chunks = storage.object_locate(
                     self.account_name, self.container_name, self.object_name,
                     version=version, headers=oio_headers)
@@ -187,7 +187,7 @@ class ObjectController(BaseObjectController):
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
 
-        if self.app.check_quorum:
+        if self.app.check_state:
             storage_method = STORAGE_METHODS.load(metadata['chunk_method'])
             real_chunks = []
             # TODO(mbo): make chunk_head with quorum test,
@@ -204,8 +204,9 @@ class ObjectController(BaseObjectController):
                 return HTTPBadRequest(request=req)
 
             chunks_by_pos = _sort_chunks(real_chunks, storage_method.ec)
+            min_chunks = storage_method.quorum if storage_method.ec else 1
             for pos, clist in chunks_by_pos.iteritems():
-                if len(clist) < storage_method.quorum:
+                if len(clist) < min_chunks:
                     self.app.logger.warn('Quorum not reached at pos %d', pos)
 
                     return HTTPBadRequest(request=req)
