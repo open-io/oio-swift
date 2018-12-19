@@ -75,7 +75,7 @@ class RedisDb(object):
         return self.conn.delete(key)
 
     def keys(self, pattern):
-        return self.conn.scan_iter(pattern)
+        return self.conn.scan_iter(pattern, count=5000)
 
     def exists(self, key):
         return self.conn.exists(key)
