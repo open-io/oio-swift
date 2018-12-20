@@ -189,26 +189,23 @@ class ObjectController(BaseObjectController):
 
         if self.app.check_state:
             storage_method = STORAGE_METHODS.load(metadata['chunk_method'])
-            real_chunks = []
-            # TODO(mbo): make chunk_head with quorum test,
-            # it will save few HEAD requests
-            for chunk in chunks:
-                try:
-                    storage.blob_client.chunk_head(chunk['url'])
-                    real_chunks.append(chunk)
-                except Exception:
-                    pass
+            # TODO(mbo): use new property of STORAGE_METHODS
+            min_chunks = storage_method.ec_nb_data if storage_method.ec else 1
 
-            if not len(real_chunks):
-                self.app.logger.warn('No chunks available')
-                return HTTPBadRequest(request=req)
-
-            chunks_by_pos = _sort_chunks(real_chunks, storage_method.ec)
-            min_chunks = storage_method.quorum if storage_method.ec else 1
-            for pos, clist in chunks_by_pos.iteritems():
-                if len(clist) < min_chunks:
-                    self.app.logger.warn('Quorum not reached at pos %d', pos)
-
+            chunks_by_pos = _sort_chunks(chunks, storage_method.ec)
+            for idx, entries in enumerate(chunks_by_pos.iteritems()):
+                if idx != entries[0]:
+                    return HTTPBadRequest(request=req)
+                nb_chunks_ok = 0
+                for entry in entries[1]:
+                    try:
+                        storage.blob_client.chunk_head(entry['url'])
+                        nb_chunks_ok += 1
+                    except exceptions.OioException:
+                        pass
+                    if nb_chunks_ok >= min_chunks:
+                        break
+                else:
                     return HTTPBadRequest(request=req)
 
         resp = self.make_object_response(req, metadata)
