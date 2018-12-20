@@ -157,7 +157,7 @@ def check_if_none_match(fnc):
             return fnc(self, req, *args, **kwargs)
         oio_headers = {'X-oio-req-id': self.trans_id}
         try:
-            metadata = self.app.storage.object_show(
+            metadata = self.app.storage.object_get_properties(
                 self.account_name, self.container_name, self.object_name,
                 version=req.environ.get('oio.query', {}).get('version'),
                 headers=oio_headers)

@@ -181,7 +181,7 @@ class ObjectController(BaseObjectController):
                     self.account_name, self.container_name, self.object_name,
                     version=version, headers=oio_headers)
             else:
-                metadata = storage.object_show(
+                metadata = storage.object_get_properties(
                     self.account_name, self.container_name, self.object_name,
                     version=version, headers=oio_headers)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):

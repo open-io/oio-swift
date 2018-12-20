@@ -146,9 +146,9 @@ class TestObjectController(unittest.TestCase):
             'deleted': False,
             'version': 42,
         }
-        self.storage.object_show = Mock(return_value=ret_val)
+        self.storage.object_get_properties = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
-        self.storage.object_show.assert_called_once_with(
+        self.storage.object_get_properties.assert_called_once_with(
             'a', 'c', 'o', version=None, headers=ANY)
         self.assertEqual(resp.status_int, 200)
         self.assertIn('Accept-Ranges', resp.headers)
@@ -167,10 +167,10 @@ class TestObjectController(unittest.TestCase):
             'deleted': False,
             'version': 42,
         }
-        self.storage.object_show = Mock(return_value=ret_val)
+        self.storage.object_get_properties = Mock(return_value=ret_val)
         self.storage.object_fetch = Mock(return_value=(ret_val, None))
         resp = req.get_response(self.app)
-        self.storage.object_show.assert_called_once()
+        self.storage.object_get_properties.assert_called_once()
         self.assertEqual(200, resp.status_int)
 
     def test_GET_if_none_match_not_star_denied(self):
@@ -181,9 +181,9 @@ class TestObjectController(unittest.TestCase):
         req.headers['if-none-match'] = '0000'
         req.headers['content-length'] = '0'
         ret_val = {'hash': '0000'}
-        self.storage.object_show = Mock(return_value=ret_val)
+        self.storage.object_get_properties = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
-        self.storage.object_show.assert_called_once()
+        self.storage.object_get_properties.assert_called_once()
         self.assertEqual(304, resp.status_int)
 
     def test_PUT_simple(self):
@@ -231,7 +231,7 @@ class TestObjectController(unittest.TestCase):
         req.headers['if-none-match'] = '*'
         req.headers['content-length'] = '0'
         ret_val = ({}, 0, '')
-        self.storage.object_show = Mock(side_effect=exc.NoSuchObject)
+        self.storage.object_get_properties = Mock(side_effect=exc.NoSuchObject)
         self._patch_object_create(return_value=ret_val)
         resp = req.get_response(self.app)
         self.assertEqual(201, resp.status_int)
@@ -244,9 +244,9 @@ class TestObjectController(unittest.TestCase):
         req.headers['if-none-match'] = '*'
         req.headers['content-length'] = '0'
         ret_val = {'hash': ''}
-        self.storage.object_show = Mock(return_value=ret_val)
+        self.storage.object_get_properties = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
-        self.storage.object_show.assert_called_once()
+        self.storage.object_get_properties.assert_called_once()
         self.assertEqual(412, resp.status_int)
 
     def test_PUT_if_none_match_not_star_denied(self):
@@ -257,7 +257,7 @@ class TestObjectController(unittest.TestCase):
         req.headers['if-none-match'] = '0000'
         req.headers['content-length'] = '0'
         ret_val = {'hash': '0000'}
-        self.storage.object_show = Mock(return_value=ret_val)
+        self.storage.object_get_properties = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
         self.assertEqual(412, resp.status_int)
 
@@ -271,11 +271,11 @@ class TestObjectController(unittest.TestCase):
         req.headers['content-length'] = '0'
         ret_val = {'hash': '0000', 'version': '554086800000000',
                    'ctime': 554086800, 'length': 0, 'deleted': 'false'}
-        self.storage.object_show = Mock(return_value=ret_val)
+        self.storage.object_get_properties = Mock(return_value=ret_val)
         ret_val2 = ({}, 0, '')
         _, mock = self._patch_object_create(return_value=ret_val2)
         resp = req.get_response(self.app)
-        self.storage.object_show.assert_called()
+        self.storage.object_get_properties.assert_called()
         mock.assert_called_once()
         self.assertEqual(201, resp.status_int)
 
