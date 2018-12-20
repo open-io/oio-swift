@@ -513,9 +513,7 @@ class ObjectController(BaseObjectController):
 
         _chunks, _size, checksum = storage.object_create(account, container,
                                                          **kwargs)
-        meta = storage.object_get_properties(account, container,
-                                             kwargs['obj_name'])
-        return _chunks, _size, checksum, meta
+        return _chunks, _size, checksum, {}
 
     def _store_object(self, req, data_source, headers):
         content_type = req.headers.get('content-type', 'octet/stream')
@@ -558,7 +556,7 @@ class ObjectController(BaseObjectController):
             if footer_md:
                 storage.object_set_properties(
                     self.account_name, self.container_name, self.object_name,
-                    version=_meta['version'], properties=footer_md)
+                    version=_meta.get('version', None), properties=footer_md)
         except exceptions.Conflict:
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
@@ -599,7 +597,7 @@ class ObjectController(BaseObjectController):
         resp = HTTPCreated(
            request=req, etag=checksum,
            last_modified=_meta.get('mtime', int(time.time())),
-           headers={'x-object-sysmeta-version-id': _meta['version']})
+           headers={'x-object-sysmeta-version-id': _meta.get('version', None)})
         return resp
 
     def _update_content_type(self, req):
