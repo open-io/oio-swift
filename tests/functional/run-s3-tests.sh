@@ -16,6 +16,7 @@ run_functional_test s3-fastcopy.cfg s3-acl-metadata.sh
 # Run all suites in the same environment.
 # They do not share buckets so this should be OK.
 run_functional_test s3-default.cfg s3-acl-metadata.sh s3-versioning.sh s3-tagging.sh s3-multipart.sh
+run_functional_test s3-inherit.cfg s3-acl-inherit.sh
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET

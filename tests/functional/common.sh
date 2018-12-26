@@ -66,6 +66,9 @@ function configure_aws() {
 [default]
 aws_access_key_id=demo:demo
 aws_secret_access_key=DEMO_PASS
+[tester2]
+aws_access_key_id=tester2:tester2
+aws_secret_access_key=TESTER2_PASS
 EOF
 
   cat <<EOF >"$HOME/.aws/config"
