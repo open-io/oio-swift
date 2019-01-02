@@ -18,9 +18,12 @@ from oioswift import server as proxy_server
 from tests.unit import FakeStorageAPI, FakeMemcache, debug_logger
 
 
-def fake_stream(l):
-    for i in "X"*l:
+def fake_stream(length, exception=None):
+    for i in "X" * length:
         yield i
+    if exception:
+        # pylint: disable=raising-bad-type
+        raise exception
 
 
 def fake_prepare_meta():
@@ -197,7 +200,7 @@ class TestObjectController(unittest.TestCase):
 
         mock.assert_called_once_with(
                      'a', 'c', obj_name='o', etag='',
-                     metadata={}, mime_type='application/octet-stream',
+                     properties={}, mime_type='application/octet-stream',
                      file_or_path=req.environ['wsgi.input'], policy=None,
                      headers=ANY)
         self.assertEqual(201, resp.status_int)
@@ -420,8 +423,48 @@ class TestObjectController(unittest.TestCase):
         self.assertEqual(resp.status_int, 200)
         self.assertIn('Accept-Ranges', resp.headers)
 
+    def test_GET_simple_range(self):
+        req = Request.blank('/v1/a/c/o',
+                            headers={'Range': 'bytes=0-0'})
+
+        ret_value = ({
+            'hash': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'ctime': 0,
+            'length': 10,
+            'deleted': False,
+            'version': 42,
+            }, fake_stream(1))
+        self.storage.object_fetch = Mock(return_value=ret_value)
+        resp = req.get_response(self.app)
+        self.assertEqual(resp.status_int, 206)
+        self.assertIn('Accept-Ranges', resp.headers)
+        self.assertIn('Content-Range', resp.headers)
+        self.assertEqual('bytes 0-0/10', resp.headers['Content-Range'])
+        self.assertEqual('1', resp.headers['Content-Length'])
+        self.assertEqual(1, len(resp.body))
+
     def test_GET_not_found(self):
         req = Request.blank('/v1/a/c/o')
         self.storage.object_fetch = Mock(side_effect=exc.NoSuchObject)
         resp = req.get_response(self.app)
         self.assertEqual(resp.status_int, 404)
+
+    def test_GET_service_unavailable(self):
+        req = Request.blank('/v1/a/c/o')
+        ret_value = ({
+            'hash': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'ctime': 0,
+            'length': 10,
+            'deleted': False,
+            'version': 42,
+            }, fake_stream(10, exc.ServiceUnavailable('missing chunks')))
+        self.storage.object_fetch = Mock(return_value=ret_value)
+        resp = req.get_response(self.app)
+        # Everything seems ok,
+        self.assertEqual(resp.status_int, 200)
+        # but an exception is raised when trying to read response data.
+        try:
+            for _ in resp.app_iter:
+                pass
+        except swob.HTTPException as err:
+            self.assertEqual(503, err.status_int)
