@@ -29,7 +29,8 @@ from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPConflict, HTTPPreconditionFailed, HTTPRequestTimeout, \
     HTTPUnprocessableEntity, HTTPClientDisconnect, HTTPCreated, \
-    HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator
+    HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator, \
+    HTTPServiceUnavailable
 from swift.common.request_helpers import is_sys_or_user_meta, \
     is_object_transient_sysmeta
 from swift.common.wsgi import make_subrequest
@@ -45,15 +46,7 @@ from oio.common.http import ranges_from_http_header
 from oio.common.storage_method import STORAGE_METHODS
 from oio.api.object_storage import _sort_chunks
 
-try:
-    from oio.common.exceptions import SourceReadTimeout
-except ImportError:
-    # TODO(FVE): remove when dependency is oio>=4.2.0
-    class SourceReadTimeout(exceptions.OioTimeout):
-        pass
-# TODO(FVE): GreenSourceReadTimeout should never be raised from oio!
-# Remove when dependency is oio>=4.2.0
-from oio.common.green import SourceReadTimeout as GreenSourceReadTimeout
+from oio.common.exceptions import SourceReadTimeout
 from oioswift.utils import check_if_none_match, \
     handle_not_allowed, handle_oio_timeout, handle_service_busy
 
@@ -66,19 +59,24 @@ class ObjectControllerRouter(object):
 
 
 class StreamRangeIterator(object):
-    def __init__(self, stream):
-        self.stream = stream
+    """
+    Data stream wrapper that handles range requests and deals with exceptions.
+    """
+
+    def __init__(self, request, stream):
+        self.req = request
+        self._stream = stream
 
     def app_iter_range(self, _start, _stop):
         # This will be called when there is only one range,
         # no need to check the number of bytes
-        return self.stream
+        return self.stream()
 
     def _chunked_app_iter_range(self, start, stop):
         # The stream generator give us one "chunk" per range,
         # and as we are called once for each range, we must
         # simulate end-of-stream by generating StopIteration
-        for dat in self.stream:
+        for dat in self.stream():
             yield dat
             raise StopIteration
 
@@ -90,8 +88,23 @@ class StreamRangeIterator(object):
                 self._chunked_app_iter_range):
             yield chunk
 
+    def stream(self, *args, **kwargs):
+        """
+        Get the wrapped data stream.
+        """
+        try:
+            for dat in self._stream:
+                yield dat
+        except (exceptions.ServiceBusy, exceptions.ServiceUnavailable) as err:
+            # We cannot use the handle_service_busy() decorator
+            # because it returns the exception object instead of raising it.
+            headers = dict()
+            headers['Retry-After'] = '1'
+            raise HTTPServiceUnavailable(request=self.req, headers=headers,
+                                         body=err.message)
+
     def __iter__(self):
-        return self.stream
+        return self.stream()
 
 
 class ExpectedSizeReader(object):
@@ -225,10 +238,10 @@ class ObjectController(BaseObjectController):
                 version=req.environ.get('oio.query', {}).get('version'))
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
-        resp = self.make_object_response(req, metadata, stream, ranges=ranges)
+        resp = self.make_object_response(req, metadata, stream)
         return resp
 
-    def make_object_response(self, req, metadata, stream=None, ranges=None):
+    def make_object_response(self, req, metadata, stream=None):
         conditional_etag = None
         if 'X-Backend-Etag-Is-At' in req.headers:
             conditional_etag = metadata.get(
@@ -257,10 +270,9 @@ class ObjectController(BaseObjectController):
         ts = Timestamp(metadata['ctime'])
         resp.last_modified = math.ceil(float(ts))
         if stream:
-            if ranges:
-                resp.app_iter = StreamRangeIterator(stream)
-            else:
-                resp.app_iter = stream
+            # Whether we are bothered with ranges or not, we wrap the
+            # stream in order to handle exceptions.
+            resp.app_iter = StreamRangeIterator(req, stream)
 
         length_ = metadata.get('length')
         if length_ is not None:
@@ -571,13 +583,12 @@ class ObjectController(BaseObjectController):
         metadata = self.load_object_metadata(headers)
         oio_headers = {'X-oio-req-id': self.trans_id}
         try:
-            # FIXME(FVE): use 'properties' instead of 'metadata'
-            # as soon as we require oio>=4.2.0
             _chunks, _size, checksum, _meta = self._object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
                 mime_type=content_type, policy=policy, headers=oio_headers,
-                etag=req.headers.get('etag', '').strip('"'), metadata=metadata)
+                etag=req.headers.get('etag', '').strip('"'),
+                properties=metadata)
             # TODO(FVE): when oio-sds supports it, do that in a callback
             # passed to object_create (or whatever upload method supports it)
             footer_md = self.load_object_metadata(self._get_footers(req))
@@ -589,7 +600,7 @@ class ObjectController(BaseObjectController):
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
-        except (SourceReadTimeout, GreenSourceReadTimeout) as err:
+        except SourceReadTimeout as err:
             self.app.logger.warning(
                 _('ERROR Client read timeout (%s)'), err)
             self.app.logger.increment('client_timeouts')
@@ -604,9 +615,7 @@ class ObjectController(BaseObjectController):
             return HTTPUnprocessableEntity(request=req)
         except (exceptions.ServiceBusy, exceptions.OioTimeout):
             raise
-        # TODO(FVE): exceptions.NotFound is never raised from oio
-        # Remove when dependency is oio>=4.2.0
-        except (exceptions.NoSuchContainer, exceptions.NotFound):
+        except exceptions.NoSuchContainer:
             raise HTTPNotFound(request=req)
         except exceptions.ClientException as err:
             # 481 = CODE_POLICY_NOT_SATISFIABLE

@@ -19,8 +19,8 @@ from swift.common.swob import HTTPMethodNotAllowed, \
     HTTPNotFound, \
     HTTPNotModified, HTTPPreconditionFailed, HTTPServiceUnavailable
 
-from oio.common.exceptions import ServiceBusy, NoSuchContainer, NoSuchObject,\
-    OioTimeout
+from oio.common.exceptions import NoSuchContainer, NoSuchObject,\
+    OioTimeout, ServiceBusy, ServiceUnavailable
 try:
     # Since oio-sds 4.1.14
     from oio.common.exceptions import MethodNotAllowed
@@ -98,11 +98,11 @@ def handle_service_busy(fnc):
     def _service_busy_wrapper(self, req, *args, **kwargs):
         try:
             return fnc(self, req, *args, **kwargs)
-        except ServiceBusy as e:
+        except (ServiceBusy, ServiceUnavailable) as err:
             headers = dict()
             headers['Retry-After'] = '1'
             return HTTPServiceUnavailable(request=req, headers=headers,
-                                          body=e.message)
+                                          body=err.message)
     return _service_busy_wrapper
 
 
