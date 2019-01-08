@@ -22,6 +22,9 @@ from swift.common.wsgi import reiterate
 from swift.common.request_helpers import get_sys_meta_prefix
 from oio.common.autocontainer import ContainerBuilder
 
+from swift.proxy.controllers.base import headers_to_container_info, \
+    headers_to_account_info, get_cache_key
+
 
 class AutoContainerBase(object):
 
@@ -30,7 +33,7 @@ class AutoContainerBase(object):
 
     def __init__(self, app, acct,
                  strip_v1=False, account_first=False, swift3_compat=False,
-                 stop_at_first_match=True):
+                 stop_at_first_match=True, skip_metadata=False):
         self.app = app
         self.account = acct
         self.bypass_header_key = ("HTTP_" +
@@ -39,6 +42,7 @@ class AutoContainerBase(object):
         self.account_first = account_first
         self.swift3_compat = swift3_compat
         self.strip_v1 = strip_v1
+        self.skip_metadata = skip_metadata
         if (not stop_at_first_match and
                 not hasattr(self.con_builder, 'alternatives')):
             raise ValueError("Disabling 'stop_at_first_match' parameter "
@@ -202,6 +206,21 @@ class AutoContainerBase(object):
             env_modifier=modify_copy_from,
             alt_checker=check_container_obj)
 
+    def _mock_infocache(self, env):
+        if not self.skip_metadata:
+            return
+
+        req = Request(env)
+        # don't fake obj metadata
+        account, container, _ = self._extract_path(req.path_info)
+        req.environ.setdefault('swift.infocache', {})
+        req.environ['swift.infocache'][get_cache_key(account)] = \
+            headers_to_account_info({}, 0)
+        if container:
+            key = get_cache_key(account, container)
+            req.environ['swift.infocache'][key] = \
+                headers_to_container_info({}, 0)
+
     def _call(self, env, start_response):
         """
         Run the retry loop (regular operations).
@@ -221,6 +240,8 @@ class AutoContainerBase(object):
 
     def __call__(self, env, start_response):
         self._save_bucket_name(env)
+
+        self._mock_infocache(env)
 
         if self.should_bypass(env):
             return self.app(env, start_response)

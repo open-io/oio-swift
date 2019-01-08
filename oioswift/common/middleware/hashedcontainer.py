@@ -27,9 +27,10 @@ class HashedContainerMiddleware(AutoContainerBase):
 
     def __init__(self, app, ns, acct, proxy=None,
                  strip_v1=False, account_first=False,
-                 **kwargs):
+                 skip_metadata=False, **kwargs):
         super(HashedContainerMiddleware, self).__init__(
-            app, acct, strip_v1=strip_v1, account_first=account_first)
+            app, acct, strip_v1=strip_v1, account_first=account_first,
+            skip_metadata=skip_metadata)
         conf = {"namespace": ns, "proxyd_url": proxy}
         try:
             # New API (openio-sds >= 4.2)
@@ -64,10 +65,12 @@ def filter_factory(global_conf, **local_config):
 
     strip_v1 = config_true_value(local_config.pop('strip_v1', False))
     account_first = config_true_value(local_config.pop('account_first', False))
+    skip_metadata = config_true_value(local_config.pop('skip_metadata', False))
 
     def factory(app):
         return HashedContainerMiddleware(app, ns, acct, proxy,
                                          strip_v1=strip_v1,
                                          account_first=account_first,
+                                         skip_metadata=skip_metadata,
                                          **local_config)
     return factory
