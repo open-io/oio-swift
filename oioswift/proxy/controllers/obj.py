@@ -372,8 +372,10 @@ class ObjectController(BaseObjectController):
                 return aresp
 
         old_slo_manifest = None
+        old_slo_manifest_etag = None
         # If versioning is disabled, we must check if the object exists.
-        # If it's a SLO, we will have to delete the parts if the current
+        # If it's a NEW SLO (we must check it is not the same manifest),
+        # we will have to delete the parts if the current
         # operation is a success.
         if (self.app.delete_slo_parts and
                 not container_info['sysmeta'].get('versions-location', None)):
@@ -385,6 +387,7 @@ class ObjectController(BaseObjectController):
                     manifest_req = make_subrequest(manifest_env, 'GET')
                     manifest_resp = manifest_req.get_response(self.app)
                     old_slo_manifest = json.loads(manifest_resp.body)
+                    old_slo_manifest_etag = dest_info.get('etag')
             except Exception as exc:
                 self.app.logger.warn(('Failed to check existence of %s. If '
                                       'overwriting a SLO, old parts may '
@@ -411,9 +414,10 @@ class ObjectController(BaseObjectController):
         headers = self._prepare_headers(req)
         with closing_if_possible(data_source):
             resp = self._store_object(req, data_source, headers)
-        if old_slo_manifest and resp.is_success:
+        if (resp.is_success and
+                old_slo_manifest and resp.etag != old_slo_manifest_etag):
             self.app.logger.debug(
-                'Previous object %s was a SLO, deleting parts',
+                'Previous object %s was a different SLO, deleting parts',
                 req.path)
             self._delete_slo_parts(req, old_slo_manifest)
         return resp

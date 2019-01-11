@@ -25,11 +25,18 @@ ${AWS} s3 cp "$MULTI_FILE" "s3://$BUCKET/obj"
 echo "Counting segments with openio CLI"
 SEG_COUNT=$(openio object list ${BUCKET}+segments -f value | wc -l)
 
+echo "Changing object metadata"
+${AWS} s3api put-object-acl --acl public-read --bucket ${BUCKET} --key "obj"
+
+echo "Counting segments with openio CLI (should be the same, we just changed metadata)"
+SEG_COUNT2=$(openio object list ${BUCKET}+segments -f value | wc -l)
+[ "$SEG_COUNT" -eq "$SEG_COUNT2" ]
+
 dd if=/dev/zero of="${MULTI_FILE}" count=1 bs=1M oflag=append conv=notrunc
 echo "Overwriting with a bigger object"
 ${AWS} s3 cp "$MULTI_FILE" "s3://$BUCKET/obj"
 
-echo "Counting segments with openio CLI (should be the same)"
+echo "Counting segments with openio CLI (should be the same, object is just slightly bigger)"
 SEG_COUNT2=$(openio object list ${BUCKET}+segments -f value | wc -l)
 # [ "$SEG_COUNT" -eq "$SEG_COUNT2" ]
 [ $(echo "$SEG_COUNT * 2" | bc -l) -eq "$SEG_COUNT2" ] # FIXME(adu)
