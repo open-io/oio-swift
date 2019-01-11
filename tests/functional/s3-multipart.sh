@@ -23,31 +23,58 @@ echo "Uploading a multipart object in bucket ${BUCKET}"
 ${AWS} s3 cp "$MULTI_FILE" "s3://$BUCKET/obj"
 
 echo "Counting segments with openio CLI"
-SEG_COUNT=$(openio object list ${BUCKET}+segments -f value | wc -l)
+SEGS=$(openio object list ${BUCKET}+segments -f value)
+[ -n "$SEGS" ]
+SEG_COUNT=$(echo -n "${SEGS}" | wc -l)
+
+echo "Fetching this object"
+${AWS} s3 cp "s3://$BUCKET/obj" obj
+diff "${MULTI_FILE}" obj
 
 echo "Changing object metadata"
 ${AWS} s3api put-object-acl --acl public-read --bucket ${BUCKET} --key "obj"
 
+ACL=$(${AWS} s3api get-object-acl --bucket ${BUCKET} --key "obj")
+[[ "${ACL}" == *'"Permission": "READ"'* ]]
+
 echo "Counting segments with openio CLI (should be the same, we just changed metadata)"
-SEG_COUNT2=$(openio object list ${BUCKET}+segments -f value | wc -l)
+SEGS2=$(openio object list ${BUCKET}+segments -f value)
+[ -n "$SEGS2" ]
+SEG_COUNT2=$(echo -n "${SEGS2}" | wc -l)
 [ "$SEG_COUNT" -eq "$SEG_COUNT2" ]
+[ "$SEGS" == "$SEGS2" ]
+
+echo "Fetching this object"
+${AWS} s3 cp "s3://$BUCKET/obj" obj
+diff "${MULTI_FILE}" obj
 
 dd if=/dev/zero of="${MULTI_FILE}" count=1 bs=1M oflag=append conv=notrunc
 echo "Overwriting with a bigger object"
 ${AWS} s3 cp "$MULTI_FILE" "s3://$BUCKET/obj"
 
 echo "Counting segments with openio CLI (should be the same, object is just slightly bigger)"
-SEG_COUNT2=$(openio object list ${BUCKET}+segments -f value | wc -l)
-# [ "$SEG_COUNT" -eq "$SEG_COUNT2" ]
-[ $(echo "$SEG_COUNT * 2" | bc -l) -eq "$SEG_COUNT2" ] # FIXME(adu)
+SEGS3=$(openio object list ${BUCKET}+segments -f value)
+[ -n "$SEGS3" ]
+SEG_COUNT3=$(echo -n "${SEGS3}" | wc -l)
+[ "$SEG_COUNT2" -eq "$SEG_COUNT3" ]
+[ "$SEGS2" != "$SEGS3" ]
+
+echo "Fetching this bigger object"
+${AWS} s3 cp "s3://$BUCKET/obj" obj
+diff "${MULTI_FILE}" obj
 
 echo "Overwriting with a small object (not multipart)"
 ${AWS} s3 cp "$SMALL_FILE" "s3://$BUCKET/obj"
 
 echo "Counting segments with openio CLI (should be zero)"
-SEG_COUNT3=$(openio object list ${BUCKET}+segments -f value | wc -l)
-# [ "$SEG_COUNT3" -eq "0" ]
-[ "$SEG_COUNT3" -eq "$SEG_COUNT2" ] # FIXME(adu)
+SEGS4=$(openio object list ${BUCKET}+segments -f value)
+[ -z "$SEGS4" ]
+SEG_COUNT4=$(echo -n "${SEGS4}" | wc -l)
+[ "$SEG_COUNT4" -eq "0" ]
+
+echo "Fetching this small object"
+${AWS} s3 cp "s3://$BUCKET/obj" obj
+diff "${SMALL_FILE}" obj
 
 echo
 echo "Cleanup"
@@ -55,3 +82,4 @@ echo "-------"
 ${AWS} s3 rm "s3://$BUCKET/obj"
 ${AWS} s3 rb "s3://$BUCKET"
 rm "$MULTI_FILE"
+rm obj
