@@ -1,5 +1,8 @@
 #!/bin/bash
 
+export OIO_NS="${1:-OPENIO}"
+export OIO_ACCOUNT="${2:-AUTH_demo}"
+
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 
 BUCKET="bucket-$RANDOM"
@@ -7,6 +10,7 @@ BUCKET="bucket-$RANDOM"
 OBJ_0="/etc/magic"
 OBJ_1="/etc/passwd"
 OBJ_2="/etc/fstab"
+MULTI_FILE=$(mktemp -t multipart_XXXXXX.dat)
 
 OBJ_0_EXPECTED_MD5=$(md5sum "$OBJ_0" | cut -d ' ' -f 1)
 OBJ_1_EXPECTED_MD5=$(md5sum "$OBJ_1" | cut -d ' ' -f 1)
@@ -351,5 +355,44 @@ ${AWS} s3api delete-object --bucket ${BUCKET} --key v1/v2/v3/obj --version-id "$
 ${AWS} s3api delete-object --bucket ${BUCKET} --key v1/v2/v3/obj --version-id "${OBJ_0_ID}"
 
 
+echo "######################################"
+echo "### Deletion of large object parts ###"
+echo "######################################"
+
+echo "Uploading a large object"
+dd if=/dev/zero of="${MULTI_FILE}" count=21 bs=1M
+${AWS} s3 cp "$MULTI_FILE" "s3://$BUCKET/obj"
+
+echo "Counting segments with openio CLI"
+SEGS=$(openio object list ${BUCKET}+segments -f value)
+[ -n "$SEGS" ]
+SEG_COUNT=$(echo -n "${SEGS}" | wc -l)
+
+OBJ_VER=$(${AWS} s3api head-object --bucket ${BUCKET} --key obj | jq -r ".VersionId")
+
+echo "Deleting the object (should create a delete marker)"
+${AWS} s3 rm "s3://$BUCKET/obj"
+
+echo "Counting segments with openio CLI (should be the same, the object is still there)"
+SEGS2=$(openio object list ${BUCKET}+segments -f value)
+[ -n "$SEGS2" ]
+SEG_COUNT2=$(echo -n "${SEGS2}" | wc -l)
+[ "$SEG_COUNT" -eq "$SEG_COUNT2" ]
+[ "$SEGS" == "$SEGS2" ]
+
+echo "Explicitly deleting the old version of the object"
+${AWS} s3api delete-object --bucket ${BUCKET} --key obj --version-id "$OBJ_VER"
+
+echo "Counting segments with openio CLI (should be zero, manifest has been deleted)"
+SEGS4=$(openio object list ${BUCKET}+segments -f value)
+[ -z "$SEGS4" ]
+SEG_COUNT4=$(echo -n "${SEGS4}" | wc -l)
+[ "$SEG_COUNT4" -eq "0" ]
+
+echo "Deleting the delete marker (without specifying any version)"
+${AWS} s3 rm "s3://$BUCKET/obj"
+
 echo "*** Deleting the bucket ***"
 ${AWS} s3 rb "s3://${BUCKET}"
+
+rm "$MULTI_FILE"
