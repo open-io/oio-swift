@@ -8,6 +8,7 @@ install_deps
 compile_sds
 run_sds
 configure_aws
+configure_s3cmd
 
 RET=0
 
@@ -15,7 +16,7 @@ run_functional_test s3-container-hierarchy.cfg s3_container_hierarchy_v2.sh
 run_functional_test s3-fastcopy.cfg s3-acl-metadata.sh
 # Run all suites in the same environment.
 # They do not share buckets so this should be OK.
-run_functional_test s3-default.cfg s3-acl-metadata.sh s3-versioning.sh s3-tagging.sh s3-multipart.sh
+run_functional_test s3-default.cfg s3-acl-metadata.sh s3-versioning.sh s3-tagging.sh s3-multipart.sh s3-s3cmd.sh
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET
