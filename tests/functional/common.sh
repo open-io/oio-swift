@@ -79,6 +79,26 @@ s3 =
 EOF
 }
 
+function configure_s3cmd() {
+    cat <<EOF >"$HOME/.s3cfg"
+[default]
+access_key = demo:demo
+bucket_location = us-east-1
+default_mime_type = binary/octet-stream
+host_base = localhost:5000
+host_bucket = no
+multipart_chunk_size_mb = 5
+multipart_max_chunks = 10000
+preserve_attrs = True
+progress_meter = False
+secret_key = DEMO_PASS
+signature_v2 = True
+signurl_use_https = False
+use_https = False
+verbosity = WARNING
+EOF
+}
+
 function configure_oioswift() {
     sed -i "s/USER/$(id -un)/g" "$1"
 }
