@@ -331,7 +331,8 @@ class ObjectController(BaseObjectController):
         try:
             self.app.storage.object_set_properties(
                 self.account_name, self.container_name, self.object_name,
-                metadata, clear=True, headers=oio_headers)
+                metadata, clear=True, headers=oio_headers,
+                version=req.environ.get('oio.query', {}).get('version'))
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
         resp = HTTPAccepted(request=req)
@@ -462,48 +463,24 @@ class ObjectController(BaseObjectController):
         metadata = self.load_object_metadata(headers)
         oio_headers = {'X-oio-req-id': self.trans_id}
         # FIXME(FVE): use object_show, cache in req.environ
-        props = storage.object_get_properties(from_account, container, obj)
+        version = req.environ.get('oio.query', {}).get('version')
+        props = storage.object_get_properties(from_account, container, obj,
+                                              headers=oio_headers,
+                                              version=version)
         if props['properties'].get(SLO, None):
             raise Exception("Fast Copy with SLO is unsupported")
-
-            if ranges is None:
-                raise HTTPInternalServerError(request=req,
-                                              body="LINK a MPU requires range")
-            self.app.logger.debug("LINK, original object is a SLO")
-
-            # retrieve manifest
-            _, data = storage.object_fetch(from_account, container, obj)
-            manifest = json.loads("".join(data))
-            offset = 0
-            # identify segment to copy
-            for entry in manifest:
-                if (ranges[0] == offset and
-                        ranges[1] + 1 == offset + entry['bytes']):
-                    _, container, obj = entry['name'].split('/', 2)
-                    checksum = entry['hash']
-                    self.app.logger.info(
-                        "LINK SLO (%s,%s,%s) TO (%s,%s,%s)",
-                        from_account, self.container_name,
-                        self.object_name,
-                        self.account_name, container, obj)
-                    break
-                offset += entry['bytes']
-            else:
-                raise HTTPInternalServerError(
-                    request=req, body="no segment matching range")
         else:
-            checksum = props['hash']
             if ranges:
                 raise HTTPInternalServerError(
                     request=req, body="no range supported with single object")
 
         try:
             # TODO check return code (values ?)
-            storage.object_fastcopy(
+            link_meta = storage.object_link(
                 from_account, container, obj,
                 self.account_name, self.container_name, self.object_name,
                 headers=oio_headers, properties=metadata,
-                properties_directive='REPLACE')
+                properties_directive='REPLACE', target_version=version)
         # TODO(FVE): this exception catching block has to be refactored
         # TODO check which ones are ok or make non sense
         except exceptions.Conflict:
@@ -536,7 +513,7 @@ class ObjectController(BaseObjectController):
                 {'path': req.path})
             raise HTTPInternalServerError(request=req)
 
-        resp = HTTPCreated(request=req, etag=checksum)
+        resp = HTTPCreated(request=req, etag=link_meta['hash'])
         return resp
 
     def _get_footers(self, req):

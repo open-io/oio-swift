@@ -199,7 +199,7 @@ class OioVersionedWritesMiddleware(vw.VersionedWritesMiddleware):
                 return error_response(env, start_response)
         elif (obj and (req.method in ('PUT', 'DELETE') and
                        not req.environ.get('swift.post_as_copy') or
-                       req.method in ('HEAD', 'GET'))):
+                       req.method in ('HEAD', 'GET', 'POST'))):
             try:
                 return self.object_request(
                     req, api_version, account, container, obj,
