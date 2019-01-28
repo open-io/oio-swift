@@ -70,6 +70,10 @@ class AutoContainerBase(object):
             if obj is not None and self.swift3_compat:
                 container, tail = split_path('/' + obj, 1, 2, True)
                 obj = tail
+
+            # Do not yield an empty object name
+            if not obj:
+                obj = None
         except ValueError:
             raise HTTPBadRequest()
 
@@ -130,8 +134,14 @@ class AutoContainerBase(object):
         query = parse_qs(orig_env.get('QUERY_STRING', ''), True)
         account, container, obj = self._extract_path(path_to_modify)
         is_container_req = container is not None and obj is None
+        is_service_req = (account is not None and
+                          container is None and
+                          obj is None)
         if is_container_req and 'prefix' in query:
             obj = query['prefix'][0]
+        elif is_service_req:
+            env = env_modifier(orig_env, (account, ))
+            return self.app(env, start_response)
         for alt in self._alternatives(account, container, obj):
             if alt_checker and not alt_checker(alt):
                 return self.app(orig_env, start_response)
