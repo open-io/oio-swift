@@ -31,19 +31,24 @@ class VerbAclMiddleware(object):
 
         self.verb_acl = {}
         verb_acl = conf.get('verb_acl', None)
-        if not verb_acl:
-            raise ValueError('verb_acl: Not initialized in the config file.')
+        if verb_acl is None:
+            raise ValueError(
+                'verb_acl: missing "verb_acl" configuration entry')
         for acl in verb_acl.split(';'):
+            if not acl:
+                continue
             if acl.count(':') != 1:
-                raise ValueError('verb_acl: Bad format in the config file')
+                raise ValueError('verb_acl: bad format: "%s"' % acl)
             methods, blocks = acl.split(':', 1)
             for method in methods.split(','):
                 if not method:
-                    raise ValueError('verb_acl: Bad format in the config file')
+                    raise ValueError(
+                        'verb_acl: bad format: missing method: "%s"' % acl)
                 for block in blocks.split(','):
                     if not block:
                         raise ValueError(
-                            'verb_acl: Bad format in the config file')
+                            'verb_acl: bad format: empty address block: "%s"' %
+                            acl)
                     self.verb_acl.setdefault(method.upper(), []).append(block)
         self.logger.debug("Verb ACL: " + str(self.verb_acl))
 
