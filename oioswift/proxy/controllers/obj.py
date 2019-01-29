@@ -329,9 +329,13 @@ class ObjectController(BaseObjectController):
         metadata = self.load_object_metadata(headers)
         oio_headers = {'X-oio-req-id': self.trans_id}
         try:
+            # Genuine Swift clears all properties on POST requests.
+            # But for convenience, keep them when the request originates
+            # from swift3.
+            clear = req.environ.get('swift.source') != 'S3'
             self.app.storage.object_set_properties(
                 self.account_name, self.container_name, self.object_name,
-                metadata, clear=True, headers=oio_headers,
+                metadata, clear=clear, headers=oio_headers,
                 version=req.environ.get('oio.query', {}).get('version'))
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)

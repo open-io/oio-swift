@@ -392,6 +392,30 @@ SEG_COUNT4=$(echo -n "${SEGS4}" | wc -l)
 echo "Deleting the delete marker (without specifying any version)"
 ${AWS} s3 rm "s3://$BUCKET/obj"
 
+
+echo "######################################"
+echo "### Metadata modification          ###"
+echo "######################################"
+
+echo "Uploading a large object"
+${AWS} s3 cp "$MULTI_FILE" "s3://$BUCKET/mdobj"
+
+echo "Setting tags"
+${AWS} s3api put-object-tagging --bucket "$BUCKET" --key "mdobj" --tagging 'TagSet=[{Key=organization,Value=marketing}]'
+
+echo "Checking the object did not lose its SLO metadata"
+OBJ_META=$(openio object show ${BUCKET} mdobj -f yaml | grep meta)
+[ "$(echo "$OBJ_META" | grep -c 'x-static-large-object')" -eq 1 ]
+[ "$(echo "$OBJ_META" | grep -c 'x-object-sysmeta-slo')" -eq 2 ]
+[ "$(echo "$OBJ_META" | grep -c 'x-object-sysmeta-swift3-acl')" -eq 1 ]
+[ "$(echo "$OBJ_META" | grep -c 'x-object-sysmeta-swift3-tagging')" -eq 1 ]
+
+OBJ_VER=$(${AWS} s3api head-object --bucket ${BUCKET} --key mdobj | jq -r ".VersionId")
+# TODO(FVE): set metadata on old versions of the object
+
+echo  "Deleting the object"
+${AWS} s3api delete-object --bucket $BUCKET --key mdobj --version-id "$OBJ_VER"
+
 echo "*** Deleting the bucket ***"
 ${AWS} s3 rb "s3://${BUCKET}"
 
