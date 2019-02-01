@@ -115,7 +115,7 @@ function run_functional_test() {
     local test_suites=$(for suite in $*; do echo "tests/functional/${suite}"; done)
     configure_oioswift $conf
 
-    coverage run -p runserver.py $conf -v &
+    coverage run -p runserver.py $conf -v 2>&1 | tee /tmp/journal.log &
     sleep 1
     PID=$(jobs -p)
 
