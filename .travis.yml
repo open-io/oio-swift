@@ -17,6 +17,8 @@ env:
     - TEST_SUITE=encryption
     - TEST_SUITE=encryption SDS_BRANCH=master
     - TEST_SUITE=encryption SDS_BRANCH=4.2.x SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=swift
+    - TEST_SUITE=swift SDS_BRANCH=4.2.x SWIFT_BRANCH=stable/pike
     - TEST_SUITE=ns-wide-versioning
     - TEST_SUITE=ns-wide-versioning SDS_BRANCH=4.2.x SWIFT_BRANCH=stable/pike
     - TEST_SUITE=unit
