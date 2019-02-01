@@ -122,10 +122,10 @@ function run_functional_test() {
     for suite in $test_suites
     do
       if bash "$suite"; then
-        printf "${GREEN}\n${suite}: OK\n${NO_COLOR}"
+        printf "${GREEN}\n${suite}: OK\n${NO_COLOR} ($conf)"
       else
         RET=1
-        printf "${RED}\n${suite}: FAILED\n${NO_COLOR}"
+        printf "${RED}\n${suite}: FAILED\n${NO_COLOR} ($conf)"
       fi
     done
 
