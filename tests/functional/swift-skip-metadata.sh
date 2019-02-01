@@ -11,7 +11,7 @@ sleep 5
 curl -XPUT http://localhost:5000/example/pass --data-binary @/etc/magic
 
 # read object
-curl -XGET http://localhost:5000/example/pass --data-binary @/etc/magic --output /dev/null
+curl -XGET http://localhost:5000/example/pass
 
 # overwrite object
 curl -XPUT http://localhost:5000/example/pass --data-binary @/etc/magic
