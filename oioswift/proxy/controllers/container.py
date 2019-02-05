@@ -85,15 +85,15 @@ class ContainerController(SwiftContainerController):
     def convert_policy(self, resp):
         if 'X-Backend-Storage-Policy-Index' in resp.headers and \
                 is_success(resp.status_int):
-                    policy = self.app.POLICIES.get_by_index(
-                        resp.headers['X-Backend-Storage-Policy-Index'])
-                    if policy:
-                        resp.headers['X-Storage-Policy'] = policy.name
-                    else:
-                        self.app.logger.error(
-                            'Could not translate %s (%r) from %r to policy',
-                            'X-Backend-Storage-Policy-Index',
-                            resp.headers['X-Backend-Storage-Policy-Index'])
+            policy = self.app.POLICIES.get_by_index(
+                resp.headers['X-Backend-Storage-Policy-Index'])
+            if policy:
+                resp.headers['X-Storage-Policy'] = policy.name
+            else:
+                self.app.logger.error(
+                    'Could not translate %s (%r) from %r to policy',
+                    'X-Backend-Storage-Policy-Index',
+                    resp.headers['X-Backend-Storage-Policy-Index'])
         return resp
 
     def get_metadata_resp_headers(self, meta):
