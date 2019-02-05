@@ -41,6 +41,21 @@ echo ${OUT} | grep small
 echo ${OUT} | grep root
 echo ${OUT} | grep dir1/dir2/object
 
+# LISTING WITH : (simulate cloudberry)
+
+d=$(date +%s)
+${AWS} s3api put-object --bucket ${BUCKET} --key key1/key2/dot:/${d}/
+
+OUT=$( ${AWS} s3 ls s3://${BUCKET}/key1/key2 )
+echo ${OUT} | grep key2/
+OUT=$( ${AWS} s3 ls s3://${BUCKET}/key1/key2/dot )
+echo ${OUT} | grep dot
+
+OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} )
+echo ${OUT} | grep dot
+OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} --prefix key1/key2/dot:/${d}/ )
+echo ${OUT} | grep dot
+
 
 # LISTING WITH SPACE
 
@@ -108,7 +123,7 @@ ${AWS} s3api put-object --bucket ${BUCKET} --key d1/d2/d3/d4/o2 --body aa
 ${AWS} s3api put-object --bucket ${BUCKET} --key v1/o2 --body aa
 sleep 0.5
 CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
-[ "$CNT" -eq 10 ]
+[ "$CNT" -eq 11 ]
 
 # COPY S3<=>S3
 
