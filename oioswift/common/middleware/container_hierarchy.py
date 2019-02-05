@@ -268,7 +268,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         prefix_key = self.key(account, container, "")
         key = self.key(account, container, '*', prefix) + '*'
-        matches = [k[len(prefix_key):].split(':', 2)
+        matches = [k[len(prefix_key):].split(':', 1)
                    for k in self.conn.keys(key)]
 
         LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
