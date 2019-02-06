@@ -389,10 +389,20 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 if len(item) > 32:
                     try:
                         base64.b64decode(item)
+                        # CloudBerry: mitigate number of container created
+                        if i >= 3:
+                            if obj_parts[i-3] == obj_parts[i-1] + ':':
+                                return sep.join(obj_parts[:i-3]), i-2
                         return sep.join(obj_parts[:i-1]), i
                     except TypeError:
                         pass
             LOG.error("MPU fails to detect UploadId")
+
+        # CloudBerry: mitigate number of container created
+        if len(obj_parts) >= 3:
+            if obj_parts[-1] + ':' == obj_parts[-3]:
+                return sep.join(obj_parts[:-3]), -2
+
         return sep.join(obj_parts[:-1]), len(obj_parts)
 
     def _fake_container_and_obj(self, container, obj_parts, is_listing=False,
