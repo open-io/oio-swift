@@ -57,6 +57,41 @@ OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} --prefix key1/key2/dot:/${d}
 echo ${OUT} | grep dot
 
 
+# UPLOAD WITH VERSIONING LIKE CloudBerry
+
+
+for subpath in "CBB_DESKTOP-1LC5CCV/C:/Bombay/Logs" ""; do
+
+    echo "############# PATH: ${subpath} #############"
+    subpath2=
+    if [ ! -z ${subpath} ];then
+        subpath2="${subpath}/"
+    fi
+    echo "##### Single Object"
+    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier:/${d}/fichier
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier:/${d}/fichier /tmp/fichier
+    [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    cntpath=$(echo ${subpath}| sed  's~/~%2F~g')
+    if [ -n "${cntpath}" ]; then
+        openio object list ${BUCKET}%2F${cntpath} -f csv --quote none -c Name --oio-account AUTH_demo | grep fichier
+    else
+        openio object list ${BUCKET} -f csv --quote none -c Name --oio-account AUTH_demo  | grep fichier
+    fi
+
+    echo "##### MPU Object"
+    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier:/${d}/fichier
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier:/${d}/fichier /tmp/fichier
+    [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    cntpath=$(echo ${subpath}| sed  's~/~%2F~g')
+    if [ -n "${cntpath}" ]; then
+        openio object list ${BUCKET}+segments%2F${cntpath} -f csv --quote none -c Name --oio-account AUTH_demo | grep fichier
+    else
+        openio object list ${BUCKET}+segments -f csv --quote none -c Name --oio-account AUTH_demo | grep fichier
+    fi
+done
+
 # LISTING WITH SPACE
 
 ${AWS} s3api put-object --bucket ${BUCKET} --key "directory 1/directory 2/object" --body /etc/passwd
@@ -123,7 +158,7 @@ ${AWS} s3api put-object --bucket ${BUCKET} --key d1/d2/d3/d4/o2 --body aa
 ${AWS} s3api put-object --bucket ${BUCKET} --key v1/o2 --body aa
 sleep 0.5
 CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
-[ "$CNT" -eq 11 ]
+[ "$CNT" -eq 13 ]
 
 # COPY S3<=>S3
 
@@ -144,6 +179,8 @@ ${AWS} s3 cp s3://${BCK1}/root s3://${BCK2}/d1/d2/d3/bigfile
 
 # COPY SAME BUCKET
 ${AWS} s3 cp s3://${BCK1}/root s3://${BCK1}/same_bucket/bigfile
+
+
 
 echo "OK"
 
