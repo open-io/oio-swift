@@ -89,7 +89,8 @@ class OioContainerHierarchy(unittest.TestCase):
         self.assertEqual(resp[0], '200 OK')
 
     def test_recursive_listing(self):
-        self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt:d1/d2/d3/'])
+        self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt'])
+        self.ch.conn.hkeys = mock.MagicMock(return_value=['d1/d2/d3/'])
         self.app.register(
             'GET',
             '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=10000&format=json',
@@ -104,9 +105,12 @@ class OioContainerHierarchy(unittest.TestCase):
 
         data = json.loads(resp[2])
         self.assertEqual(data[0]['name'], 'd1/d2/d3/o')
+        self.ch.conn.hkeys.assert_called_with('CS:a:cnt')
 
     def test_listing_with_space(self):
-        self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt:d 1/d2/'])
+        self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt'])
+        self.ch.conn.hkeys = mock.MagicMock(return_value=['d 1/d2/'])
+
         self.app.register(
             'GET',
             '/v1/a/c%2Fd 1%2Fd2?prefix=&limit=10000&format=json',
@@ -121,6 +125,7 @@ class OioContainerHierarchy(unittest.TestCase):
 
         data = json.loads(resp[2])
         self.assertEqual(data[0]['name'], 'd 1/d2/o')
+        self.ch.conn.hkeys.assert_called_with('CS:a:cnt')
 
     def test_global_listing(self):
         self.app.register(
@@ -137,7 +142,7 @@ class OioContainerHierarchy(unittest.TestCase):
         req = Request.blank('/v1/a/c/d1/d2/d3/o', method='PUT')
         resp = self.call_ch(req)
         self.assertEqual(resp[0], '201 Created')
-        self.assertIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
+        self.assertIn('d1/d2/d3/', self.ch.conn._keys['CS:a:c:cnt'])
 
         self.app.register(
             'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=1&format=json',
@@ -153,7 +158,7 @@ class OioContainerHierarchy(unittest.TestCase):
         resp = self.call_ch(req)
 
         self.assertEqual(resp[0], '204 No Content')
-        self.assertIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
+        self.assertIn('d1/d2/d3/', self.ch.conn._keys['CS:a:c:cnt'])
 
         self.app.register(
             'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=1&format=json',
@@ -168,15 +173,17 @@ class OioContainerHierarchy(unittest.TestCase):
     def test_fake_directory(self):
         req = Request.blank('/v1/a/container/d2/d3/', method='PUT')
         resp = self.call_ch(req)
-        self.assertIn('CS:a:container:obj:d2/d3/', self.ch.conn._keys)
+        self.assertIn('d2/d3/', self.ch.conn._keys['CS:a:container:obj'])
         req = Request.blank('/v1/a/container/d2/d3/', method='DELETE')
         resp = self.call_ch(req)
         self.assertEqual(resp[0], "204 No Content")
-        self.assertNotIn('CS:a:container:obj:d2/d3/', self.ch.conn._keys)
+        self.assertNotIn('d2/d3/', self.ch.conn._keys['CS:a:container:obj'])
 
     def _listing(self, is_recursive):
         self.ch.conn.keys = mock.MagicMock(
-            return_value=['CS:a:bucket:cnt:d1/', 'CS:a:bucket:cnt:d1/d2/'])
+            return_value=['CS:a:bucket:cnt'])
+        self.ch.conn.hkeys = mock.MagicMock(
+            return_value=['d1/', 'd1/d2/'])
         self.ch.conn.exist = mock.MagicMock(return_value=True)
         self.app.register(
             'GET',
@@ -216,7 +223,9 @@ class OioContainerHierarchy(unittest.TestCase):
 
     def test_listing_root_container(self):
         self.ch.conn.keys = mock.MagicMock(
-            return_value=['CS:a:bucket:cnt:d1/'])
+            return_value=['CS:a:bucket:cnt'])
+        self.ch.conn.hkeys = mock.MagicMock(
+            return_value=['d1/'])
         self.app.register(
             'GET',
             '/v1/a/bucket?prefix=d&limit=10000&format=json',
@@ -235,9 +244,9 @@ class OioContainerHierarchy(unittest.TestCase):
 
     def test_listing_with_marker(self):
         self.ch.conn.keys = mock.MagicMock(
-            return_value=['CS:a:bucket:cnt:d1/',
-                          'CS:a:bucket:cnt:d2/',
-                          ])
+            return_value=['CS:a:bucket:cnt'])
+        self.ch.conn.hkeys = mock.MagicMock(
+            return_value=['d1/', 'd2/'])
         req = Request.blank('/v1/a/bucket?limit=10&delimiter=%2F&marker=d1/',
                             method='GET')
         resp = self.call_ch(req)
@@ -248,10 +257,9 @@ class OioContainerHierarchy(unittest.TestCase):
 
     def test_listing_with_marker_multi_container(self):
         self.ch.conn.keys = mock.MagicMock(
-            return_value=['CS:a:bucket:cnt:d1/',
-                          'CS:a:bucket:cnt:d2/',
-                          ])
-
+            return_value=['CS:a:bucket:cnt'])
+        self.ch.conn.hkeys = mock.MagicMock(
+            return_value=['d1/', 'd2/'])
         # with marker aa (as we inspect d1/)
         self.app.register(
             'GET',
@@ -279,10 +287,8 @@ class OioContainerHierarchy(unittest.TestCase):
         self.assertIn('d2/d0', names)
 
     def test_duplicate_obj_cnt(self):
-        self.ch.conn.keys = mock.MagicMock(
-            return_value=['CS:a:bucket:cnt:d1/cnt/',
-                          'CS:a:bucket:obj:d1/obj/',
-                          ])
+        self.ch.conn.hset('CS:a:bucket:cnt', 'd1/cnt', 1)
+        self.ch.conn.hset('CS:a:bucket:obj', 'd1/obj', 1)
         req = Request.blank('/v1/a/bucket?limit=10&delimiter=%2F&marker=d1/',
                             method='GET')
         resp = self.call_ch(req)
@@ -346,7 +352,9 @@ class OioContainerHierarchy(unittest.TestCase):
 
     def test_upload_in_progress(self):
         self.ch.conn.keys = mock.MagicMock(
-            return_value=['CS:a:bucket+segments:cnt:d1/d2/d3/'])
+            return_value=['CS:a:bucket+segments:cnt'])
+        self.ch.conn.hkeys = mock.MagicMock(
+            return_value=['d1/d2/d3/'])
         upload = ["obj/YmYwY2I1ZDYtNjMyYi00OGNiLWEzMzEtZDdhYTk0ODZkNWU2",
                   "root/MzNkYWZlNjItNjg3Yy00ZmIyLWIwOGYtOTA2OGVlZTA2MzA5"]
         self.app.register(
