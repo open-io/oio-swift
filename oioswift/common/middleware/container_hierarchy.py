@@ -467,7 +467,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         for obj in items:
             if 'name' in obj:
-                obj['name'] = obj_prefix + obj['name']
+                obj['name'] = obj_prefix.decode('utf-8') + obj['name']
                 yield obj
 
     def should_bypass(self, env):

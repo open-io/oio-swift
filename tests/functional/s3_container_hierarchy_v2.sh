@@ -180,7 +180,10 @@ ${AWS} s3 cp s3://${BCK1}/root s3://${BCK2}/d1/d2/d3/bigfile
 # COPY SAME BUCKET
 ${AWS} s3 cp s3://${BCK1}/root s3://${BCK1}/same_bucket/bigfile
 
+# COPY WITF UTF-8 PATH
+${AWS} s3 cp s3://${BCK1}/root s3://${BCK1}/répertoire/bigfile
 
+${AWS} s3api list-objects --bucket ${BCK1}
 
 echo "OK"
 
