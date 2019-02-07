@@ -71,14 +71,26 @@ class RedisDb(object):
     def set(self, key, val):
         return self.conn.set(key, val)
 
+    def hset(self, key, path, val):
+        return self.conn.hset(key, path, val)
+
     def delete(self, key):
         return self.conn.delete(key)
+
+    def hdel(self, key, hkey):
+        return self.conn.hdel(key, hkey)
 
     def keys(self, pattern):
         return self.conn.scan_iter(pattern, count=5000)
 
+    def hkeys(self, key):
+        return self.conn.hkeys(key)
+
     def exists(self, key):
         return self.conn.exists(key)
+
+    def hexists(self, key, hkey):
+        return self.conn.hexists(key, hkey)
 
 
 class FakeRedis(object):
@@ -90,14 +102,31 @@ class FakeRedis(object):
     def set(self, key, val):
         self._keys[key] = val
 
+    def hset(self, key, path, val):
+        self._keys[key] = self._keys.get(key, {})
+        self._keys[key][path] = val
+
     def delete(self, key):
         self._keys.pop(key, None)
 
+    def hdel(self, key, hkey):
+        if not self._keys.get(key, None):
+            return
+        self._keys[key].pop(hkey, None)
+
+    def hkeys(self, key):
+        if not self._keys.get(key, None):
+            return []
+        return self._keys[key].iterkeys()
+
     def keys(self, pattern):
-        raise NotImplementedError()
+        return self._keys.iterkeys()
 
     def exists(self, key):
         return key in self._keys
+
+    def hexists(self, key, hkey):
+        return key+hkey in self._keys
 
 
 class ContainerHierarchyMiddleware(AutoContainerBase):
@@ -131,7 +160,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
     def check_pipeline(self, conf):
         """
         Check that proxy-server.conf has an appropriate pipeline
-        for container_hierarcht
+        for container_hierarchy
         """
         if conf.get('__file__', None) is None:
             return
@@ -164,27 +193,28 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 'Invalid pipeline %r: %s must be placed after SLO'
                 % (pipeline, MIDDLEWARE_NAME))
 
-    def key(self, account, container, mode, path=None):
+    def key(self, account, container, mode):
         """returns Redis key"""
         ret = self.PREFIX + account + ":" + container + ":"
         if mode:
-            ret += mode + ":"
-            if path:
-                ret += path
+            ret += mode
         return ret
 
     def _create_key(self, req, account, container, mode, path):
-        key = self.key(account, container, mode, path)
+        key = self.key(account, container, mode)
         LOG.debug("%s: create key %s", self.SWIFT_SOURCE, key)
         # TODO: should we increase number of objects ?
         # but we should manage in this case all error case
         # to avoid false counter
-        res = self.conn.set(key, "1")
+
+        # Now we create a hkey to the cnt
+        res = self.conn.hset(key, path, "1")
         if not res:
-            LOG.warn("%s: failed to create key %s", self.SWIFT_SOURCE, key)
+            LOG.warn("%s: failed to create key %s %s", self.SWIFT_SOURCE, key,
+                     path)
 
     def _remove_key(self, req, account, container, mode, path):
-        key = self.key(account, container, mode, path) + '/'
+        key = self.key(account, container, mode)
         if mode == CNT:
             # remove container key only if empty
             empty = not any(self._list_objects(
@@ -197,10 +227,12 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             if not empty:
                 return
 
+        path += "/"
         LOG.debug("%s: remove key %s (key %s)", self.SWIFT_SOURCE, path, key)
-        res = self.conn.delete(key)
+        res = self.conn.hdel(key, path)
         if not res:
-            LOG.warn("%s: failed to remove key %s", self.SWIFT_SOURCE, key)
+            LOG.warn("%s: failed to remove path %s key %s", self.SWIFT_SOURCE,
+                     path, key)
 
     def _build_object_listing_mpu(self, start_response, env,
                                   account, container, prefix,
@@ -267,10 +299,14 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                   self.SWIFT_SOURCE, parse_root)
 
         prefix_key = self.key(account, container, "")
-        key = self.key(account, container, '*', prefix) + '*'
-        matches = [k[len(prefix_key):].split(':', 1)
-                   for k in self.conn.keys(key)]
-
+        key = self.key(account, container, '*')
+        keys = self.conn.keys(key)
+        matches = list()
+        for k in keys:
+            _, mode = k.rsplit(":", 1)
+            for r in self.conn.hkeys(k):
+                if r.startswith(prefix):
+                    matches.append((mode, r))
         LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
 
         if parse_root:
@@ -279,11 +315,11 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         # if prefix is something like dir1/dir2/dir3/ob
         if not prefix.endswith(self.DELIMITER) and self.DELIMITER in prefix:
             pfx = prefix[:prefix.rindex(self.DELIMITER)+1]
-            key = self.key(account, container, CNT, pfx)
-            if self.conn.exists(key):
+            key = self.key(account, container, CNT)
+            if self.conn.hexists(key, pfx):
                 # then we must append dir1/dir2/dir3/ to be able to retrieve
                 # object1 and object2 from this container
-                matches.append((CNT, key[len(prefix_key) + 4:]))
+                matches.append((CNT, pfx))
 
         # we should ignore all keys that are before marker to
         # avoid useless lookup or false listing
