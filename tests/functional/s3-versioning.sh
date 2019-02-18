@@ -411,10 +411,36 @@ OBJ_META=$(openio object show ${BUCKET} mdobj -f yaml | grep meta)
 [ "$(echo "$OBJ_META" | grep -c 'x-object-sysmeta-swift3-tagging')" -eq 1 ]
 
 OBJ_VER=$(${AWS} s3api head-object --bucket ${BUCKET} --key mdobj | jq -r ".VersionId")
-# TODO(FVE): set metadata on old versions of the object
 
 echo  "Deleting the object"
 ${AWS} s3api delete-object --bucket $BUCKET --key mdobj --version-id "$OBJ_VER"
+
+
+echo "Upload object version 1 and add tagging key=old"
+V1=$(${AWS} s3api put-object --bucket ${BUCKET} --key obj --body ${OBJ_0} | jq -r '.VersionId')
+${AWS} s3api put-object-tagging --bucket ${BUCKET} --key obj --version-id $V1 --tagging 'TagSet=[{Key=val,Value=old}]'
+
+echo "Upload object version 2 and add tagging key=new"
+V2=$(${AWS} s3api put-object --bucket ${BUCKET} --key obj --body ${OBJ_1} | jq -r '.VersionId')
+${AWS} s3api put-object-tagging --bucket ${BUCKET} --key obj --version-id $V2 --tagging 'TagSet=[{Key=val,Value=new}]'
+
+echo "Check tagging on object version 1"
+DATA=$(${AWS} s3api get-object-tagging --bucket ${BUCKET} --key obj --version-id $V1)
+VERSION=$(echo $DATA | jq -r '.VersionId')
+TAGVAL=$(echo $DATA | jq -r '.TagSet[0].Value')
+[ "$V1" -eq "$VERSION" ]
+[ "$TAGVAL" == "old" ]
+
+echo "Check tagging on object version 2"
+DATA=$(${AWS} s3api get-object-tagging --bucket ${BUCKET} --key obj --version-id $V2)
+VERSION=$(echo $DATA | jq -r '.VersionId')
+TAGVAL=$(echo $DATA | jq -r '.TagSet[0].Value')
+[ "$V2" -eq "$VERSION" ]
+[ "$TAGVAL" == "new" ]
+
+echo  "Deleting the object"
+${AWS} s3api delete-object --bucket $BUCKET --key obj --version-id "$V1"
+${AWS} s3api delete-object --bucket $BUCKET --key obj --version-id "$V2"
 
 echo "*** Deleting the bucket ***"
 ${AWS} s3 rb "s3://${BUCKET}"
