@@ -56,6 +56,13 @@ function run_sds() {
     -f third_party/oio-sds/etc/bootstrap-meta1-1digits.yml \
     -f third_party/oio-sds/etc/bootstrap-option-cache.yml
   openio cluster wait
+  SUCCESS=$?
+  if [ ! $SUCCESS ]
+  then
+    # Help seeing what is wrong
+    openio cluster list
+  fi
+  return $SUCCESS
 }
 
 function configure_aws() {
