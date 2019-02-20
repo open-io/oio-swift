@@ -20,7 +20,6 @@ function install_deps() {
     libevent-dev \
     libglib2.0-dev \
     libjson-c-dev \
-    libleveldb1 libleveldb-dev \
     liblzo2-dev \
     libsqlite3-dev \
     libzmq3-dev \

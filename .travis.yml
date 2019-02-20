@@ -1,23 +1,18 @@
 sudo: required
-dist: trusty
+dist: xenial
 language: python
 addons:
   apt:
     sources:
-    - sourceline: 'deb http://archive.ubuntu.com/ubuntu trusty-backports main restricted universe multiverse'
-    - sourceline: 'deb http://mirror.openio.io/pub/repo/openio/sds/17.04/ubuntu/trusty ./'
-    - sourceline: 'ppa:gophers/archive'
+      - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ xenial-backports main restricted universe multiverse'
+      - sourceline: 'deb http://mirror.openio.io/pub/repo/openio/sds/18.04/ubuntu/ xenial/'
+        key_url: 'http://mirror.openio.io/pub/repo/openio/APT-GPG-KEY-OPENIO-0'
     update: true
 
 env:
-  global:
-    - GO_VERSION=1.10
-    - GOROOT=/usr/lib/go-${GO_VERSION}
-    - GOPATH=${HOME}/go
-    - PATH=${GOPATH}/bin:${GOROOT}/bin:${PATH}
   matrix:
     - TEST_SUITE=s3 # Latest stable/supported versions
-    - TEST_SUITE=s3 SDS_BRANCH=master # Integration with latest versions
+    - TEST_SUITE=s3 SDS_BRANCH=master  # Integration with latest versions
     - TEST_SUITE=s3 SDS_BRANCH=4.2.x SWIFT_BRANCH=stable/pike # Previous versions
     - TEST_SUITE=encryption
     - TEST_SUITE=encryption SDS_BRANCH=master
@@ -29,7 +24,7 @@ env:
 
 before_install:
   - sudo apt-get update -qq
-  - sudo apt-get install -y --force-yes python-virtualenv jq liberasurecode-dev libssl-dev libattr1-dev libleveldb1 libleveldb-dev libzookeeper-mt-dev golang-${GO_VERSION}
+  - sudo apt-get install -y --force-yes python-virtualenv jq liberasurecode-dev libssl-dev libattr1-dev libleveldb-dev libzookeeper-mt-dev
 
 install:
   - virtualenv $HOME/venv
