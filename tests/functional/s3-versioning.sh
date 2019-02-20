@@ -418,10 +418,16 @@ ${AWS} s3api delete-object --bucket $BUCKET --key mdobj --version-id "$OBJ_VER"
 
 echo "Upload object version 1 and add tagging key=old"
 V1=$(${AWS} s3api put-object --bucket ${BUCKET} --key obj --body ${OBJ_0} | jq -r '.VersionId')
+if [ "$V1" == "null" ]; then
+    V1=$(${AWS} s3api head-object --bucket ${BUCKET} --key obj | jq -r '.VersionId')
+fi
 ${AWS} s3api put-object-tagging --bucket ${BUCKET} --key obj --version-id $V1 --tagging 'TagSet=[{Key=val,Value=old}]'
 
 echo "Upload object version 2 and add tagging key=new"
 V2=$(${AWS} s3api put-object --bucket ${BUCKET} --key obj --body ${OBJ_1} | jq -r '.VersionId')
+if [ "$V2" == "null" ]; then
+    V2=$(${AWS} s3api head-object --bucket ${BUCKET} --key obj | jq -r '.VersionId')
+fi
 ${AWS} s3api put-object-tagging --bucket ${BUCKET} --key obj --version-id $V2 --tagging 'TagSet=[{Key=val,Value=new}]'
 
 echo "Check tagging on object version 1"
