@@ -192,7 +192,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                             account,
                             [container] + path.split('/'),
                             None,
-                            limit=1))
+                            limit=1,
+                            force_master=True))
 
             if not empty:
                 return
@@ -427,7 +428,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
     def _list_objects(self, env, account, ct_parts, header_cb,
                       prefix='', limit=DEFAULT_LIMIT,
-                      marker=None):
+                      marker=None, force_master=False):
         """
         returns items
         """
@@ -449,6 +450,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             params['marker'] = marker
         else:
             params.pop('marker', None)
+        if force_master:
+            sub_req.environ.setdefault('oio.query', {})
+            sub_req.environ['oio.query']['force_master'] = True
 
         sub_req.params = params
         resp = sub_req.get_response(self.app)
