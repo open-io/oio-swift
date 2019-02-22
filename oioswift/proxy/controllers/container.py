@@ -147,6 +147,7 @@ class ContainerController(SwiftContainerController):
             end_marker=end_marker, properties=True,
             versions=opts.get('versions', False),
             deleted=opts.get('deleted', False),
+            force_master=opts.get('force_master', False),
             headers=oio_headers)
 
         resp_headers = self.get_metadata_resp_headers(result)
