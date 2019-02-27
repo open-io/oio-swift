@@ -28,6 +28,8 @@ from oio.common.exceptions import ConfigurationException
 LOG = None
 MIDDLEWARE_NAME = 'container_hierarchy'
 DEFAULT_LIMIT = 10000
+REDIS_KEYS_FORMAT_V1 = 'v1'
+REDIS_KEYS_FORMAT_V2 = 'v2'
 
 OBJ = 'obj'  # redis key represent a real empty object that ends with /
 CNT = 'cnt'  # redis key show a redirection to a container
@@ -103,8 +105,7 @@ class FakeRedis(object):
         self._keys[key] = val
 
     def hset(self, key, path, val):
-        self._keys[key] = self._keys.get(key, {})
-        self._keys[key][path] = val
+        self._keys.setdefault(key, {})[path] = val
 
     def delete(self, key):
         self._keys.pop(key, None)
@@ -143,6 +144,13 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         redis_host = kwargs.pop('redis_host', None)
         sentinel_hosts = kwargs.pop('sentinel_hosts', None)
         sentinel_name = kwargs.pop('sentinel_name', None)
+        self.redis_keys_format = kwargs.pop('redis_keys_format',
+                                            REDIS_KEYS_FORMAT_V1)
+        if self.redis_keys_format not in [REDIS_KEYS_FORMAT_V1,
+                                          REDIS_KEYS_FORMAT_V2]:
+            raise ValueError(
+                '"redis_keys_format" value not accepted: %s',
+                self.redis_keys_format)
 
         super(ContainerHierarchyMiddleware, self).__init__(
             app, acct, **kwargs)
@@ -193,28 +201,42 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 'Invalid pipeline %r: %s must be placed after SLO'
                 % (pipeline, MIDDLEWARE_NAME))
 
-    def key(self, account, container, mode):
+    def key(self, account, container, mode, path=None):
         """returns Redis key"""
         ret = self.PREFIX + account + ":" + container + ":"
         if mode:
-            ret += mode
+            if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+                ret += mode + ":"
+                if path:
+                    ret += path
+            else:
+                if mode:
+                    ret += mode
         return ret
 
     def _create_key(self, req, account, container, mode, path):
-        key = self.key(account, container, mode)
+        key = self.key(account, container, mode, path)
         LOG.debug("%s: create key %s", self.SWIFT_SOURCE, key)
         # TODO: should we increase number of objects ?
         # but we should manage in this case all error case
         # to avoid false counter
-
-        # Now we create a hkey to the cnt
-        res = self.conn.hset(key, path, "1")
-        if not res:
-            LOG.warn("%s: failed to create key %s %s", self.SWIFT_SOURCE, key,
-                     path)
+        if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            res = self.conn.set(key, "1")
+            if not res:
+                LOG.warn("%s: failed to create key %s", self.SWIFT_SOURCE, key)
+        else:
+            res = self.conn.hset(key, path, "1")
+            if not res:
+                LOG.warn("%s: failed to create key %s %s",
+                         self.SWIFT_SOURCE, key, path)
 
     def _remove_key(self, req, account, container, mode, path):
-        key = self.key(account, container, mode)
+        if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            key = self.key(account, container, mode, path) + '/'
+        else:
+            key = self.key(account, container, mode)
+
+        key = self.key(account, container, mode, path) + '/'
         if mode == CNT:
             # remove container key only if empty
             empty = not any(self._list_objects(
@@ -228,12 +250,17 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             if not empty:
                 return
 
-        path += "/"
         LOG.debug("%s: remove key %s (key %s)", self.SWIFT_SOURCE, path, key)
-        res = self.conn.hdel(key, path)
-        if not res:
-            LOG.warn("%s: failed to remove path %s key %s", self.SWIFT_SOURCE,
-                     path, key)
+        if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            res = self.conn.delete(key)
+            if not res:
+                LOG.warn("%s: failed to remove key %s", self.SWIFT_SOURCE, key)
+        else:
+            path += "/"
+            res = self.conn.hdel(key, path)
+            if not res:
+                LOG.warn("%s: failed to remove path %s key %s",
+                         self.SWIFT_SOURCE, path, key)
 
     def _build_object_listing_mpu(self, start_response, env,
                                   account, container, prefix,
@@ -291,36 +318,45 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         all_objs = []
 
         prefix = prefix[0] if prefix else ''
-
         # have we to parse root container ?
         # / must be absent from prefix AND marker
         parse_root = self.DELIMITER not in prefix and \
             (not marker or self.DELIMITER not in marker)
         LOG.debug("%s: parse root container ? %s",
                   self.SWIFT_SOURCE, parse_root)
-
+        key = ""
+        matches = []
         prefix_key = self.key(account, container, "")
-        key = self.key(account, container, '*')
-        keys = self.conn.keys(key)
-        matches = list()
-        for k in keys:
-            _, mode = k.rsplit(":", 1)
-            for r in self.conn.hkeys(k):
-                if r.startswith(prefix):
-                    matches.append((mode, r))
+        if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            key = self.key(account, container, '*', prefix) + '*'
+            matches = [k[len(prefix_key):].split(':', 1)
+                       for k in self.conn.keys(key)]
+        else:
+            key = self.key(account, container, '*')
+            keys = self.conn.keys(key)
+            matches = list()
+            for k in keys:
+                _, mode = k.rsplit(":", 1)
+                for r in self.conn.hkeys(k):
+                    if r.startswith(prefix) or r == prefix:
+                        matches.append((mode, r))
         LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
 
         if parse_root:
             matches.append((CNT, ""))
-
         # if prefix is something like dir1/dir2/dir3/ob
         if not prefix.endswith(self.DELIMITER) and self.DELIMITER in prefix:
             pfx = prefix[:prefix.rindex(self.DELIMITER)+1]
-            key = self.key(account, container, CNT)
-            if self.conn.hexists(key, pfx):
-                # then we must append dir1/dir2/dir3/ to be able to retrieve
-                # object1 and object2 from this container
-                matches.append((CNT, pfx))
+            # then we must append dir1/dir2/dir3/ to be able to retrieve
+            # object1 and object2 from this container
+            if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+                key = self.key(account, container, CNT, pfx)
+                if self.conn.exists(key):
+                    matches.append((CNT, key[len(prefix_key) + 4:]))
+            else:
+                key = self.key(account, container, CNT)
+                if self.conn.hexists(key, pfx):
+                    matches.append((CNT, pfx))
 
         # we should ignore all keys that are before marker to
         # avoid useless lookup or false listing
@@ -351,7 +387,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         len_pfx = len(prefix)
         cnt_delimiter = len(prefix.split('/'))
-
         for mode, entry in matches:
             if self.DELIMITER in entry[len_pfx:] and not recursive:
                 # append subdir entry, no difference between CNT and OBJ
@@ -422,7 +457,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         # FIXME(mbo): a proper HEADER should be added in swift3 controller
         # to help recognize manifest / part
         if is_mpu:
-            LOG.error(obj_parts)
             for i, item in reversed(list(enumerate(obj_parts))):
                 if len(item) > 32:
                     try:
@@ -635,6 +669,8 @@ def filter_factory(global_conf, **local_config):
     account_first = config_true_value(local_config.get('account_first'))
     swift3_compat = config_true_value(local_config.get('swift3_compat'))
     strip_v1 = config_true_value(local_config.get('strip_v1'))
+    redis_keys_format = local_config.get('redis_keys_format',
+                                         REDIS_KEYS_FORMAT_V1)
     redis_host = local_config.get('redis_host')
     sentinel_hosts = local_config.get('sentinel_hosts')
     sentinel_name = local_config.get('sentinel_name')
@@ -645,6 +681,7 @@ def filter_factory(global_conf, **local_config):
             strip_v1=strip_v1,
             account_first=account_first,
             swift3_compat=swift3_compat,
+            redis_keys_format=redis_keys_format,
             redis_host=redis_host,
             sentinel_hosts=sentinel_hosts,
             sentinel_name=sentinel_name)

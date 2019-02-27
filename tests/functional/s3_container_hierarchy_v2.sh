@@ -1,7 +1,6 @@
 #!/bin/bash
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
-REDIS_CLI="redis-cli"
 BUCKET=bucket-$RANDOM
 
 echo "Bucket name: $BUCKET"
@@ -13,13 +12,10 @@ set -x
 set -e
 
 ${AWS} s3api create-bucket --bucket ${BUCKET}
-${REDIS_CLI} exists "CS:AUTH_demo:${BUCKET}:cnt"
 
 ${AWS} s3api put-object --bucket ${BUCKET} --key small --body /etc/passwd
-${REDIS_CLI} hexists "CS:AUTH_demo:${BUCKET}:cnt" "/" | grep 0
 # ${AWS} s3api put-object --bucket ${BUCKET} --key root --body bigfile
 ${AWS} s3 cp bigfile s3://${BUCKET}/root
-${REDIS_CLI} hexists "CS:AUTH_demo:${BUCKET}+segments:cnt" "/" | grep 1
 
 ${AWS} s3 cp s3://${BUCKET}/root testfile
 [ "$(md5sum bigfile | cut -d\  -f1)" = "$(md5sum testfile | cut -d\  -f1)" ]
@@ -34,11 +30,8 @@ ${AWS} s3 cp s3://${BUCKET}/root testfile
 rm testfile
 
 ${AWS} s3api put-object --bucket ${BUCKET} --key dir1/dir2/object --body /etc/passwd
-${REDIS_CLI} hexists "CS:AUTH_demo:${BUCKET}:cnt" "/dir1/dir2/" | grep 0
-${REDIS_CLI} hexists "CS:AUTH_demo:${BUCKET}:cnt" "dir1/dir2/" | grep 1
 
 ${AWS} s3 cp /etc/passwd  s3://${BUCKET}/dir1/dir2/object
-${REDIS_CLI} hexists "CS:AUTH_demo:${BUCKET}:cnt" "/dir1/dir2/" | grep 0
 
 OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} )
 echo ${OUT} | grep small
