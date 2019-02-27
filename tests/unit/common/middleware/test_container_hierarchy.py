@@ -6,6 +6,9 @@ import unittest
 from swift.common import swob, utils
 from swift.common.swob import Request, HTTPException
 from oioswift.common.middleware import container_hierarchy
+from oioswift.common.middleware.container_hierarchy import \
+    REDIS_KEYS_FORMAT_V1, REDIS_KEYS_FORMAT_V2
+
 
 # Hack PYTHONPATH so "test" is swift's test directory
 sys.path.insert(1, os.path.abspath(os.path.join(__file__, '../../../../..')))
@@ -88,9 +91,19 @@ class OioContainerHierarchy(unittest.TestCase):
         resp = self.call_ch(req)
         self.assertEqual(resp[0], '200 OK')
 
-    def test_recursive_listing(self):
+    def test_recursive_listing_v1(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
+        self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt:d1/d2/d3/'])
+        self._test_recursive_listing()
+
+    def test_recursive_listing_v2(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
         self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt'])
         self.ch.conn.hkeys = mock.MagicMock(return_value=['d1/d2/d3/'])
+        self._test_recursive_listing()
+        self.ch.conn.hkeys.assert_called_with('CS:a:cnt')
+
+    def _test_recursive_listing(self):
         self.app.register(
             'GET',
             '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=10000&format=json',
@@ -105,12 +118,20 @@ class OioContainerHierarchy(unittest.TestCase):
 
         data = json.loads(resp[2])
         self.assertEqual(data[0]['name'], 'd1/d2/d3/o')
-        self.ch.conn.hkeys.assert_called_with('CS:a:cnt')
 
-    def test_listing_with_space(self):
+    def test_listing_with_space_v1(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
+        self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt:d 1/d2/'])
+        self._test_listing_with_space()
+
+    def test_listing_with_space_v2(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
         self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt'])
         self.ch.conn.hkeys = mock.MagicMock(return_value=['d 1/d2/'])
+        self._test_listing_with_space()
+        self.ch.conn.hkeys.assert_called_with('CS:a:cnt')
 
+    def _test_listing_with_space(self):
         self.app.register(
             'GET',
             '/v1/a/c%2Fd 1%2Fd2?prefix=&limit=10000&format=json',
@@ -125,7 +146,6 @@ class OioContainerHierarchy(unittest.TestCase):
 
         data = json.loads(resp[2])
         self.assertEqual(data[0]['name'], 'd 1/d2/o')
-        self.ch.conn.hkeys.assert_called_with('CS:a:cnt')
 
     def test_global_listing(self):
         self.app.register(
@@ -142,7 +162,10 @@ class OioContainerHierarchy(unittest.TestCase):
         req = Request.blank('/v1/a/c/d1/d2/d3/o', method='PUT')
         resp = self.call_ch(req)
         self.assertEqual(resp[0], '201 Created')
-        self.assertIn('d1/d2/d3/', self.ch.conn._keys['CS:a:c:cnt'])
+        if self.ch.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            self.assertIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
+        else:
+            self.assertIn('d1/d2/d3/', self.ch.conn._keys['CS:a:c:cnt'])
 
         self.app.register(
             'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=1&format=json',
@@ -158,7 +181,10 @@ class OioContainerHierarchy(unittest.TestCase):
         resp = self.call_ch(req)
 
         self.assertEqual(resp[0], '204 No Content')
-        self.assertIn('d1/d2/d3/', self.ch.conn._keys['CS:a:c:cnt'])
+        if self.ch.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            self.assertIn('CS:a:c:cnt:d1/d2/d3/', self.ch.conn._keys)
+        else:
+            self.assertIn('d1/d2/d3/', self.ch.conn._keys['CS:a:c:cnt'])
 
         self.app.register(
             'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=1&format=json',
@@ -173,18 +199,22 @@ class OioContainerHierarchy(unittest.TestCase):
     def test_fake_directory(self):
         req = Request.blank('/v1/a/container/d2/d3/', method='PUT')
         resp = self.call_ch(req)
-        self.assertIn('d2/d3/', self.ch.conn._keys['CS:a:container:obj'])
+        if self.ch.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            self.assertIn('CS:a:container:obj:d2/d3/', self.ch.conn._keys)
+        else:
+            self.assertIn('d2/d3/', self.ch.conn._keys['CS:a:container:obj'])
         req = Request.blank('/v1/a/container/d2/d3/', method='DELETE')
         resp = self.call_ch(req)
         self.assertEqual(resp[0], "204 No Content")
-        self.assertNotIn('d2/d3/', self.ch.conn._keys['CS:a:container:obj'])
+        if self.ch.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            self.assertNotIn('CS:a:container:obj:d2/d3/', self.ch.conn._keys)
+        else:
+            self.assertNotIn('d2/d3/',
+                             self.ch.conn._keys['CS:a:container:obj'])
 
     def _listing(self, is_recursive):
-        self.ch.conn.keys = mock.MagicMock(
-            return_value=['CS:a:bucket:cnt'])
-        self.ch.conn.hkeys = mock.MagicMock(
-            return_value=['d1/', 'd1/d2/'])
-        self.ch.conn.exist = mock.MagicMock(return_value=True)
+        self.ch.conn.exists = mock.MagicMock(return_value=True)
+        self.ch.conn.hexists = mock.MagicMock(return_value=True)
         self.app.register(
             'GET',
             '/v1/a/bucket%2Fd1?prefix=d&limit=10000&format=json',
@@ -211,21 +241,57 @@ class OioContainerHierarchy(unittest.TestCase):
                  for item in json.loads(resp[2])]
         return names
 
-    def test_listing_with_prefix(self):
+    def test_listing_with_prefix_v1(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/', 'CS:a:bucket:cnt:d1/d2/'])
         names = self._listing(False)
         self.assertIn('d1/o1', names)
         self.assertIn('d1/d2/', names)
 
-    def test_listing_with_prefix_recursive(self):
+    def test_listing_with_prefix_v2(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt'])
+        self.ch.conn.hkeys = mock.MagicMock(
+            return_value=['d1/', 'd1/d2/'])
+        names = self._listing(False)
+        self.assertIn('d1/o1', names)
+        self.assertIn('d1/d2/', names)
+
+    def test_listing_with_prefix_recursive_v1(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/', 'CS:a:bucket:cnt:d1/d2/'])
         names = self._listing(True)
         self.assertIn('d1/o1', names)
         self.assertIn('d1/d2/o2', names)
 
-    def test_listing_root_container(self):
+    def test_listing_with_prefix_recursive_v2(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt'])
+        self.ch.conn.hkeys = mock.MagicMock(
+            return_value=['d1/', 'd1/d2/'])
+        names = self._listing(True)
+        self.assertIn('d1/o1', names)
+        self.assertIn('d1/d2/o2', names)
+
+    def test_listing_root_container_v1(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/'])
+        self._test_listing_root_container()
+
+    def test_listing_root_container_v2(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
         self.ch.conn.keys = mock.MagicMock(
             return_value=['CS:a:bucket:cnt'])
         self.ch.conn.hkeys = mock.MagicMock(
             return_value=['d1/'])
+        self._test_listing_root_container()
+
+    def _test_listing_root_container(self):
         self.app.register(
             'GET',
             '/v1/a/bucket?prefix=d&limit=10000&format=json',
@@ -242,11 +308,22 @@ class OioContainerHierarchy(unittest.TestCase):
         self.assertIn("d0", names)
         self.assertIn("d1/", names)
 
-    def test_listing_with_marker(self):
+    def test_listing_with_marker_v1(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/',
+                          'CS:a:bucket:cnt:d2/'])
+        self._test_listing_with_marker()
+
+    def test_listing_with_marker_v2(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
         self.ch.conn.keys = mock.MagicMock(
             return_value=['CS:a:bucket:cnt'])
         self.ch.conn.hkeys = mock.MagicMock(
             return_value=['d1/', 'd2/'])
+        self._test_listing_with_marker()
+
+    def _test_listing_with_marker(self):
         req = Request.blank('/v1/a/bucket?limit=10&delimiter=%2F&marker=d1/',
                             method='GET')
         resp = self.call_ch(req)
@@ -255,11 +332,22 @@ class OioContainerHierarchy(unittest.TestCase):
         self.assertNotIn('d1/', names)
         self.assertIn('d2/', names)
 
-    def test_listing_with_marker_multi_container(self):
+    def test_listing_with_marker_multi_container_v1(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/',
+                          'CS:a:bucket:cnt:d2/'])
+        self._test_listing_with_marker_multi_container()
+
+    def test_listing_with_marker_multi_container_v2(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
         self.ch.conn.keys = mock.MagicMock(
             return_value=['CS:a:bucket:cnt'])
         self.ch.conn.hkeys = mock.MagicMock(
             return_value=['d1/', 'd2/'])
+        self._test_listing_with_marker_multi_container()
+
+    def _test_listing_with_marker_multi_container(self):
         # with marker aa (as we inspect d1/)
         self.app.register(
             'GET',
@@ -287,8 +375,19 @@ class OioContainerHierarchy(unittest.TestCase):
         self.assertIn('d2/d0', names)
 
     def test_duplicate_obj_cnt(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket:cnt:d1/cnt/',
+                          'CS:a:bucket:obj:d1/obj/'])
+        self._test_duplicate_obj_cnt()
+
+    def test_duplicate_obj_cnt_v2(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
         self.ch.conn.hset('CS:a:bucket:cnt', 'd1/cnt', 1)
         self.ch.conn.hset('CS:a:bucket:obj', 'd1/obj', 1)
+        self._test_duplicate_obj_cnt()
+
+    def _test_duplicate_obj_cnt(self):
         req = Request.blank('/v1/a/bucket?limit=10&delimiter=%2F&marker=d1/',
                             method='GET')
         resp = self.call_ch(req)
@@ -350,11 +449,21 @@ class OioContainerHierarchy(unittest.TestCase):
         self.assertEqual(res, (cont,
                                'object/' + uploadid))
 
-    def test_upload_in_progress(self):
+    def test_upload_in_progress_v1(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
+        self.ch.conn.keys = mock.MagicMock(
+            return_value=['CS:a:bucket+segments:cnt:d1/d2/d3/'])
+        self._test_upload_in_progress()
+
+    def test_upload_in_progress_v2(self):
+        self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
         self.ch.conn.keys = mock.MagicMock(
             return_value=['CS:a:bucket+segments:cnt'])
         self.ch.conn.hkeys = mock.MagicMock(
             return_value=['d1/d2/d3/'])
+        self._test_upload_in_progress()
+
+    def _test_upload_in_progress(self):
         upload = ["obj/YmYwY2I1ZDYtNjMyYi00OGNiLWEzMzEtZDdhYTk0ODZkNWU2",
                   "root/MzNkYWZlNjItNjg3Yy00ZmIyLWIwOGYtOTA2OGVlZTA2MzA5"]
         self.app.register(
