@@ -50,6 +50,7 @@ from oio.common.exceptions import SourceReadTimeout
 from oioswift.utils import check_if_none_match, \
     handle_not_allowed, handle_oio_timeout, handle_service_busy
 
+MULTIUPLOAD_SUFFIX = '+segments'
 SLO = 'x-static-large-object'
 
 
@@ -663,6 +664,10 @@ class ObjectController(BaseObjectController):
     def _delete_object(self, req):
         storage = self.app.storage
         oio_headers = {'X-oio-req-id': self.trans_id}
+        # Allow swift3 to delete things from the multipart container
+        if (req.environ.get('swift.source') == 'S3' and
+                self.container_name.endswith(MULTIUPLOAD_SUFFIX)):
+            oio_headers['X-oio-admin'] = 'true'
         try:
             storage.object_delete(
                 self.account_name, self.container_name, self.object_name,
