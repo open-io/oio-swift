@@ -170,6 +170,9 @@ class AccountController(SwiftAccountController):
                          constraints.ACCOUNT_LISTING_LIMIT)
         marker = get_param(req, 'marker')
         end_marker = get_param(req, 'end_marker')
+        s3_buckets_only = False
+        if req.environ.get('swift.source') == 'S3':
+            s3_buckets_only = True
 
         oio_headers = {'X-oio-req-id': self.trans_id}
         info = None
@@ -180,7 +183,8 @@ class AccountController(SwiftAccountController):
             info = self.app.storage.account.container_list(
                 self.account_name, limit=limit, marker=marker,
                 end_marker=end_marker, prefix=prefix,
-                delimiter=delimiter, headers=oio_headers)
+                delimiter=delimiter, headers=oio_headers,
+                s3_buckets_only=s3_buckets_only)
             listing = info.pop('listing')
         else:
             # Legacy call to account service

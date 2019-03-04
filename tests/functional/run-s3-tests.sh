@@ -17,7 +17,7 @@ run_functional_test s3-container-hierarchy-key-v2.cfg s3_container_hierarchy_v2.
 run_functional_test s3-fastcopy.cfg s3-acl-metadata.sh s3-marker.sh
 # Run all suites in the same environment.
 # They do not share buckets so this should be OK.
-run_functional_test s3-default.cfg s3-acl-metadata.sh s3-versioning.sh s3-tagging.sh s3-multipart.sh s3-s3cmd.sh s3-marker.sh
+run_functional_test s3-default.cfg s3-acl-metadata.sh s3-versioning.sh s3-tagging.sh s3-multipart.sh s3-s3cmd.sh buckets-listing.sh s3-marker.sh
 run_script tests/functional/s3_conversion_hierarchy.sh
 
 # TODO(FVE): gridinit_cmd stop
