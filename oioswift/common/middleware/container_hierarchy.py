@@ -43,6 +43,7 @@ class RedisDb(object):
         self._sentinel_hosts = None
         self._sentinel = None
         self._conn = None
+        self._conn_slave = None
 
         if redis_host:
             self._redis_host, self._redis_port = redis_host.rsplit(':', 1)
@@ -70,6 +71,16 @@ class RedisDb(object):
                                                       port=self._redis_port)
         return self._conn
 
+    @property
+    def conn_slave(self):
+        if self._sentinel:
+            return self._sentinel.slave_for(self._master_name)
+
+        if not self._conn:
+            self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
+                                                      port=self._redis_port)
+        return self._conn
+
     def set(self, key, val):
         return self.conn.set(key, val)
 
@@ -83,13 +94,13 @@ class RedisDb(object):
         return self.conn.hdel(key, hkey)
 
     def keys(self, pattern):
-        return self.conn.scan_iter(pattern, count=5000)
+        return self.conn_slave.scan_iter(pattern, count=5000)
 
     def hkeys(self, key):
         return self.conn.hkeys(key)
 
     def exists(self, key):
-        return self.conn.exists(key)
+        return self.conn_slave.exists(key)
 
     def hexists(self, key, hkey):
         return self.conn.hexists(key, hkey)
