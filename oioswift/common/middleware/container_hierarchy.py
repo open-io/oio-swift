@@ -319,9 +319,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         prefix = prefix[0] if prefix else ''
         # have we to parse root container ?
-        # / must be absent from prefix AND marker
-        parse_root = self.DELIMITER not in prefix and \
-            (not marker or self.DELIMITER not in marker)
+        # / must be absent from prefix or if marker is set
+        parse_root = self.DELIMITER not in prefix or marker
+        # (not marker or self.DELIMITER not in marker)
         LOG.debug("%s: parse root container ? %s",
                   self.SWIFT_SOURCE, parse_root)
         key = ""
@@ -360,23 +360,33 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         # we should ignore all keys that are before marker to
         # avoid useless lookup or false listing
+        marker_root = False
         if marker:
             m = matches
-            marker_ = marker[:marker.rindex('/')] + '/'
+            if '/' in marker:
+                marker_ = marker[:marker.rindex('/')]
+                # marker_root = False
+            else:
+                marker_ = marker
+                marker_root = True
             LOG.debug("%s: convert marker %s to %s",
                       self.SWIFT_SOURCE, marker, marker_)
             matches = []
             for mode, entry in m:
-                if entry < marker_:
-                    LOG.debug("%s: marker ignore %s: before)",
-                              self.SWIFT_SOURCE, entry)
+                if entry == "":
+                    matches.append((mode, entry))
                     continue
-                if entry == marker_ and not recursive:
+                if entry < marker_:
+                    #  if entry != "" or not marker_root:
+                    #     LOG.debug("%s: marker ignore %s: before)",
+                    #               self.SWIFT_SOURCE, entry)
+                    continue
+                if entry == marker_ + '/' and not recursive:
                     # marker is something like d1/ but we d1/d2/d3/ key
                     LOG.debug("%s: marker ignore %s: not recursive",
                               self.SWIFT_SOURCE, entry)
                     continue
-                if mode == OBJ and entry == marker_:
+                if mode == OBJ and entry == marker_ + '/':
                     LOG.debug("%s: marker ignore %s: skip object",
                               self.SWIFT_SOURCE, entry, marker_)
                     continue
@@ -406,8 +416,14 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 # transmit marker only to exact container
                 # otherwise we will have incorrect listings
                 _marker = None
-                if marker and entry.rstrip('/') == marker[:marker.rindex('/')]:
-                    _marker = marker[marker.rindex('/'):].lstrip('/')
+                if marker:
+                    if entry == "":
+                        _marker = marker if '/' not in marker \
+                                         else marker[:marker.index('/')]
+                    elif not marker_root \
+                            and entry.rstrip('/') == \
+                            marker[:marker.rindex('/')]:
+                        _marker = marker[marker.rindex('/'):].lstrip('/')
                     LOG.debug("%s: convert marker %s to %s",
                               self.SWIFT_SOURCE, marker, _marker)
 
