@@ -55,14 +55,7 @@ function run_sds() {
     -f third_party/oio-sds/etc/bootstrap-preset-SINGLE.yml \
     -f third_party/oio-sds/etc/bootstrap-meta1-1digits.yml \
     -f third_party/oio-sds/etc/bootstrap-option-cache.yml
-  openio cluster wait
-  SUCCESS=$?
-  if [ ! $SUCCESS ]
-  then
-    # Help seeing what is wrong
-    openio cluster list
-  fi
-  return $SUCCESS
+  openio cluster wait || (openio cluster list --stats; gridinit_cmd -S ~/.oio/sds/run/gridinit.sock status2; return 1)
 }
 
 function configure_aws() {
