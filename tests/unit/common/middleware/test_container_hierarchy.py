@@ -324,6 +324,15 @@ class OioContainerHierarchy(unittest.TestCase):
         self._test_listing_with_marker()
 
     def _test_listing_with_marker(self):
+        # register root container
+        self.app.register(
+            'GET',
+            '/v1/a/bucket?marker=d1&prefix=&limit=10000&format=json',
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": "zz",
+                         "content_type": "application/octet-stream"}]))
         req = Request.blank('/v1/a/bucket?limit=10&delimiter=%2F&marker=d1/',
                             method='GET')
         resp = self.call_ch(req)
@@ -331,6 +340,7 @@ class OioContainerHierarchy(unittest.TestCase):
                  for item in json.loads(resp[2])]
         self.assertNotIn('d1/', names)
         self.assertIn('d2/', names)
+        self.assertIn('zz', names)
 
     def test_listing_with_marker_multi_container_v1(self):
         self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
@@ -348,6 +358,15 @@ class OioContainerHierarchy(unittest.TestCase):
         self._test_listing_with_marker_multi_container()
 
     def _test_listing_with_marker_multi_container(self):
+        # register root container
+        self.app.register(
+            'GET',
+            '/v1/a/bucket?marker=d1&prefix=&limit=10000&format=json',
+            swob.HTTPOk, {},
+            json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
+                         "last_modified": "2018-04-20T09:40:59.000000",
+                         "bytes": 0, "name": "zz",
+                         "content_type": "application/octet-stream"}]))
         # with marker aa (as we inspect d1/)
         self.app.register(
             'GET',
@@ -373,6 +392,7 @@ class OioContainerHierarchy(unittest.TestCase):
                  for item in json.loads(resp[2])]
         self.assertIn('d1/d0', names)
         self.assertIn('d2/d0', names)
+        self.assertIn('zz', names)
 
     def test_duplicate_obj_cnt(self):
         self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
@@ -388,6 +408,10 @@ class OioContainerHierarchy(unittest.TestCase):
         self._test_duplicate_obj_cnt()
 
     def _test_duplicate_obj_cnt(self):
+        self.app.register(
+            'GET',
+            '/v1/a/bucket?marker=d1&prefix=&limit=10000&format=json',
+            swob.HTTPOk, {}, json.dumps([]))
         req = Request.blank('/v1/a/bucket?limit=10&delimiter=%2F&marker=d1/',
                             method='GET')
         resp = self.call_ch(req)
