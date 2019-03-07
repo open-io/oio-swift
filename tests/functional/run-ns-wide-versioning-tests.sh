@@ -23,7 +23,7 @@ compile_sds || exit 1
 run_sds || exit 1
 
 coverage run -p runserver.py conf/hashed-containers.cfg -v &
-sleep 1
+sleep 2
 PID=$(jobs -p)
 
 bash tests/functional/ns-wide-versioning-tests.sh "$OIO_NS" "$OIO_ACCOUNT"
