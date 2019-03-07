@@ -4,9 +4,9 @@ source tests/functional/common.sh
 
 export OIO_NS="OPENIO" OIO_ACCOUNT="test_account" OIO_USER=USER-$RANDOM OIO_PATH=PATH-$RANDOM
 
-install_deps
-compile_sds
-run_sds
+install_deps || exit 1
+compile_sds || exit 1
+run_sds || exit 1
 
 RET=0
 
