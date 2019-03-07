@@ -55,7 +55,7 @@ function run_sds() {
     -f third_party/oio-sds/etc/bootstrap-preset-SINGLE.yml \
     -f third_party/oio-sds/etc/bootstrap-meta1-1digits.yml \
     -f third_party/oio-sds/etc/bootstrap-option-cache.yml
-  openio cluster wait || (openio cluster list --stats; gridinit_cmd -S ~/.oio/sds/run/gridinit.sock status2; return 1)
+  openio cluster wait || (openio cluster list --stats; gridinit_cmd -S ~/.oio/sds/run/gridinit.sock status2; sudo tail -n 500 /var/log/syslog; return 1)
 }
 
 function configure_aws() {
@@ -102,6 +102,15 @@ function configure_oioswift() {
     sed -i "s/USER/$(id -un)/g" "$1"
 }
 
+function run_script() {
+  if bash "$1"; then
+    printf "${GREEN}\n${1}: OK\n${NO_COLOR} ($2)"
+  else
+    RET=1
+    printf "${RED}\n${1}: FAILED\n${NO_COLOR} ($2)"
+  fi
+}
+
 function run_functional_test() {
     local conf="conf/$1"
     shift
@@ -114,12 +123,7 @@ function run_functional_test() {
 
     for suite in $test_suites
     do
-      if bash "$suite"; then
-        printf "${GREEN}\n${suite}: OK\n${NO_COLOR} ($conf)"
-      else
-        RET=1
-        printf "${RED}\n${suite}: FAILED\n${NO_COLOR} ($conf)"
-      fi
+      run_script "$suite" "$conf"
     done
 
     for pid in $PID; do
