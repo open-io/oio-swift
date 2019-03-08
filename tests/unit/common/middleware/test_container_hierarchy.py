@@ -101,7 +101,7 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt'])
         self.ch.conn.hkeys = mock.MagicMock(return_value=['d1/d2/d3/'])
         self._test_recursive_listing()
-        self.ch.conn.hkeys.assert_called_with('CS:a:cnt')
+        self.ch.conn.hkeys.assert_called_with('CS:a:cnt', match='d1/d2/*')
 
     def _test_recursive_listing(self):
         self.app.register(
@@ -129,7 +129,7 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt'])
         self.ch.conn.hkeys = mock.MagicMock(return_value=['d 1/d2/'])
         self._test_listing_with_space()
-        self.ch.conn.hkeys.assert_called_with('CS:a:cnt')
+        self.ch.conn.hkeys.assert_called_with('CS:a:cnt', match='d 1/d2/*')
 
     def _test_listing_with_space(self):
         self.app.register(

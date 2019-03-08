@@ -96,8 +96,8 @@ class RedisDb(object):
     def keys(self, pattern):
         return self.conn_slave.scan_iter(pattern, count=5000)
 
-    def hkeys(self, key):
-        return self.conn.hkeys(key)
+    def hkeys(self, key, match=None, count=DEFAULT_LIMIT):
+        return self.conn.hscan_iter(key, match=match, count=count)
 
     def exists(self, key):
         return self.conn_slave.exists(key)
@@ -126,7 +126,7 @@ class FakeRedis(object):
             return
         self._keys[key].pop(hkey, None)
 
-    def hkeys(self, key):
+    def hkeys(self, key, match=None):
         if not self._keys.get(key, None):
             return []
         return self._keys[key].iterkeys()
@@ -348,9 +348,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             matches = list()
             for k in keys:
                 _, mode = k.rsplit(":", 1)
-                for r in self.conn.hkeys(k):
-                    if r.startswith(prefix) or r == prefix:
-                        matches.append((mode, r))
+                for r in self.conn.hkeys(k, match=prefix + "*"):
+                    matches.append((mode, r))
         LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
 
         if parse_root:
