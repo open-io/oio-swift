@@ -29,8 +29,8 @@ class OioContainerHierarchy(unittest.TestCase):
             **self.filter_conf)(self.app)
 
     def mock(self):
-        self.ch._create_key = mock.MagicMock(return_value=None)
-        self.ch._remove_key = mock.MagicMock(return_value=None)
+        self.ch._create_placeholder = mock.MagicMock(return_value=None)
+        self.ch._remove_placeholder = mock.MagicMock(return_value=None)
 
     def call_app(self, req, app=None):
         if app is None:
@@ -72,8 +72,8 @@ class OioContainerHierarchy(unittest.TestCase):
         resp = self.call_ch(req)
 
         self.assertEqual(resp[0], '201 Created')
-        self.ch._create_key.assert_called_with(mock.ANY,
-                                               'a', 'c', 'cnt', 'd1/d2/d3/')
+        self.ch._create_placeholder.assert_called_with(
+            mock.ANY, 'a', 'c', 'cnt', 'd1/d2/d3/')
 
     def test_fake_directory_put(self):
         self.mock()
@@ -81,8 +81,8 @@ class OioContainerHierarchy(unittest.TestCase):
         resp = self.call_ch(req)
 
         self.assertEqual(resp[0], '201 Created')
-        self.ch._create_key.assert_called_with(mock.ANY,
-                                               'a', 'c', 'obj', 'd1/d2/d3/')
+        self.ch._create_placeholder.assert_called_with(
+            mock.ANY, 'a', 'c', 'obj', 'd1/d2/d3/')
 
     def test_get(self):
         self.app.register(
@@ -98,10 +98,12 @@ class OioContainerHierarchy(unittest.TestCase):
 
     def test_recursive_listing_v2(self):
         self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
-        self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt'])
-        self.ch.conn.hkeys = mock.MagicMock(return_value=['d1/d2/d3/'])
+        # Will be called on CNT first (1 element), then on OBJ (empty)
+        self.ch.conn.hkeys = mock.MagicMock(side_effect=(['d1/d2/d3/'], []))
         self._test_recursive_listing()
-        self.ch.conn.hkeys.assert_called_with('CS:a:cnt', match='d1/d2/*')
+        self.ch.conn.hkeys.assert_has_calls(
+            [mock.call('CS:a:c:cnt', match='d1/d2/*'),
+             mock.call('CS:a:c:obj', match='d1/d2/*')])
 
     def _test_recursive_listing(self):
         self.app.register(
@@ -126,10 +128,12 @@ class OioContainerHierarchy(unittest.TestCase):
 
     def test_listing_with_space_v2(self):
         self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
-        self.ch.conn.keys = mock.MagicMock(return_value=['CS:a:cnt'])
-        self.ch.conn.hkeys = mock.MagicMock(return_value=['d 1/d2/'])
+        # Will be called on CNT first (1 element), then on OBJ (empty)
+        self.ch.conn.hkeys = mock.MagicMock(side_effect=(['d 1/d2/'], []))
         self._test_listing_with_space()
-        self.ch.conn.hkeys.assert_called_with('CS:a:cnt', match='d 1/d2/*')
+        self.ch.conn.hkeys.assert_has_calls(
+            [mock.call('CS:a:c:cnt', match='d 1/d2/*'),
+             mock.call('CS:a:c:obj', match='d 1/d2/*')])
 
     def _test_listing_with_space(self):
         self.app.register(
@@ -483,8 +487,9 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V2
         self.ch.conn.keys = mock.MagicMock(
             return_value=['CS:a:bucket+segments:cnt'])
+        # Will be called on CNT first (1 element), then on OBJ (empty)
         self.ch.conn.hkeys = mock.MagicMock(
-            return_value=['d1/d2/d3/'])
+            side_effect=(['d1/d2/d3/'], []))
         self._test_upload_in_progress()
 
     def _test_upload_in_progress(self):
