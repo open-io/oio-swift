@@ -1,4 +1,4 @@
-# Copyright (C) 2018 OpenIO SAS
+# Copyright (C) 2018-2019 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,8 +31,11 @@ DEFAULT_LIMIT = 10000
 REDIS_KEYS_FORMAT_V1 = 'v1'
 REDIS_KEYS_FORMAT_V2 = 'v2'
 
-OBJ = 'obj'  # redis key represent a real empty object that ends with /
-CNT = 'cnt'  # redis key show a redirection to a container
+# The Redis key represents a real empty object whose name ends with /.
+OBJ = 'obj'
+# The Redis key represents a redirection to a container, a "common prefix"
+# in the sense of S3 object listing.
+CNT = 'cnt'
 
 
 class RedisDb(object):
@@ -213,7 +216,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 % (pipeline, MIDDLEWARE_NAME))
 
     def key(self, account, container, mode, path=None):
-        """returns Redis key"""
+        """
+        Build the name of a key that will be used to store
+        container or dummy object placeholders.
+        """
         ret = self.PREFIX + account + ":" + container + ":"
         if mode:
             if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
@@ -221,11 +227,16 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 if path:
                     ret += path
             else:
-                if mode:
-                    ret += mode
+                ret += mode
         return ret
 
-    def _create_key(self, req, account, container, mode, path):
+    def _create_placeholder(self, req, account, container, mode, path):
+        """
+        Create a "placeholder" telling that a container has been created
+        to hold objects sharing a common prefix.
+
+        :param mode: OBJ or CNT.
+        """
         key = self.key(account, container, mode, path)
         LOG.debug("%s: create key %s", self.SWIFT_SOURCE, key)
         # TODO: should we increase number of objects ?
@@ -241,7 +252,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 LOG.warn("%s: failed to create key %s %s",
                          self.SWIFT_SOURCE, key, path)
 
-    def _remove_key(self, req, account, container, mode, path):
+    def _remove_placeholder(self, req, account, container, mode, path):
         if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
             key = self.key(account, container, mode, path) + '/'
         else:
@@ -286,7 +297,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         # FIXME(mb): should use marker for big MPU
         # but it doesn't seems to manage truncated MPU listing in swift3
         prefix = prefix[0] if prefix else ''
-        path, _ = self._path(prefix.split('/'), True)
+        path, _ = self._container_suffix(prefix.split('/'), True)
         mpu_prefix = prefix[len(path):].lstrip('/')
 
         def header_cb(header_dict):
@@ -343,13 +354,12 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             matches = [k[len(prefix_key):].split(':', 1)
                        for k in self.conn.keys(key)]
         else:
-            key = self.key(account, container, '*')
-            keys = self.conn.keys(key)
             matches = list()
-            for k in keys:
-                _, mode = k.rsplit(":", 1)
-                for r in self.conn.hkeys(k, match=prefix + "*"):
-                    matches.append((mode, r))
+            for mode in (CNT, OBJ):
+                key = self.key(account, container, mode)
+                # empty if key does not exist
+                for entry in self.conn.hkeys(key, match=prefix + "*"):
+                    matches.append((mode, entry))
         LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
 
         if parse_root:
@@ -476,7 +486,14 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         return [body]
 
-    def _path(self, obj_parts, is_mpu, sep=None):
+    def _container_suffix(self, obj_parts, is_mpu, sep=None):
+        """
+        Build a suffix for the name of the container, by aggregating object
+        parts (except the last).
+
+        :returns: the suffix and the index of the first part that should
+            be kept in the object name.
+        """
         if not sep:
             sep = self.DELIMITER
 
@@ -490,8 +507,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                         # CloudBerry: mitigate number of container created
                         if i >= 3:
                             if obj_parts[i-3] == obj_parts[i-1] + ':':
-                                return sep.join(obj_parts[:i-3]), i-2
-                        return sep.join(obj_parts[:i-1]), i
+                                return sep.join(obj_parts[:i-3]), i-3
+                        return sep.join(obj_parts[:i-1]), i-1
                     except TypeError:
                         pass
             LOG.error("MPU fails to detect UploadId")
@@ -499,9 +516,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         # CloudBerry: mitigate number of container created
         if len(obj_parts) >= 3:
             if obj_parts[-1] + ':' == obj_parts[-3]:
-                return sep.join(obj_parts[:-3]), -2
+                return sep.join(obj_parts[:-3]), -3
 
-        return sep.join(obj_parts[:-1]), len(obj_parts)
+        return sep.join(obj_parts[:-1]), len(obj_parts)-1
 
     def _fake_container_and_obj(self, container, obj_parts, is_listing=False,
                                 is_mpu=False):
@@ -515,11 +532,11 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 [container] + obj_parts[:-2])
             obj = obj_parts[-2] + self.DELIMITER
         else:
-            cnt, idx = self._path(obj_parts, is_mpu,
-                                  sep=self.ENCODED_DELIMITER)
+            cnt, idx = self._container_suffix(
+                obj_parts, is_mpu, sep=self.ENCODED_DELIMITER)
             if cnt:
                 container += self.ENCODED_DELIMITER + cnt
-            obj = obj_parts[idx-1:] if obj_parts else ''
+            obj = obj_parts[idx:] if obj_parts else ''
             obj = '/'.join(obj)
         return container, obj
 
@@ -634,13 +651,14 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             obj_parts = obj.split(self.DELIMITER)
             if len(obj_parts) > 1:
                 # path = self.DELIMITER.join(obj_parts[:-1]) + self.DELIMITER
-                path, _ = self._path(obj_parts, is_mpu)
+                path, _ = self._container_suffix(obj_parts, is_mpu)
                 is_dir = obj.endswith(self.DELIMITER)
                 # TODO (MBO) we should accept create key d1/d2/ only
                 # for empty object
                 if req.method == 'PUT':
-                    self._create_key(req, account, container,
-                                     OBJ if is_dir else CNT, path + '/')
+                    self._create_placeholder(
+                        req, account, container,
+                        OBJ if is_dir else CNT, path + '/')
                     if is_dir:
                         oheaders = {'Content-Length': 0,
                                     'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
@@ -648,7 +666,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                         return ['']
 
                 elif req.method == 'DELETE' and is_dir:
-                    self._remove_key(req, account, container, OBJ, path)
+                    self._remove_placeholder(req, account, container,
+                                             OBJ, path)
                     oheaders = {'Content-Length': 0,
                                 'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
                     start_response("204 No Content", oheaders.items())
@@ -677,7 +696,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
             if req.method == 'DELETE' and not is_mpu and len(obj_parts) > 1:
                 # only remove marker
-                self._remove_key(req, account, container, CNT, path)
+                self._remove_placeholder(req, account, container, CNT, path)
         return res
 
 
