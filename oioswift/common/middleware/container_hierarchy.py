@@ -20,7 +20,7 @@ from paste.deploy import loadwsgi
 from six.moves.urllib.parse import parse_qs, quote
 from swift.common.swob import Request
 from swift.common.utils import config_true_value, \
-    closing_if_possible, get_logger
+    closing_if_possible, get_logger, MD5_OF_EMPTY_STRING
 from swift.common.wsgi import make_subrequest, loadcontext, PipelineWrapper
 from oioswift.common.middleware.autocontainerbase import AutoContainerBase
 from oio.common.exceptions import ConfigurationException
@@ -36,6 +36,10 @@ OBJ = 'obj'
 # The Redis key represents a redirection to a container, a "common prefix"
 # in the sense of S3 object listing.
 CNT = 'cnt'
+
+FAKE_ACL = '''{"Owner":"internal:internal",
+               "Grant":[{"Grantee":"AllUsers","Permission":"READ"},
+                        {"Grantee":"AllUsers","Permission":"WRITE"}]}'''
 
 
 class RedisDb(object):
@@ -96,8 +100,8 @@ class RedisDb(object):
     def hdel(self, key, hkey):
         return self.conn.hdel(key, hkey)
 
-    def keys(self, pattern):
-        return self.conn_slave.scan_iter(pattern, count=5000)
+    def keys(self, pattern, count=DEFAULT_LIMIT):
+        return self.conn_slave.scan_iter(pattern, count=count)
 
     def hkeys(self, key, match=None, count=DEFAULT_LIMIT):
         return self.conn_slave.hscan_iter(key, match=match, count=count)
@@ -450,7 +454,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 if mode == "obj":
                     ret = [{'name': entry,
                             'bytes': 0,
-                            'hash': '"d41d8cd98f00b204e9800998ecf8427e"',
+                            'hash': MD5_OF_EMPTY_STRING,
                             'last_modified': '1970-01-01T00:00:00.000000'}]
 
                 elif entry:
@@ -603,6 +607,45 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             req.headers['Oio-Copy-From'] = '/' + c_container + '/' + c_obj
             env2['HTTP_OIO_COPY_FROM'] = '/' + c_container + '/' + c_obj
 
+    def _handle_dir_object(self, req, start_response, account, container,
+                           path):
+        if req.method in ('GET', 'HEAD'):
+            key = self.key(account, container, OBJ, path)
+            if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+                is_available = self.conn.exists(key + "/")
+            else:
+                is_available = self.conn.hexists(key, path + "/")
+
+            if is_available:
+                # add a fake AllUsers permissions, otherwise it will
+                # be dropped by ACL checks in S3 Layer
+                oheaders = {
+                    'Content-Length': 0,
+                    'Etag': MD5_OF_EMPTY_STRING,
+                    'x-object-sysmeta-swift3-acl': FAKE_ACL}
+                start_response("200 OK", oheaders.items())
+            else:
+                start_response("404 Not Found", [])
+            return ['']
+
+        if req.method == 'PUT':
+            # TODO (MBO) we should accept create key d1/d2/ only
+            # for empty object
+            key = self.key(account, container, OBJ, path)
+            self._create_placeholder(req, account, container,
+                                     OBJ, path + '/')
+            oheaders = {'Content-Length': 0,
+                        'Etag': MD5_OF_EMPTY_STRING}
+            start_response("201 Created", oheaders.items())
+            return ['']
+
+        if req.method == 'DELETE':
+            self._remove_placeholder(req, account, container, OBJ, path)
+            oheaders = {'Content-Length': 0,
+                        'Etag': MD5_OF_EMPTY_STRING}
+            start_response("204 No Content", oheaders.items())
+            return ['']
+
     def __call__(self, env, start_response):
         self._save_bucket_name(env)
         if self.should_bypass(env):
@@ -625,7 +668,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         # normal listing because it is the list-multipart-uploads operation
         is_mpu = container.endswith("+segments") and (obj is not None
                                                       or prefix is not None)
-
         LOG.debug("%s: Got %s request for container=%s, "
                   "obj=%s, prefix=%s marker=%s is_mpu=%d",
                   self.SWIFT_SOURCE, req.method, container, obj,
@@ -650,28 +692,32 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             LOG.debug("%s: -> is NOT listing request", self.SWIFT_SOURCE)
             obj_parts = obj.split(self.DELIMITER)
             if len(obj_parts) > 1:
-                # path = self.DELIMITER.join(obj_parts[:-1]) + self.DELIMITER
                 path, _ = self._container_suffix(obj_parts, is_mpu)
-                is_dir = obj.endswith(self.DELIMITER)
-                # TODO (MBO) we should accept create key d1/d2/ only
-                # for empty object
-                if req.method == 'PUT':
-                    self._create_placeholder(
-                        req, account, container,
-                        OBJ if is_dir else CNT, path + '/')
-                    if is_dir:
-                        oheaders = {'Content-Length': 0,
-                                    'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
-                        start_response("201 Created", oheaders.items())
+                # When Hadoop S3A detects a prefix (dir1/dir2/) for
+                # objet dir1/dir2/object1, two HEAD requests will be done:
+                # HEAD dir1/dir2/
+                #   this case is managed by checking if Redis Key OBJ exists
+                if obj.endswith(self.DELIMITER):
+                    return self._handle_dir_object(req, start_response,
+                                                   account, container, path)
+
+                # HEAD dir1/dir2 : this case is partially managed by checking
+                # is # Redis Key CNT exists for dir1, if key if not present, we
+                # can reply 404 because there is no objects in dir1/ container
+                if not is_mpu and req.method in ('GET', 'HEAD'):
+                    key = self.key(account, container, CNT, path)
+                    if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+                        check = self.conn.exists(key + '/')
+                    else:
+                        check = self.conn.hexists(key, path + "/")
+                    if not check:
+                        start_response("404 Not Found", [])
                         return ['']
 
-                elif req.method == 'DELETE' and is_dir:
-                    self._remove_placeholder(req, account, container,
-                                             OBJ, path)
-                    oheaders = {'Content-Length': 0,
-                                'Etag': 'd41d8cd98f00b204e9800998ecf8427e'}
-                    start_response("204 No Content", oheaders.items())
-                    return ['']
+                # manage real objects
+                if req.method == 'PUT':
+                    self._create_placeholder(req, account, container,
+                                             CNT, path + '/')
 
             container2, obj2 = self._fake_container_and_obj(container,
                                                             obj_parts,
