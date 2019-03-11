@@ -97,13 +97,13 @@ class RedisDb(object):
         return self.conn_slave.scan_iter(pattern, count=5000)
 
     def hkeys(self, key, match=None, count=DEFAULT_LIMIT):
-        return self.conn.hscan_iter(key, match=match, count=count)
+        return self.conn_slave.hscan_iter(key, match=match, count=count)
 
     def exists(self, key):
         return self.conn_slave.exists(key)
 
     def hexists(self, key, hkey):
-        return self.conn.hexists(key, hkey)
+        return self.conn_slave.hexists(key, hkey)
 
 
 class FakeRedis(object):
