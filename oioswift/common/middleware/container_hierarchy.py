@@ -104,7 +104,8 @@ class RedisDb(object):
         return self.conn_slave.scan_iter(pattern, count=count)
 
     def hkeys(self, key, match=None, count=DEFAULT_LIMIT):
-        return self.conn_slave.hscan_iter(key, match=match, count=count)
+        return [k[0] for k in
+                self.conn_slave.hscan_iter(key, match=match, count=count)]
 
     def exists(self, key):
         return self.conn_slave.exists(key)
@@ -262,7 +263,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         else:
             key = self.key(account, container, mode)
 
-        key = self.key(account, container, mode, path) + '/'
         if mode == CNT:
             # remove container key only if empty
             empty = not any(self._list_objects(
