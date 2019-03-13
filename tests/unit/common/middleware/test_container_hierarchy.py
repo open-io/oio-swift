@@ -85,6 +85,8 @@ class OioContainerHierarchy(unittest.TestCase):
             mock.ANY, 'a', 'c', 'obj', 'd1/d2/d3/')
 
     def test_get(self):
+        if self.ch.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            self.ch.conn.set("CS:a:c:cnt:d1/d2/d3/", 1)
         self.app.register(
             'GET', '/v1/a/c%2Fd1%2Fd2%2Fd3/o', swob.HTTPOk, {})
         req = Request.blank('/v1/a/c/d1/d2/d3/o', method='GET')
