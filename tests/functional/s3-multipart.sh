@@ -76,6 +76,14 @@ echo "Fetching this small object"
 ${AWS} s3 cp "s3://$BUCKET/obj" obj
 diff "${SMALL_FILE}" obj
 
+echo "Check ETAG with more than 10 parts"
+dd if=/dev/zero of=$MULTI_FILE bs=1M count=55
+${AWS} s3 cp "$MULTI_FILE" "s3://$BUCKET/obj"
+DATA=$(${AWS} s3api head-object --bucket ${BUCKET} --key obj)
+ETAG=$(echo $DATA | jq -r .ETag)
+
+[ "$ETAG" == '"c9975699ef630d1f3dfc7224b16d1a25-11"' ]
+
 echo
 echo "Cleanup"
 echo "-------"
