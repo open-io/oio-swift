@@ -162,6 +162,10 @@ sleep 0.5
 CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
 [ "$CNT" -eq 13 ]
 
+# Check HEAD on directory "Object"
+${AWS} s3api put-object  --bucket ${BUCKET} --key dir1/dir2/
+${AWS} s3api head-object --bucket ${BUCKET} --key dir1/dir2/
+
 # COPY S3<=>S3
 
 BCK1=bucket-${RANDOM}
@@ -182,7 +186,7 @@ ${AWS} s3 cp s3://${BCK1}/root s3://${BCK2}/d1/d2/d3/bigfile
 # COPY SAME BUCKET
 ${AWS} s3 cp s3://${BCK1}/root s3://${BCK1}/same_bucket/bigfile
 
-# COPY WITF UTF-8 PATH
+# COPY WITH UTF-8 PATH
 ${AWS} s3 cp s3://${BCK1}/root s3://${BCK1}/répertoire/bigfile
 
 ${AWS} s3api list-objects --bucket ${BCK1}
