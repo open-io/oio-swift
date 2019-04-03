@@ -29,6 +29,7 @@ before_install:
   - sudo apt-get install -y --force-yes python-virtualenv jq liberasurecode-dev libssl-dev libattr1-dev libleveldb-dev libzookeeper-mt-dev
 
 install:
+  - echo -en "travis_fold:start:install\r"
   - virtualenv $HOME/venv
   - source $HOME/venv/bin/activate
   - pip install --upgrade pip setuptools virtualenv tox flake8
@@ -43,6 +44,7 @@ install:
   - python setup.py develop
   - pip install --upgrade -r test-requirements.txt
   - go get gopkg.in/ini.v1 gopkg.in/tylerb/graceful.v1
+  - echo -en "travis_fold:end:install\r"
 
 script:
   - set -e
