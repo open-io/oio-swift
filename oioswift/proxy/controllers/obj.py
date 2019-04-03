@@ -267,8 +267,7 @@ class ObjectController(BaseObjectController):
             hash_ = hash_.lower()
         resp.headers['etag'] = hash_
         resp.headers['x-object-sysmeta-version-id'] = metadata['version']
-        ts = Timestamp(metadata['ctime'])
-        resp.last_modified = math.ceil(float(ts))
+        resp.last_modified = int(metadata['mtime'])
         if stream:
             # Whether we are bothered with ranges or not, we wrap the
             # stream in order to handle exceptions.
@@ -616,9 +615,11 @@ class ObjectController(BaseObjectController):
                 {'path': req.path})
             raise HTTPInternalServerError(request=req)
 
+        last_modified = int(_meta.get('mtime', math.ceil(time.time())))
+
         resp = HTTPCreated(
            request=req, etag=checksum,
-           last_modified=_meta.get('mtime', int(time.time())),
+           last_modified=last_modified,
            headers={'x-object-sysmeta-version-id': _meta.get('version', None)})
         return resp
 
