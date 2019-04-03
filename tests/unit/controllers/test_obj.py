@@ -105,7 +105,7 @@ class TestObjectController(unittest.TestCase):
         self.app.container_info = dict(self.container_info)
         self.storage.account.account_show = Mock(
             return_value={
-                'ctime': 0,
+                'mtime': 0,
                 'containers': 1,
                 'objects': 1,
                 'bytes': 2,
@@ -114,10 +114,11 @@ class TestObjectController(unittest.TestCase):
         self.storage.container.container_get_properties = Mock(
                 return_value={'properties': {}, 'system': {}})
 
-    def _patch_object_create(self, **kwargs):
+    def _patch_object_create(self, mtime=None, **kwargs):
         if hasattr(self.storage, "object_create_ext"):
             if 'return_value' in kwargs:
-                kwargs['return_value'] += ({'version': 1515}, )
+                kwargs['return_value'] += \
+                    ({'version': 1515, 'mtime': 1554308195}, )
             self.storage.object_create_ext = Mock(**kwargs)
             return True, self.storage.object_create_ext
         else:
@@ -143,7 +144,7 @@ class TestObjectController(unittest.TestCase):
     def test_HEAD_simple(self):
         req = Request.blank('/v1/a/c/o', method='HEAD')
         ret_val = {
-            'ctime': 0,
+            'mtime': 0,
             'hash': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             'length': 1,
             'deleted': False,
@@ -164,7 +165,7 @@ class TestObjectController(unittest.TestCase):
         req.headers['if-none-match'] = '0000'
         req.headers['content-length'] = '0'
         ret_val = {
-            'ctime': 0,
+            'mtime': 0,
             'hash': '1111',
             'length': 1,
             'deleted': False,
@@ -207,6 +208,18 @@ class TestObjectController(unittest.TestCase):
         self.assertIn('Last-Modified', resp.headers)
         self.assertIn('Etag', resp.headers)
         self.assertIn(ret_val[2], resp.headers['Etag'])
+
+    def test_PUT_last_modified_with_mtime(self):
+        if not hasattr(self.storage, "object_create_ext"):
+            self.skipTest("No object_create_ext method")
+        req = Request.blank('/v1/a/c/o', method='PUT')
+        req.headers['content-length'] = '0'
+        ret_val = ({}, 0, 'd41d8cd98f00b204e9800998ecf8427e')
+
+        _, mock = self._patch_object_create(return_value=ret_val)
+        resp = req.get_response(self.app)
+        self.assertEqual(resp.headers['Last-Modified'],
+                         "Wed, 03 Apr 2019 16:16:35 GMT")
 
     def test_PUT_requires_length(self):
         req = Request.blank('/v1/a/c/o', method='PUT')
@@ -273,7 +286,7 @@ class TestObjectController(unittest.TestCase):
         req.headers['if-none-match'] = '1111'
         req.headers['content-length'] = '0'
         ret_val = {'hash': '0000', 'version': '554086800000000',
-                   'ctime': 554086800, 'length': 0, 'deleted': 'false'}
+                   'mtime': 554086800, 'length': 0, 'deleted': 'false'}
         self.storage.object_get_properties = Mock(return_value=ret_val)
         ret_val2 = ({}, 0, '')
         _, mock = self._patch_object_create(return_value=ret_val2)
@@ -413,7 +426,7 @@ class TestObjectController(unittest.TestCase):
 
         ret_value = ({
             'hash': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            'ctime': 0,
+            'mtime': 0,
             'length': 1,
             'deleted': False,
             'version': 42,
@@ -429,7 +442,7 @@ class TestObjectController(unittest.TestCase):
 
         ret_value = ({
             'hash': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            'ctime': 0,
+            'mtime': 0,
             'length': 10,
             'deleted': False,
             'version': 42,
@@ -453,7 +466,7 @@ class TestObjectController(unittest.TestCase):
         req = Request.blank('/v1/a/c/o')
         ret_value = ({
             'hash': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            'ctime': 0,
+            'mtime': 0,
             'length': 10,
             'deleted': False,
             'version': 42,
