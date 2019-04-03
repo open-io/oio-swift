@@ -8,6 +8,7 @@ function install_deps() {
   if [ -n "${SKIP_BUILD}" ]; then
     return
   fi
+  echo "travis_fold:start:install_deps"
   sudo apt-get install -y --force-yes \
     apache2 apache2-dev libapache2-mod-wsgi \
     beanstalkd \
@@ -26,6 +27,7 @@ function install_deps() {
     libzookeeper-mt-dev \
     openio-gridinit openio-asn1c \
     python-all-dev python-virtualenv
+  echo "travis_fold:end:install_deps"
 }
 
 function compile_sds() {
@@ -33,6 +35,7 @@ function compile_sds() {
     return
   fi
   cd third_party/oio-sds || return
+  echo "travis_fold:start:compile_deps"
   cmake \
     -DCMAKE_INSTALL_PREFIX="/tmp/oio" \
     -DLD_LIBDIR="lib" \
@@ -46,6 +49,7 @@ function compile_sds() {
     .
   make all install
   export PATH="$PATH:/tmp/oio/bin" LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/tmp/oio/lib"
+  echo "travis_fold:end:compile_deps"
   cd ../.. || return
 }
 
@@ -55,7 +59,7 @@ function run_sds() {
     -f third_party/oio-sds/etc/bootstrap-preset-SINGLE.yml \
     -f third_party/oio-sds/etc/bootstrap-meta1-1digits.yml \
     -f third_party/oio-sds/etc/bootstrap-option-cache.yml
-  openio cluster wait || (openio cluster list --stats; gridinit_cmd -S ~/.oio/sds/run/gridinit.sock status2; sudo tail -n 500 /var/log/syslog; return 1)
+  openio cluster wait || (openio cluster list --stats; gridinit_cmd -S ~/.oio/sds/run/gridinit.sock status2; sudo tail -n 100 /var/log/syslog; return 1)
 }
 
 function configure_aws() {
