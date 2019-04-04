@@ -401,18 +401,17 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                     matches.append((mode, entry))
                     continue
                 if entry < marker_:
-                    #  if entry != "" or not marker_root:
-                    #     LOG.debug("%s: marker ignore %s: before)",
-                    #               self.SWIFT_SOURCE, entry)
                     continue
-                if entry == marker_ + '/' and not recursive:
-                    # marker is something like d1/ but we d1/d2/d3/ key
-                    LOG.debug("%s: marker ignore %s: not recursive",
-                              self.SWIFT_SOURCE, entry)
+                # when a listing is done without recursive mode, ignore marker
+                # for container entry
+                if mode == CNT and entry == marker and not recursive:
+                    LOG.debug(
+                        "%s: marker ignore %s: skip container (not recursive)",
+                        self.SWIFT_SOURCE, entry)
                     continue
                 if mode == OBJ and entry == marker_ + '/':
                     LOG.debug("%s: marker ignore %s: skip object",
-                              self.SWIFT_SOURCE, entry, marker_)
+                              self.SWIFT_SOURCE, entry)
                     continue
                 matches.append((mode, entry))
         matches.sort()

@@ -47,4 +47,74 @@ ${AWS} s3 rm s3://${BUCKET}/bb
 ${AWS} s3 rm s3://${BUCKET}/dd/dd
 ${AWS} s3 rm s3://${BUCKET}/ff
 
+
+# test marker with prefix on object
+
+for i in $(seq 1 21); do
+    ${AWS} s3 cp /etc/magic s3://${BUCKET}/subdir/object-$i
+done
+
+echo "Recursive listing with default page-size"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key)
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 | grep -c Key)
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10 and prefix with trailing /"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 --prefix subdir/ | grep -c Key)
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10 and prefix without /"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 --prefix subdir | grep -c Key)
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10, prefix with trailing / and delimiter /"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 --prefix subdir/ --delimiter / | grep -c Key)
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10, prefix without trailing / and delimiter /"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 --prefix subdir --delimiter / | grep -c '"Prefix"')
+[ $objs -eq 1 ] || exit 1
+
+# cleanup
+for i in $(seq 1 21); do
+    ${AWS} s3 rm s3://${BUCKET}/subdir/object-$i
+done
+
+# test marker with prefix on subdir
+
+for i in $(seq 1 21); do
+    ${AWS} s3 cp /etc/magic s3://${BUCKET}/subdir/subdir-$i/object-$i
+done
+
+echo "Recursive listing with default page-size"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key)
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 | grep -c Key)
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10 and prefix with trailing /"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 --prefix subdir/ | grep -c Key)
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10 and prefix without trailing /"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 --prefix subdir | grep -c Key)
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10, prefix with trailing / and delimiter /"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 --prefix subdir/ --delimiter / | grep -c '"Prefix"')
+[ $objs -eq 21 ] || exit 1
+
+echo "Recursive listing with page-size 10, prefix without trailing / and delimiter /"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 --prefix subdir --delimiter / | grep -c '"Prefix"')
+[ $objs -eq 1 ] || exit 1
+
+# cleanup
+for i in $(seq 1 21); do
+    ${AWS} s3 rm s3://${BUCKET}/subdir/subdir-$i/object-$i
+done
 ${AWS} s3 rb s3://${BUCKET}

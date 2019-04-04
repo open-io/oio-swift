@@ -317,7 +317,8 @@ class OioContainerHierarchy(unittest.TestCase):
     def test_listing_with_marker_v1(self):
         self.ch.redis_keys_format = REDIS_KEYS_FORMAT_V1
         self.ch.conn.keys = mock.MagicMock(
-            return_value=['CS:a:bucket:cnt:d1/',
+            return_value=['CS:a:bucket:cnt:d0/',
+                          'CS:a:bucket:cnt:d1/',
                           'CS:a:bucket:cnt:d2/'])
         self._test_listing_with_marker()
 
@@ -326,7 +327,7 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.conn.keys = mock.MagicMock(
             return_value=['CS:a:bucket:cnt'])
         self.ch.conn.hkeys = mock.MagicMock(
-            return_value=['d1/', 'd2/'])
+            return_value=['d0/', 'd1/', 'd2/'])
         self._test_listing_with_marker()
 
     def _test_listing_with_marker(self):
@@ -344,6 +345,7 @@ class OioContainerHierarchy(unittest.TestCase):
         resp = self.call_ch(req)
         names = [item.get('name', item.get('subdir'))
                  for item in json.loads(resp[2])]
+        self.assertNotIn('d0/', names)
         self.assertNotIn('d1/', names)
         self.assertIn('d2/', names)
         self.assertIn('zz', names)
