@@ -211,7 +211,7 @@ class ContainerController(SwiftContainerController):
 
         response = {'name': record['name'],
                     'bytes': record['size'],
-                    'last_modified': Timestamp(record['ctime']).isoformat,
+                    'last_modified': Timestamp(record['mtime']).isoformat,
                     'content_type': record.get(
                         'mime_type', 'application/octet-stream')}
         if hash_:
