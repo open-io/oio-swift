@@ -109,9 +109,11 @@ function configure_oioswift() {
 function run_script() {
   if "$1"; then
     printf "${GREEN}\n${1}: OK\n${NO_COLOR} ($2)"
+    return 0
   else
     RET=1
     printf "${RED}\n${1}: FAILED\n${NO_COLOR} ($2)"
+    return 1
   fi
 }
 
@@ -121,13 +123,17 @@ function run_functional_test() {
     local test_suites=$(for suite in $*; do echo "tests/functional/${suite}"; done)
     configure_oioswift $conf
 
-    coverage run -p runserver.py $conf -v 2>&1 | tee /tmp/journal.log &
+    coverage run -p runserver.py $conf -v >/tmp/journal.log 2>&1 &
     sleep 1
     PID=$(jobs -p)
 
     for suite in $test_suites
     do
       run_script "$suite" "$conf"
+      if [ $? -ne 0 ]; then
+        echo "LOG"
+        tail -n100 /tmp/journal.log
+      fi
     done
 
     for pid in $PID; do
