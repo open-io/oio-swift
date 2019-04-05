@@ -107,7 +107,7 @@ function configure_oioswift() {
 }
 
 function run_script() {
-  if bash "$1"; then
+  if "$1"; then
     printf "${GREEN}\n${1}: OK\n${NO_COLOR} ($2)"
   else
     RET=1
