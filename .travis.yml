@@ -44,7 +44,7 @@ install:
   - cd third_party/swift3 && python setup.py install && cd ../..
   - python setup.py develop
   - pip install --upgrade -r test-requirements.txt
-  - go get gopkg.in/ini.v1 gopkg.in/tylerb/graceful.v1
+  - go get gopkg.in/ini.v1 gopkg.in/tylerb/graceful.v1 golang.org/x/sys/unix
   - echo -en "travis_fold:end:install\r"
 
 script:
