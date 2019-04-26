@@ -107,6 +107,18 @@ OUT=$( ${AWS} s3 ls "s3://${BUCKET}/directory 1/directory 2/" )
 echo ${OUT} | grep object
 echo ${OUT} | grep "other one"
 
+# LISTING WITH MULTIPLE SLASH
+${AWS} s3api put-object --bucket ${BUCKET} --key "/slash//subdir///object" --body /etc/passwd
+OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} )
+echo ${OUT} | grep "/slash//subdir///object"
+OUT=$( ${AWS} s3 ls "s3://${BUCKET}//slash//subdir///" )
+echo ${OUT} | grep "object"
+${AWS} s3 cp bigfile s3://${BUCKET}//slash//subdir///bigfile
+OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} )
+echo ${OUT} | grep "/slash//subdir///bigfile"
+OUT=$( ${AWS} s3 ls "s3://${BUCKET}//slash//subdir///" )
+echo ${OUT} | grep "bigfile"
+
 ${AWS} s3 cp bigfile s3://${BUCKET}/subdir/bigfile
 
 ${AWS} s3 cp s3://${BUCKET}/subdir/bigfile testfile
@@ -125,7 +137,6 @@ ${AWS} s3 cp /etc/passwd s3://${BUCKET}/subdir/bigfile
 ${AWS} s3 cp s3://${BUCKET}/subdir/bigfile testfile
 [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum testfile | cut -d\  -f1)" ]
 rm testfile
-
 
 # CREATE SIMPLE OBJECT
 ${AWS} s3 cp /etc/passwd s3://${BUCKET}/subdir/simple
@@ -160,7 +171,7 @@ ${AWS} s3api put-object --bucket ${BUCKET} --key d1/d2/d3/d4/o2 --body aa
 ${AWS} s3api put-object --bucket ${BUCKET} --key v1/o2 --body aa
 sleep 0.5
 CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
-[ "$CNT" -eq 13 ]
+[ "$CNT" -eq 15 ]
 
 # Check HEAD on directory "Object"
 ${AWS} s3api put-object  --bucket ${BUCKET} --key dir1/dir2/

@@ -310,7 +310,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         oheaders = dict()
         ct_parts = [container]
         if path:
-            ct_parts += path.strip('/').split('/')
+            ct_parts += path.split(self.DELIMITER)
         ret = self._list_objects(env, account, ct_parts, header_cb,
                                  mpu_prefix, limit=DEFAULT_LIMIT,
                                  marker=marker)
@@ -457,9 +457,11 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                             'last_modified': '1970-01-01T00:00:00.000000'}]
 
                 elif entry:
+                    if entry[-1] == self.DELIMITER:
+                        entry = entry[:-1]
                     ret = self._list_objects(
                         env, account,
-                        [container] + entry.strip('/').split('/'), header_cb,
+                        [container] + entry.split(self.DELIMITER), header_cb,
                         _prefix, limit=DEFAULT_LIMIT, marker=_marker)
                 else:
                     # manage root container
