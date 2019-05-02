@@ -20,7 +20,7 @@ from swift.common.swob import HTTPMethodNotAllowed, \
     HTTPNotModified, HTTPPreconditionFailed, HTTPServiceUnavailable
 
 from oio.common.exceptions import NoSuchContainer, NoSuchObject,\
-    OioTimeout, ServiceBusy, ServiceUnavailable
+    OioTimeout, ServiceBusy, ServiceUnavailable, DeadlineReached
 try:
     # Since oio-sds 4.1.14
     from oio.common.exceptions import MethodNotAllowed
@@ -124,12 +124,15 @@ def handle_not_allowed(fnc):
 
 
 def handle_oio_timeout(fnc):
-    """Catch OioTimeout errors and return '503 Service Unavailable'."""
+    """
+    Catch DeadlineReached and OioTimeout errors
+    and return '503 Service Unavailable'.
+    """
     @wraps(fnc)
     def _oio_timeout_wrapper(self, req, *args, **kwargs):
         try:
             return fnc(self, req, *args, **kwargs)
-        except OioTimeout as exc:
+        except (DeadlineReached, OioTimeout) as exc:
             headers = dict()
             # TODO(FVE): choose the value according to the timeout
             headers['Retry-After'] = '1'
