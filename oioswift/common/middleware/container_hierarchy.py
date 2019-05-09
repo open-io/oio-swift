@@ -429,7 +429,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
                 already_done.add(subdir)
                 all_objs.append({
-                        'subdir': subdir
+                        'subdir': subdir.decode('utf-8')
                 })
             else:
                 _prefix = ''
@@ -451,7 +451,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                               self.SWIFT_SOURCE, marker, _marker)
 
                 if mode == "obj":
-                    ret = [{'name': entry,
+                    ret = [{'name': entry.decode('utf-8'),
                             'bytes': 0,
                             'hash': MD5_OF_EMPTY_STRING,
                             'last_modified': '1970-01-01T00:00:00.000000'}]
