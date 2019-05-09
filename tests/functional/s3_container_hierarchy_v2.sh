@@ -177,6 +177,40 @@ CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
 ${AWS} s3api put-object  --bucket ${BUCKET} --key dir1/dir2/
 ${AWS} s3api head-object --bucket ${BUCKET} --key dir1/dir2/
 
+# UTF-8 PATH
+# The '?' are caused by "s3 ls": https://github.com/aws/aws-cli/issues/3902
+BUCKET_UTF8=bucket-${RANDOM}
+${AWS} s3api create-bucket --bucket ${BUCKET_UTF8}
+${AWS} s3 cp /etc/passwd s3://${BUCKET_UTF8}/rêve/file
+${AWS} s3api head-object --bucket ${BUCKET_UTF8} --key rêve/file
+${AWS} s3 cp /etc/passwd s3://${BUCKET_UTF8}/intérêt
+${AWS} s3api head-object --bucket ${BUCKET_UTF8} --key intérêt
+${AWS} s3 cp /etc/passwd s3://${BUCKET_UTF8}/test/gâteau
+${AWS} s3api head-object --bucket ${BUCKET_UTF8} --key test/gâteau
+ALL_OBJECTS=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8})
+echo -e "${ALL_OBJECTS}" | grep "rêve/file"
+echo -e "${ALL_OBJECTS}" | grep "intérêt"
+echo -e "${ALL_OBJECTS}" | grep "test/gâteau"
+DIRECTORY_LIST=$(${AWS} s3 ls s3://${BUCKET_UTF8})
+[ $(echo -e "${DIRECTORY_LIST}" | wc -l) -eq 3 ]
+echo -e "${DIRECTORY_LIST}" | grep "r?ve/"
+echo -e "${DIRECTORY_LIST}" | grep "test/"
+echo -e "${DIRECTORY_LIST}" | grep "int?r?t"
+DIRECTORY_LIST=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8} --delimiter /)
+echo -e "${DIRECTORY_LIST}" | grep "rêve/"
+echo -e "${DIRECTORY_LIST}" | grep "test/"
+echo -e "${DIRECTORY_LIST}" | grep "intérêt"
+DIRECTORY_LIST=$(${AWS} s3 ls s3://${BUCKET_UTF8}/rêve/)
+[ $(echo -e "${DIRECTORY_LIST}" | wc -l) -eq 1 ]
+echo -e "${DIRECTORY_LIST}" | grep "file"
+DIRECTORY_LIST=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8} --prefix rêve/ --delimiter /)
+echo -e "${DIRECTORY_LIST}" | grep "file"
+DIRECTORY_LIST=$(${AWS} s3 ls s3://${BUCKET_UTF8}/test/)
+[ $(echo -e "${DIRECTORY_LIST}" | wc -l) -eq 1 ]
+echo -e "${DIRECTORY_LIST}" | grep "g?teau"
+DIRECTORY_LIST=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8} --prefix test/ --delimiter /)
+echo -e "${DIRECTORY_LIST}" | grep "gâteau"
+
 # COPY S3<=>S3
 
 BCK1=bucket-${RANDOM}
