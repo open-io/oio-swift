@@ -498,7 +498,8 @@ class ObjectController(BaseObjectController):
             raise HTTPClientDisconnect(request=req)
         except exceptions.EtagMismatch:
             return HTTPUnprocessableEntity(request=req)
-        except (exceptions.ServiceBusy, exceptions.OioTimeout):
+        except (exceptions.ServiceBusy, exceptions.OioTimeout,
+                exceptions.DeadlineReached):
             raise
         except (exceptions.NoSuchContainer, exceptions.NotFound):
             raise HTTPNotFound(request=req)
@@ -597,7 +598,8 @@ class ObjectController(BaseObjectController):
             raise HTTPClientDisconnect(request=req)
         except exceptions.EtagMismatch:
             return HTTPUnprocessableEntity(request=req)
-        except (exceptions.ServiceBusy, exceptions.OioTimeout):
+        except (exceptions.ServiceBusy, exceptions.OioTimeout,
+                exceptions.DeadlineReached):
             raise
         except exceptions.NoSuchContainer:
             raise HTTPNotFound(request=req)
