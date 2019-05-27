@@ -217,6 +217,12 @@ DIRECTORY_LIST=$(${AWS} s3 ls s3://${BUCKET_UTF8}/test/)
 echo -e "${DIRECTORY_LIST}" | grep "g?teau\|gâteau"
 DIRECTORY_LIST=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8} --prefix test/ --delimiter /)
 echo -e "${DIRECTORY_LIST}" | grep "g?teau\|gâteau"
+${AWS} s3 rm s3://${BUCKET_UTF8}/test/gâteau
+${AWS} s3 rm s3://${BUCKET_UTF8}/intérêt
+${AWS} s3 rm s3://${BUCKET_UTF8}/rêve/file
+DIRECTORY_LIST=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8})
+[ -z "$DIRECTORY_LIST" ]
+${AWS} s3api delete-bucket --bucket ${BUCKET_UTF8}
 
 # COPY S3<=>S3
 
