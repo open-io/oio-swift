@@ -357,6 +357,13 @@ class ContainerController(SwiftContainerController):
         clear_info_cache(self.app, req.environ,
                          self.account_name, self.container_name)
 
+        memcache = getattr(self.app, 'memcache', None) or \
+            req.environ.get('swift.cache')
+        if memcache is not None:
+            key = "/".join(("versioning", self.account_name,
+                            self.container_name))
+            memcache.delete(key)
+
         resp = self.get_container_post_resp(req, headers)
         return resp
 
