@@ -42,6 +42,12 @@ from swift.proxy.controllers.obj import BaseObjectController as \
         BaseObjectController
 
 from oio.common import exceptions
+try:
+    # supported only by 4.6.0
+    from oio.common.constants import FORCEVERSIONING_HEADER
+    SUPPORT_VERSIONING = True
+except ImportError:
+    SUPPORT_VERSIONING = False
 from oio.common.http import ranges_from_http_header
 from oio.common.storage_method import STORAGE_METHODS
 from oio.api.object_storage import _sort_chunks
@@ -183,6 +189,37 @@ class ObjectController(BaseObjectController):
                 resp.headers['content-type'])
 
         return resp
+
+    def versioning_management(self, req):
+        if not SUPPORT_VERSIONING:
+            return None
+
+        container_root = req.headers.get('X-Object-Sysmeta-Oio-Bucket-Name')
+        if container_root is None:
+            return None
+
+        memcache = getattr(self.app, 'memcache', None) or \
+            req.environ.get('swift.cache')
+        if memcache is None:
+            return None
+
+        key = "/".join(("versioning", self.account_name, container_root))
+        val = memcache.get(key)
+        if val is not None:
+            if val != '':
+                req.headers[FORCEVERSIONING_HEADER] = val
+            return
+
+        # we can't use get_info_cache or set_info as it use local worker cache
+        # then memcache: an update of versioning may be not detected
+        oio_headers = {'X-oio-req-id': self.trans_id}
+        meta = self.app.storage.container_get_properties(
+            self.account_name, container_root, headers=oio_headers)
+
+        val = meta['system'].get('sys.m2.policy.version', '')
+        memcache.set(key, val)
+        if val:
+            req.headers[FORCEVERSIONING_HEADER] = val
 
     def get_object_head_resp(self, req):
         storage = self.app.storage
@@ -375,6 +412,8 @@ class ObjectController(BaseObjectController):
             if aresp:
                 return aresp
 
+        self.versioning_management(req)
+
         old_slo_manifest = None
         old_slo_manifest_etag = None
         # If versioning is disabled, we must check if the object exists.
@@ -416,6 +455,7 @@ class ObjectController(BaseObjectController):
             data_source = ExpectedSizeReader(data_source, req.content_length)
 
         headers = self._prepare_headers(req)
+
         with closing_if_possible(data_source):
             resp = self._store_object(req, data_source, headers)
         if (resp.is_success and
@@ -567,6 +607,10 @@ class ObjectController(BaseObjectController):
 
         metadata = self.load_object_metadata(headers)
         oio_headers = {'X-oio-req-id': self.trans_id}
+        # only send headers if needed
+        if SUPPORT_VERSIONING and headers.get(FORCEVERSIONING_HEADER):
+            oio_headers[FORCEVERSIONING_HEADER] = \
+                headers.get(FORCEVERSIONING_HEADER)
         try:
             _chunks, _size, checksum, _meta = self._object_create(
                 self.account_name, self.container_name,
@@ -661,11 +705,17 @@ class ObjectController(BaseObjectController):
 
         self._update_x_timestamp(req)
 
+        self.versioning_management(req)
+
         return self._delete_object(req)
 
     def _delete_object(self, req):
         storage = self.app.storage
         oio_headers = {'X-oio-req-id': self.trans_id}
+        # only send headers if needed
+        if SUPPORT_VERSIONING and req.headers.get(FORCEVERSIONING_HEADER):
+            oio_headers[FORCEVERSIONING_HEADER] = \
+                req.headers.get(FORCEVERSIONING_HEADER)
         try:
             storage.object_delete(
                 self.account_name, self.container_name, self.object_name,
