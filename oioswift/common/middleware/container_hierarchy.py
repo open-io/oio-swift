@@ -277,15 +277,23 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         elif 'keystoneauth' in pipeline:
             LOG.debug('Use keystone middleware.')
             auth_index = pipeline.index('keystoneauth')
+
         if pipeline.index(MIDDLEWARE_NAME) < auth_index:
             raise ValueError(
                 'Invalid pipeline %r: %s must be placed after authentication'
                 % (pipeline, MIDDLEWARE_NAME))
 
-        if ('slo' in pipeline and
-                pipeline.index(MIDDLEWARE_NAME) < pipeline.index('slo')):
+        ch_index = pipeline.index(MIDDLEWARE_NAME)
+        if 'slo' in pipeline and ch_index < pipeline.index('slo'):
             raise ValueError(
                 'Invalid pipeline %r: %s must be placed after SLO'
+                % (pipeline, MIDDLEWARE_NAME))
+
+        if ('versioned_writes' in pipeline and
+                ch_index < pipeline.index('versioned_writes')):
+            raise ValueError(
+                'Invalid pipeline %r: '
+                '%s must be placed before versioned_writes'
                 % (pipeline, MIDDLEWARE_NAME))
 
     def key(self, account, container, mode, path=None):
