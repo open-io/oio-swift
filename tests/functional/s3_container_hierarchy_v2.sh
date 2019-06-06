@@ -2,6 +2,7 @@
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 BUCKET=bucket-$RANDOM
+LISTING_VERSIONING=$(cat $CONF_GW | grep support_listing_versioning | cut -d= -f2 | sed 's/ //g' )
 
 echo "Bucket name: $BUCKET"
 
@@ -45,19 +46,21 @@ echo ${OUT} | grep dir1/dir2/object
 
 # LISTING WITH : (simulate cloudberry)
 
-d=$(date +%s)
-${AWS} s3api put-object --bucket ${BUCKET} --key key1/key2/dot:/${d}/
+echo "$LISTING_VERSIONING"
+if [ "$LISTING_VERSIONING" != "true" ]; then
+    d=$(date +%s)
+    ${AWS} s3api put-object --bucket ${BUCKET} --key key1/key2/dot:/${d}/
 
-OUT=$( ${AWS} s3 ls s3://${BUCKET}/key1/key2 )
-echo ${OUT} | grep key2/
-OUT=$( ${AWS} s3 ls s3://${BUCKET}/key1/key2/dot )
-echo ${OUT} | grep dot
+    OUT=$( ${AWS} s3 ls s3://${BUCKET}/key1/key2 )
+    echo ${OUT} | grep key2/
+    OUT=$( ${AWS} s3 ls s3://${BUCKET}/key1/key2/dot )
+    echo ${OUT} | grep dot
 
-OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} )
-echo ${OUT} | grep dot
-OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} --prefix key1/key2/dot:/${d}/ )
-echo ${OUT} | grep dot
-
+    OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} )
+    echo ${OUT} | grep dot
+    OUT=$( ${AWS} s3api list-objects --bucket ${BUCKET} --prefix key1/key2/dot:/${d}/ )
+    echo ${OUT} | grep dot
+fi
 
 # UPLOAD WITH VERSIONING LIKE CloudBerry
 
@@ -171,7 +174,11 @@ ${AWS} s3api put-object --bucket ${BUCKET} --key d1/d2/d3/d4/o2 --body aa
 ${AWS} s3api put-object --bucket ${BUCKET} --key v1/o2 --body aa
 sleep 0.5
 CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
-[ "$CNT" -eq 15 ]
+OBJECT=14
+if [ "$LISTING_VERSIONING" != "true" ]; then
+    OBJECT=$((OBJECT + 1))
+fi
+[ "$CNT" -eq $OBJECT ]
 
 # Check HEAD on directory "Object"
 ${AWS} s3api put-object  --bucket ${BUCKET} --key dir1/dir2/

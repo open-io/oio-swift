@@ -232,6 +232,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         sentinel_name = kwargs.pop('sentinel_name', None)
         self.redis_keys_format = kwargs.pop('redis_keys_format',
                                             REDIS_KEYS_FORMAT_V1)
+        self.support_listing_versioning = \
+            kwargs.pop('support_listing_versioning')
         if self.redis_keys_format not in [REDIS_KEYS_FORMAT_V1,
                                           REDIS_KEYS_FORMAT_V2]:
             raise ValueError(
@@ -337,8 +339,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                             [container] + path.split('/'),
                             None,
                             limit=1,
-                            force_master=True))
-
+                            force_master=True,
+                            versions=self.support_listing_versioning))
             if not empty:
                 return
 
@@ -408,6 +410,11 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         oheaders = dict()
         all_objs = []
+
+        # always respect versioning listing to avoid
+        # issues in versioned_writes (since we used to
+        # use CH before versioned_writes in pipeline)
+        versions = env.get('oio.query', {}).get('versions')
 
         prefix = prefix[0] if prefix else ''
         # have we to parse root container ?
@@ -495,10 +502,25 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 if subdir in already_done:
                     continue
 
-                already_done.add(subdir)
-                all_objs.append({
-                        'subdir': subdir.decode('utf-8')
-                })
+                empty = False
+                # check is prefix contains only DeleteMarker as latest version
+                # TODO(mbo) avoid this listing if versioning was never enabled
+                # on root container/bucket
+                if self.support_listing_versioning and not versions:
+                    empty = not any(self._list_objects(
+                                    env,
+                                    account,
+                                    [container] + entry.strip(self.DELIMITER)
+                                                       .split(self.DELIMITER),
+                                    None,
+                                    limit=1,
+                                    versions=False))
+
+                if not empty:
+                    already_done.add(subdir)
+                    all_objs.append({
+                            'subdir': subdir.decode('utf-8')
+                    })
             else:
                 _prefix = ''
                 if len(entry) < len(prefix):
@@ -530,14 +552,15 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                     ret = self._list_objects(
                         env, account,
                         [container] + entry.split(self.DELIMITER), header_cb,
-                        _prefix, limit=DEFAULT_LIMIT, marker=_marker)
+                        _prefix, limit=DEFAULT_LIMIT, marker=_marker,
+                        versions=versions)
                 else:
                     # manage root container
                     # TODO: rewrite condition
                     ret = self._list_objects(
                         env, account,
                         [container], header_cb, _prefix, limit=DEFAULT_LIMIT,
-                        marker=_marker)
+                        marker=_marker, versions=versions)
                 for x in ret:
                     all_objs.append(x)
 
@@ -556,7 +579,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         oheaders['Content-Length'] = len(body)
         start_response("200 OK", oheaders.items())
-
         return [body]
 
     def _container_suffix(self, obj_parts, is_mpu, sep=None):
@@ -615,7 +637,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
     def _list_objects(self, env, account, ct_parts, header_cb,
                       prefix='', limit=DEFAULT_LIMIT,
-                      marker=None, force_master=False):
+                      marker=None, force_master=False, versions=False):
         """
         returns items
         """
@@ -638,8 +660,15 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         else:
             params.pop('marker', None)
         if force_master:
+            # this is used to check if container is empty after a delete
+            # but we want to ensure listing is done on master
             sub_req.environ.setdefault('oio.query', {})
             sub_req.environ['oio.query']['force_master'] = True
+        if versions:
+            # this is used to check if container is really empty after a delete
+            # or when a versioned listing is done
+            sub_req.environ.setdefault('oio.query', {})
+            sub_req.environ['oio.query']['versions'] = True
 
         sub_req.params = params
         resp = sub_req.get_response(self.app)
@@ -834,6 +863,8 @@ def filter_factory(global_conf, **local_config):
     redis_host = local_config.get('redis_host')
     sentinel_hosts = local_config.get('sentinel_hosts')
     sentinel_name = local_config.get('sentinel_name')
+    support_listing_versioning = config_true_value(
+                local_config.get('support_listing_versioning'))
 
     def factory(app):
         return ContainerHierarchyMiddleware(
@@ -844,5 +875,6 @@ def filter_factory(global_conf, **local_config):
             redis_keys_format=redis_keys_format,
             redis_host=redis_host,
             sentinel_hosts=sentinel_hosts,
-            sentinel_name=sentinel_name)
+            sentinel_name=sentinel_name,
+            support_listing_versioning=support_listing_versioning)
     return factory
