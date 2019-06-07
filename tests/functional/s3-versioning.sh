@@ -392,6 +392,25 @@ SEG_COUNT4=$(echo -n "${SEGS4}" | wc -l)
 echo "Deleting the delete marker (without specifying any version)"
 ${AWS} s3 rm "s3://$BUCKET/obj"
 
+echo "######################################"
+echo "### Prefixes with versioning       ###"
+echo "######################################"
+
+
+${AWS} s3 cp /etc/magic s3://${BUCKET}/prefix/magic
+${AWS} s3 rm s3://${BUCKET}/prefix/magic
+
+${AWS} s3api list-objects --bucket ${BUCKET} --delimiter /
+
+${AWS} s3api list-objects --bucket ${BUCKET} --delimiter / | grep "prefix" && {
+    echo "Found prefix, should be hidden"
+    exit 1
+}
+${AWS} s3api list-object-versions --bucket ${BUCKET}  --delimiter / | grep "prefix" || {
+    echo "Missing prefix, should be visible"
+    exit 1
+}
+
 
 echo "######################################"
 echo "### Metadata modification          ###"
