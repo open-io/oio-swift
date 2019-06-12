@@ -18,7 +18,7 @@ import json
 import importlib
 from paste.deploy import loadwsgi
 from six.moves.urllib.parse import parse_qs, quote
-from swift.common.swob import Request
+from swift.common.swob import Request, HTTPInternalServerError
 from swift.common.utils import config_true_value, \
     closing_if_possible, get_logger, MD5_OF_EMPTY_STRING
 from swift.common.wsgi import make_subrequest, loadcontext, PipelineWrapper
@@ -91,8 +91,14 @@ class RedisDb(object):
     def set(self, key, val):
         return self.conn.set(key, val)
 
+    def setnx(self, key, val):
+        return self.conn.setnx(key, val)
+
     def hset(self, key, path, val):
         return self.conn.hset(key, path, val)
+
+    def hsetnx(self, key, path, val):
+        return self.conn.hsetnx(key, path, val)
 
     def delete(self, key):
         return self.conn.delete(key)
@@ -123,8 +129,14 @@ class FakeRedis(object):
     def set(self, key, val):
         self._keys[key] = val
 
+    def setnx(self, key, val):
+        self.set(key, val)
+
     def hset(self, key, path, val):
         self._keys.setdefault(key, {})[path] = val
+
+    def hsetnx(self, key, path, val):
+        self.hset(key, path, val)
 
     def delete(self, key):
         self._keys.pop(key, None)
@@ -247,15 +259,15 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         # TODO: should we increase number of objects ?
         # but we should manage in this case all error case
         # to avoid false counter
-        if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
-            res = self.conn.set(key, "1")
-            if not res:
-                LOG.warn("%s: failed to create key %s", self.SWIFT_SOURCE, key)
-        else:
-            res = self.conn.hset(key, path, "1")
-            if not res:
-                LOG.warn("%s: failed to create key %s %s",
-                         self.SWIFT_SOURCE, key, path)
+        try:
+            if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+                self.conn.setnx(key, "1")
+            else:
+                self.conn.hsetnx(key, path, "1")
+        except Exception as e:
+            LOG.error("%s: failed to create key %s (%s)", self.SWIFT_SOURCE,
+                      ':'.join([key, path]), str(e))
+            raise HTTPInternalServerError()
 
     def _remove_placeholder(self, req, account, container, mode, path):
         if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
