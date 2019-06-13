@@ -27,7 +27,7 @@ from oio.common.exceptions import ConfigurationException
 
 LOG = None
 MIDDLEWARE_NAME = 'container_hierarchy'
-DEFAULT_LIMIT = 10000
+DEFAULT_LIMIT = 1000
 REDIS_KEYS_FORMAT_V1 = 'v1'
 REDIS_KEYS_FORMAT_V2 = 'v2'
 
@@ -43,6 +43,55 @@ FAKE_ACL = '''{"Owner":"internal:internal",
 
 
 class RedisDb(object):
+    lua_script_hkeys = """
+        local get_index = function(key, start, delimiter)
+            -- Get index of the first delimiter of the key
+            local index = string.find(key, delimiter, start)
+            if index  == nil then
+                return #key
+            end
+            return index
+        end
+        local get_first_level = function(key, start, delimiter)
+            -- Get the hierarchy first level
+            -- start = start looking at this index
+            -- delimiter = used for separating level
+            -- key = prefix .. delimiter .. first_level ...
+            -- Examples get_first_level("aaa/bbb/ccc/", 4, '/') = "aaa/bbb/"
+            -- get_first_level("aaa/bbb/ccc/", 8, '/') = "aaa/bbb/ccc/"
+
+            local index = get_index(key, start, delimiter)
+            local rv = string.sub(key, 0, index)
+            return rv
+        end
+
+        local bucket = KEYS[1]
+        local prefix = KEYS[2]
+        local delimiter = KEYS[3]
+        local marker = KEYS[4]
+        local recursive = KEYS[5]
+        local keys = redis.call('HSCAN', bucket, 0, 'match',
+                                 prefix .. '*', 'count', 4294967296)
+        -- keys_format = {cursor, {id_1, key_2, id_2, key_2 ...}}
+        local prefix_len = string.len(prefix)
+        local set = {}
+        -- There is no set on lua this is a hack using the table keys to hold
+        -- data and assure uniqueness
+        for i=1, #keys[2], 2 do
+             if recursive == '1' then
+                 set[keys[2][i]] = true
+             else
+                 set[get_first_level(keys[2][i], prefix_len, delimiter)] = true
+             end
+        end
+
+        local lst  = {}
+        for k,_ in pairs(set) do
+             table.insert(lst, k)
+        end
+        return lst
+        """
+
     def __init__(self, redis_host=None,
                  sentinel_hosts=None, sentinel_name=None):
         self.__redis_mod = importlib.import_module('redis')
@@ -51,6 +100,7 @@ class RedisDb(object):
         self._sentinel = None
         self._conn = None
         self._conn_slave = None
+        self._script_hkeys = None
 
         if redis_host:
             self._redis_host, self._redis_port = redis_host.rsplit(':', 1)
@@ -65,7 +115,6 @@ class RedisDb(object):
         self._sentinel_hosts = [(h, int(p)) for h, p, in (hp.rsplit(':', 1)
                                 for hp in sentinel_hosts)]
         self._master_name = sentinel_name
-
         self._sentinel = self.__redis_sentinel_mod.Sentinel(
             self._sentinel_hosts)
 
@@ -103,9 +152,15 @@ class RedisDb(object):
     def keys(self, pattern, count=DEFAULT_LIMIT):
         return self.conn_slave.scan_iter(pattern, count=count)
 
-    def hkeys(self, key, match=None, count=DEFAULT_LIMIT):
-        return [k[0] for k in
-                self.conn_slave.hscan_iter(key, match=match, count=count)]
+    def hkeys(self, key, prefix, delimiter, marker=None, recursive=False):
+        if not self._script_hkeys:
+            self._script_hkeys = self.conn_slave.register_script(
+                self.lua_script_hkeys)
+        if marker:
+            pos = marker.rfind(delimiter)
+            marker = marker[: pos if pos == -1 else pos + 1]
+        return self._script_hkeys([key, prefix, delimiter, marker or "",
+                                   1 if recursive else 0])
 
     def exists(self, key):
         return self.conn_slave.exists(key)
@@ -134,7 +189,7 @@ class FakeRedis(object):
             return
         self._keys[key].pop(hkey, None)
 
-    def hkeys(self, key, match=None):
+    def hkeys(self, key, prefix, delimiter, marker=None, recursive=False):
         if not self._keys.get(key, None):
             return []
         return self._keys[key].iterkeys()
@@ -170,7 +225,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             raise ValueError(
                 '"redis_keys_format" value not accepted: %s',
                 self.redis_keys_format)
-
         super(ContainerHierarchyMiddleware, self).__init__(
             app, acct, **kwargs)
         LOG.debug(self.SWIFT_SOURCE)
@@ -362,7 +416,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             for mode in (CNT, OBJ):
                 key = self.key(account, container, mode)
                 # empty if key does not exist
-                for entry in self.conn.hkeys(key, match=prefix + "*"):
+                for entry in self.conn.hkeys(key, prefix + "*", self.DELIMITER,
+                                             marker, recursive):
                     matches.append((mode, entry))
         LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
 
@@ -402,11 +457,12 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                     continue
                 if entry < marker_:
                     continue
-                # when a listing is done without recursive mode, ignore marker
-                # for container entry
+                # when a listing is done without recursive mode,
+                # ignore marker for container entry
                 if mode == CNT and entry == marker and not recursive:
                     LOG.debug(
-                        "%s: marker ignore %s: skip container (not recursive)",
+                        "%s: marker ignore %s:"
+                        "skip container (not recursive)",
                         self.SWIFT_SOURCE, entry)
                     continue
                 if mode == OBJ and entry == marker_ + '/':
