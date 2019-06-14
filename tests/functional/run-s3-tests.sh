@@ -10,20 +10,20 @@ run_sds || exit 1
 configure_aws
 configure_s3cmd
 
-CH_VERSIONING=$(python -c "import oio, sys; print(oio.__version__ > '4.5.1')")
+CH_VERSIONING=$(python -c "import oio, sys; print(oio.__version__ >= '4.6.0')")
 
 RET=0
 
 run_functional_test s3-container-hierarchy.cfg s3_container_hierarchy_v2.sh s3-marker.sh
 # run only CH versioning
 if [ "${CH_VERSIONING}" == "True" ]; then
-    run_functional_test s3-container-hierarchy.cfg s3-versioning.sh
+    run_functional_test s3-container-hierarchy.cfg s3-versioning.sh tests/functional/s3-versioning-container-hierarchy.sh
 fi
 
 run_functional_test s3-container-hierarchy-key-v2.cfg s3_container_hierarchy_v2.sh s3-marker.sh
 # run only CH versioning
 if [ "${CH_VERSIONING}" == "True" ]; then
-    run_functional_test s3-container-hierarchy-v2.cfg s3-versioning.sh
+    run_functional_test s3-container-hierarchy-v2.cfg s3-versioning.sh tests/functional/s3-versioning-container-hierarchy.sh
 fi
 
 run_functional_test s3-fastcopy.cfg s3-acl-metadata.sh s3-marker.sh
