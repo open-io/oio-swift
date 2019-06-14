@@ -124,6 +124,7 @@ function run_functional_test() {
     configure_oioswift $conf
 
     coverage run -p runserver.py $conf -v >/tmp/journal.log 2>&1 &
+    export CONF_GW=$(readlink -e $conf)
     sleep 1
     PID=$(jobs -p)
 
