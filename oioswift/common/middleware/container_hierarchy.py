@@ -485,7 +485,22 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         # FIXME(mb): should use marker for big MPU
         # but it doesn't seems to manage truncated MPU listing in swift3
         prefix = prefix[0] if prefix else ''
-        path, _ = self._container_suffix(prefix.split('/'), True)
+        obj_parts = prefix.rstrip(self.DELIMITER).split(self.DELIMITER)
+
+        is_mpu = False
+        if len(obj_parts) > 0:
+            pfx = obj_parts[-1]
+            # is it list-multipart-uploads or list-parts requests ?
+            # docker registry use temporary name like {aaaa}-{bbbb}-{ddddddddd}
+            # and base64.b64decode ignore '-' character
+            if len(pfx) > 32 and '-' not in pfx:
+                try:
+                    base64.b64decode(pfx)
+                    is_mpu = True
+                except TypeError:
+                    pass
+
+        path, _ = self._container_suffix(obj_parts, is_mpu)
         mpu_prefix = prefix[len(path):].lstrip('/')
 
         def header_cb(header_dict):
