@@ -411,6 +411,13 @@ ${AWS} s3api list-object-versions --bucket ${BUCKET}  --delimiter / | grep "pref
     exit 1
 }
 
+# clean up
+DATA=$(${AWS} s3api list-object-versions --bucket ${BUCKET}  --prefix prefix/)
+V=$(echo $DATA | jq -r '.Versions[0].VersionId|tostring')
+${AWS} s3api delete-object --bucket ${BUCKET} --key prefix/magic --version-id $V
+V=$(echo $DATA | jq -r '.DeleteMarkers[0].VersionId|tostring')
+${AWS} s3api delete-object --bucket ${BUCKET} --key prefix/magic --version-id $V
+
 
 echo "######################################"
 echo "### Metadata modification          ###"
