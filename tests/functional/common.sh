@@ -118,8 +118,14 @@ function run_script() {
 }
 
 function run_functional_test() {
-    local conf="conf/$1"
+    local conf
+    if [ -f "conf/$1" ]; then
+        conf="conf/$1"
+    else
+        conf="$1"
+    fi
     shift
+
     local test_suites=$(for suite in $*; do echo "tests/functional/${suite}"; done)
     configure_oioswift $conf
 

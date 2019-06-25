@@ -183,6 +183,6 @@ class OioVersionedWritesTestCase(test_vw.VersionedWritesTestCase):
                      'CONTENT_LENGTH': '0'})
         status, _headers, body = self.call_vw(req)
         self.assertEqual(status, '200 OK')
-        # Subdir should not be listed here, and the object is the latest
+        # Subdir should be listed here, but the object is the latest
         # version, and should not be listed either.
-        self.assertEqual('[]', body)
+        self.assertEqual('[{"subdir": "v1/"}]', body)

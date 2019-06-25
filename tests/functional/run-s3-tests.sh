@@ -10,21 +10,32 @@ run_sds || exit 1
 configure_aws
 configure_s3cmd
 
-CH_VERSIONING=$(python -c "import oio, sys; print(oio.__version__ >= '4.6.0')")
+# Container Hierarchy supports VERSIONING from 4.6
+CH_VERSIONING=$(python -c "import oio.common.constants as cnt; print(hasattr(cnt, 'FORCEVERSIONING_HEADER'))")
 
 RET=0
 
-run_functional_test s3-container-hierarchy.cfg s3_container_hierarchy_v2.sh s3-marker.sh
-# run only CH versioning
-if [ "${CH_VERSIONING}" == "True" ]; then
-    run_functional_test s3-container-hierarchy.cfg s3-versioning.sh tests/functional/s3-versioning-container-hierarchy.sh
-fi
+# Launch test with container hierarchy with same configuration file
+for key_format in v1 v2; do
+    for support_listing_versioning in false true; do
 
-run_functional_test s3-container-hierarchy-key-v2.cfg s3_container_hierarchy_v2.sh s3-marker.sh
-# run only CH versioning
-if [ "${CH_VERSIONING}" == "True" ]; then
-    run_functional_test s3-container-hierarchy-v2.cfg s3-versioning.sh tests/functional/s3-versioning-container-hierarchy.sh
-fi
+        # generate configuration file
+        name=/tmp/s3-container-hierarchy-${key_format}-${support_listing_versioning}.cfg
+        cp -v conf/s3-container-hierarchy.cfg $name
+        sed -e "s/<key_format>/$key_format/g" -e "s/<support_listing_versioning>/$support_listing_versioning/g" -i $name
+
+        run_functional_test $name s3_container_hierarchy_v2.sh s3-marker.sh
+
+        # run only CH versioning
+        if [ "${CH_VERSIONING}" == "True" ]; then
+            if [ "$support_listing_versioning" == "true" ]; then
+                run_functional_test $name s3-versioning.sh
+            fi
+            run_functional_test $anem s3-versioning-container-hierarchy.sh
+        fi
+    done
+done
+
 
 run_functional_test s3-fastcopy.cfg s3-acl-metadata.sh s3-marker.sh
 # Run all suites in the same environment.
