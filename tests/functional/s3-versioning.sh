@@ -342,7 +342,7 @@ CUR_VERS=$(${AWS} s3api list-object-versions --bucket ${BUCKET})
 
 OBJ_0_KEY=$(jq -r ".Versions[0].Key|tostring" <<< "$CUR_VERS")
 OBJ_0_ID=$(jq -r ".Versions[0].VersionId|tostring" <<< "$CUR_VERS")
-OBJ_1_KEY=$(jq -r ".Versions[0].Key|tostring" <<< "$CUR_VERS")
+OBJ_1_KEY=$(jq -r ".Versions[1].Key|tostring" <<< "$CUR_VERS")
 OBJ_1_ID=$(jq -r ".Versions[1].VersionId|tostring" <<< "$CUR_VERS")
 
 [[ "$OBJ_0_KEY" == "v1/v2/v3/obj" ]]

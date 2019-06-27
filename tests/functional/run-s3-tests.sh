@@ -31,7 +31,7 @@ for key_format in v1 v2; do
             if [ "$support_listing_versioning" == "true" ]; then
                 run_functional_test $name s3-versioning.sh
             fi
-            run_functional_test $anem s3-versioning-container-hierarchy.sh
+            run_functional_test $name s3-versioning-container-hierarchy.sh
         fi
     done
 done
