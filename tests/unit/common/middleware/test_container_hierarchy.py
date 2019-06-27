@@ -104,13 +104,13 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.conn.hkeys = mock.MagicMock(side_effect=(['d1/d2/d3/'], []))
         self._test_recursive_listing()
         self.ch.conn.hkeys.assert_has_calls(
-            [mock.call('CS:a:c:cnt', 'd1/d2/*', '/', None, True),
-             mock.call('CS:a:c:obj', 'd1/d2/*', '/', None, True)])
+            [mock.call('CS:a:c:cnt', match='d1/d2/*'),
+             mock.call('CS:a:c:obj', match='d1/d2/*')])
 
     def _test_recursive_listing(self):
         self.app.register(
             'GET',
-            '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=1000&format=json',
+            '/v1/a/c%2Fd1%2Fd2%2Fd3?prefix=&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -134,13 +134,13 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.conn.hkeys = mock.MagicMock(side_effect=(['d 1/d2/'], []))
         self._test_listing_with_space()
         self.ch.conn.hkeys.assert_has_calls(
-            [mock.call('CS:a:c:cnt', 'd 1/d2/*', '/', None, True),
-             mock.call('CS:a:c:obj', 'd 1/d2/*', '/', None, True)])
+            [mock.call('CS:a:c:cnt', match='d 1/d2/*'),
+             mock.call('CS:a:c:obj', match='d 1/d2/*')])
 
     def _test_listing_with_space(self):
         self.app.register(
             'GET',
-            '/v1/a/c%2Fd 1%2Fd2?prefix=&limit=1000&format=json',
+            '/v1/a/c%2Fd 1%2Fd2?prefix=&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -223,7 +223,7 @@ class OioContainerHierarchy(unittest.TestCase):
         self.ch.conn.hexists = mock.MagicMock(return_value=True)
         self.app.register(
             'GET',
-            '/v1/a/bucket%2Fd1?prefix=d&limit=1000&format=json',
+            '/v1/a/bucket%2Fd1?prefix=d&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -232,7 +232,7 @@ class OioContainerHierarchy(unittest.TestCase):
         if is_recursive:
             self.app.register(
                 'GET',
-                '/v1/a/bucket%2Fd1%2Fd2?prefix=&limit=1000&format=json',
+                '/v1/a/bucket%2Fd1%2Fd2?prefix=&limit=10000&format=json',
                 swob.HTTPOk, {},
                 json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                              "last_modified": "2018-04-20T09:40:59.000000",
@@ -300,7 +300,7 @@ class OioContainerHierarchy(unittest.TestCase):
     def _test_listing_root_container(self):
         self.app.register(
             'GET',
-            '/v1/a/bucket?prefix=d&limit=1000&format=json',
+            '/v1/a/bucket?prefix=d&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -334,7 +334,7 @@ class OioContainerHierarchy(unittest.TestCase):
         # register root container
         self.app.register(
             'GET',
-            '/v1/a/bucket?marker=d1&prefix=&limit=1000&format=json',
+            '/v1/a/bucket?marker=d1&prefix=&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -369,7 +369,7 @@ class OioContainerHierarchy(unittest.TestCase):
         # register root container
         self.app.register(
             'GET',
-            '/v1/a/bucket?marker=d1&prefix=&limit=1000&format=json',
+            '/v1/a/bucket?marker=d1&prefix=&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -378,7 +378,7 @@ class OioContainerHierarchy(unittest.TestCase):
         # with marker aa (as we inspect d1/)
         self.app.register(
             'GET',
-            '/v1/a/bucket%2Fd1?marker=aa&prefix=&limit=1000&format=json', # noqa
+            '/v1/a/bucket%2Fd1?marker=aa&prefix=&limit=10000&format=json', # noqa
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -387,7 +387,7 @@ class OioContainerHierarchy(unittest.TestCase):
         # without marker on second container
         self.app.register(
             'GET',
-            '/v1/a/bucket%2Fd2?prefix=&limit=1000&format=json',
+            '/v1/a/bucket%2Fd2?prefix=&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -418,7 +418,7 @@ class OioContainerHierarchy(unittest.TestCase):
     def _test_duplicate_obj_cnt(self):
         self.app.register(
             'GET',
-            '/v1/a/bucket?marker=d1&prefix=&limit=1000&format=json',
+            '/v1/a/bucket?marker=d1&prefix=&limit=10000&format=json',
             swob.HTTPOk, {}, json.dumps([]))
         req = Request.blank('/v1/a/bucket?limit=10&delimiter=%2F&marker=d1/',
                             method='GET')
@@ -501,7 +501,7 @@ class OioContainerHierarchy(unittest.TestCase):
                   "root/MzNkYWZlNjItNjg3Yy00ZmIyLWIwOGYtOTA2OGVlZTA2MzA5"]
         self.app.register(
             'GET',
-            '/v1/a/bucket+segments%2Fd1%2Fd2%2Fd3?prefix=&limit=1000&format=json',  # noqa
+            '/v1/a/bucket+segments%2Fd1%2Fd2%2Fd3?prefix=&limit=10000&format=json',  # noqa
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
@@ -513,7 +513,7 @@ class OioContainerHierarchy(unittest.TestCase):
                          "content_type": "application/octet-stream"}]))
         self.app.register(
             'GET',
-            '/v1/a/bucket+segments?prefix=&limit=1000&format=json',
+            '/v1/a/bucket+segments?prefix=&limit=10000&format=json',
             swob.HTTPOk, {},
             json.dumps([{"hash": "d41d8cd98f00b204e9800998ecf8427e",
                          "last_modified": "2018-04-20T09:40:59.000000",
