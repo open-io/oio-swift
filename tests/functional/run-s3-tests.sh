@@ -16,7 +16,7 @@ CH_VERSIONING=$(python -c "import oio.common.constants as cnt; print(hasattr(cnt
 RET=0
 
 # Launch test with container hierarchy with same configuration file
-for key_format in v1 v2; do
+for key_format in v1 v2 v3; do
     for support_listing_versioning in false true; do
 
         # generate configuration file
@@ -35,7 +35,6 @@ for key_format in v1 v2; do
         fi
     done
 done
-
 
 run_functional_test s3-fastcopy.cfg s3-acl-metadata.sh s3-marker.sh
 # Run all suites in the same environment.
