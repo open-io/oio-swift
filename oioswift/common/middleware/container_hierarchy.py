@@ -30,6 +30,7 @@ MIDDLEWARE_NAME = 'container_hierarchy'
 DEFAULT_LIMIT = 10000
 REDIS_KEYS_FORMAT_V1 = 'v1'
 REDIS_KEYS_FORMAT_V2 = 'v2'
+REDIS_KEYS_FORMAT_V3 = 'v3'
 
 # The Redis key represents a real empty object whose name ends with /.
 OBJ = 'obj'
@@ -43,6 +44,96 @@ FAKE_ACL = '''{"Owner":"internal:internal",
 
 
 class RedisDb(object):
+    lua_script_utilities = """
+        local get_index = function(key, start, delimiter)
+            -- Get index of the first delimiter of the key
+            local index = string.find(key, delimiter, start)
+            if index  == nil then
+                return #key
+            end
+            return index
+        end
+        local get_first_level = function(key, start, delimiter)
+            -- Get the hierarchy first level
+            -- start = start looking at this index
+            -- delimiter = used for separating level
+            -- key = prefix .. delimiter .. first_level ...
+            -- Examples get_first_level("aaa/bbb/ccc/", 4, '/') = "aaa/bbb/"
+            -- get_first_level("aaa/bbb/ccc/", 8, '/') = "aaa/bbb/ccc/"
+
+            local index = get_index(key, start, delimiter)
+            local rv = string.sub(key, 0, index)
+            return rv
+        end
+
+        local bucket = KEYS[1]
+        local prefix = KEYS[2]
+        local delimiter = KEYS[3]
+        local marker = KEYS[4]
+        local recursive = KEYS[5]
+        local limit = tonumber(KEYS[6])
+        local prefix_len = string.len(prefix)
+        local set = {}
+        -- There is no set on lua this is a hack using the table keys to hold
+        -- data and assure uniqueness
+    """
+
+    lua_script_zkeys = lua_script_utilities + """
+        local keys = {}
+        --rank is the redis term for zset index https://redis.io/commands/zrank
+        local rank = 0
+        local finish = false
+
+        if marker == "" then
+            marker = "-"
+        else
+            marker = "[" .. marker
+        end
+
+        -- We are using the variable `count` to count the element of `set`
+        -- `len` and `#` are only possible for continuous numeric indexes
+        -- https://stackoverflow.com/questions/2705793/
+        -- how-to-get-number-of-entries-in-a-lua-table
+        local count = 0
+        while count < limit + 2  and finish == false do
+            keys = redis.call('ZRANGEBYLEX', bucket, marker, '+', 'LIMIT',
+                               0, limit)
+            for i=1, #keys do
+                 local elem = keys[i]
+                 if recursive ~= '1' then
+                     elem = get_first_level(keys[i], prefix_len + 1,
+                                            delimiter)
+                 end
+
+                 -- there is no `continue` instruction on Lua
+                 local check = true
+                 if prefix ~= "" then
+                     local index = string.find(elem, prefix)
+                     if index == nil or index > 1 then
+                         check = false
+                     end
+                 end
+
+                 if check and set[elem] == nil then
+                     count = count + 1
+                     set[elem] = true
+                 end
+            end
+
+            if #keys <= 1 then
+                finish = true
+            else
+                marker = "[" .. keys[#keys]
+            end
+        end
+
+        local lst  = {}
+        for k,_ in pairs(set) do
+             table.insert(lst, k)
+        end
+        return lst
+    """
+
     def __init__(self, redis_host=None,
                  sentinel_hosts=None, sentinel_name=None):
         self.__redis_mod = importlib.import_module('redis')
@@ -51,6 +142,7 @@ class RedisDb(object):
         self._sentinel = None
         self._conn = None
         self._conn_slave = None
+        self._script_zkeys = None
 
         if redis_host:
             self._redis_host, self._redis_port = redis_host.rsplit(':', 1)
@@ -100,11 +192,17 @@ class RedisDb(object):
     def hsetnx(self, key, path, val):
         return self.conn.hsetnx(key, path, val)
 
+    def zsetnx(self, key, path):
+        return self.conn.zadd(key, {path: 1}, nx=True)
+
     def delete(self, key):
         return self.conn.delete(key)
 
     def hdel(self, key, hkey):
         return self.conn.hdel(key, hkey)
+
+    def zdel(self, key, zkey):
+        return self.conn.zrem(key, zkey)
 
     def keys(self, pattern, count=DEFAULT_LIMIT):
         return self.conn_slave.scan_iter(pattern, count=count)
@@ -113,11 +211,28 @@ class RedisDb(object):
         return [k[0] for k in
                 self.conn_slave.hscan_iter(key, match=match, count=count)]
 
+    def zkeys(self, key, prefix, delimiter, marker=None, recursive=False,
+              limit=DEFAULT_LIMIT):
+        if not self._script_zkeys:
+            self._script_zkeys = self.conn_slave.register_script(
+                self.lua_script_zkeys)
+        if marker:
+            pos = marker.rfind(delimiter)
+            marker = marker[: pos if pos == -1 else pos + 1]
+
+        return self._script_zkeys([key, prefix[:-1], delimiter, marker or "",
+                                   1 if recursive else 0, limit])
+
     def exists(self, key):
         return self.conn_slave.exists(key)
 
     def hexists(self, key, hkey):
         return self.conn_slave.hexists(key, hkey)
+
+    def zexists(self, key, zkey):
+        # zrank returns `None` if missing
+        # `0` is a valid value
+        return True if self.conn_slave.zrank(key, zkey) is not None else False
 
 
 class FakeRedis(object):
@@ -146,7 +261,18 @@ class FakeRedis(object):
             return
         self._keys[key].pop(hkey, None)
 
+    def zdel(self, key, zkey):
+        if not self._keys.get(key, None):
+            return
+        self._keys[key].pop(zkey, None)
+
     def hkeys(self, key, match=None):
+        if not self._keys.get(key, None):
+            return []
+        return self._keys[key].iterkeys()
+
+    def zkeys(self, key, prefix, delimiter, marker=None, recursive=False,
+              limit=DEFAULT_LIMIT):
         if not self._keys.get(key, None):
             return []
         return self._keys[key].iterkeys()
@@ -159,6 +285,9 @@ class FakeRedis(object):
 
     def hexists(self, key, hkey):
         return key+hkey in self._keys
+
+    def zexists(self, key, zkey):
+        return key+zkey in self._keys
 
 
 class ContainerHierarchyMiddleware(AutoContainerBase):
@@ -180,7 +309,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         self.support_listing_versioning = \
             kwargs.pop('support_listing_versioning')
         if self.redis_keys_format not in [REDIS_KEYS_FORMAT_V1,
-                                          REDIS_KEYS_FORMAT_V2]:
+                                          REDIS_KEYS_FORMAT_V2,
+                                          REDIS_KEYS_FORMAT_V3]:
             raise ValueError(
                 '"redis_keys_format" value not accepted: %s',
                 self.redis_keys_format)
@@ -272,8 +402,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         try:
             if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
                 self.conn.setnx(key, "1")
-            else:
+            elif self.redis_keys_format == REDIS_KEYS_FORMAT_V2:
                 self.conn.hsetnx(key, path, "1")
+            else:
+                self.conn.zsetnx(key, path)
         except Exception as e:
             LOG.error("%s: failed to create key %s (%s)", self.SWIFT_SOURCE,
                       ':'.join([key, path]), str(e))
@@ -305,14 +437,17 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 LOG.warn("%s: failed to remove key %s", self.SWIFT_SOURCE, key)
         else:
             path += "/"
-            res = self.conn.hdel(key, path)
+            if self.redis_keys_format == REDIS_KEYS_FORMAT_V2:
+                res = self.conn.hdel(key, path)
+            else:
+                res = self.conn.zdel(key, path)
             if not res:
                 LOG.warn("%s: failed to remove path %s key %s",
                          self.SWIFT_SOURCE, path, key)
 
     def _build_object_listing_mpu(self, start_response, env,
                                   account, container, prefix,
-                                  limit=None,
+                                  limit=DEFAULT_LIMIT,
                                   recursive=False, marker=None):
         """Implement specific listing for MPU"""
 
@@ -334,7 +469,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         if path:
             ct_parts += path.split(self.DELIMITER)
         ret = self._list_objects(env, account, ct_parts, header_cb,
-                                 mpu_prefix, limit=DEFAULT_LIMIT,
+                                 mpu_prefix, limit=limit,
                                  marker=marker)
 
         all_objs = list(ret)
@@ -347,7 +482,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
     def _build_object_listing(self, start_response, env,
                               account, container, prefix,
-                              limit=None,
+                              limit=DEFAULT_LIMIT,
                               recursive=False, marker=None, is_mpu=False):
 
         if is_mpu:
@@ -389,7 +524,15 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             for mode in (CNT, OBJ):
                 key = self.key(account, container, mode)
                 # empty if key does not exist
-                for entry in self.conn.hkeys(key, match=prefix + "*"):
+                key_list = None
+                if self.redis_keys_format == REDIS_KEYS_FORMAT_V3:
+                    key_list = self.conn.zkeys(key, prefix + "*",
+                                               self.DELIMITER,
+                                               marker, recursive, limit)
+                else:
+                    key_list = self.conn.hkeys(key, match=prefix + "*")
+                    # empty if key does not exist
+                for entry in key_list:
                     matches.append((mode, entry))
         LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
 
@@ -406,7 +549,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                     matches.append((CNT, key[len(prefix_key) + 4:]))
             else:
                 key = self.key(account, container, CNT)
-                if self.conn.hexists(key, pfx):
+                exists = self.conn.hexists
+                if self.redis_keys_format == REDIS_KEYS_FORMAT_V3:
+                    exists = self.conn.zexists
+                if exists(key, pfx):
                     matches.append((CNT, pfx))
 
         # we should ignore all keys that are before marker to
@@ -471,8 +617,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 if not empty:
                     already_done.add(subdir)
                     all_objs.append({
-                            'subdir': subdir.decode('utf-8')
+                        'subdir': subdir.decode('utf-8')
                     })
+
             else:
                 _prefix = ''
                 if len(entry) < len(prefix):
@@ -504,14 +651,14 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                     ret = self._list_objects(
                         env, account,
                         [container] + entry.split(self.DELIMITER), header_cb,
-                        _prefix, limit=DEFAULT_LIMIT, marker=_marker,
+                        _prefix, limit=limit, marker=_marker,
                         versions=versions)
                 else:
                     # manage root container
                     # TODO: rewrite condition
                     ret = self._list_objects(
                         env, account,
-                        [container], header_cb, _prefix, limit=DEFAULT_LIMIT,
+                        [container], header_cb, _prefix, limit=limit,
                         marker=_marker, versions=versions)
                 for x in ret:
                     all_objs.append(x)
@@ -519,7 +666,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             # it suppose to have proper order but it will help a lot !
             # quick test with page-size 2 to list 10 directories with 10 objets
             # with break: 2.1s vs without break 3.8s
-            if len(all_objs) > limit:
+            if len(all_objs) > 2 * limit:
                 break
 
         LOG.debug("%s: got %d items / limit was %d", self.SWIFT_SOURCE,
@@ -527,7 +674,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         all_objs = sorted(all_objs,
                           key=lambda entry: entry.get('name',
                                                       entry.get('subdir')))
-        body = json.dumps(all_objs)
+        body = json.dumps(all_objs[:limit])
 
         oheaders['Content-Length'] = len(body)
         start_response("200 OK", oheaders.items())
@@ -663,8 +810,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             key = self.key(account, container, OBJ, path)
             if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
                 is_available = self.conn.exists(key + "/")
-            else:
+            elif self.redis_keys_format == REDIS_KEYS_FORMAT_V2:
                 is_available = self.conn.hexists(key, path + "/")
+            else:
+                is_available = self.conn.zexists(key, path + "/")
 
             if is_available:
                 # add a fake AllUsers permissions, otherwise it will
@@ -758,8 +907,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                     key = self.key(account, container, CNT, path)
                     if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
                         check = self.conn.exists(key + '/')
-                    else:
+                    elif self.redis_keys_format == REDIS_KEYS_FORMAT_V2:
                         check = self.conn.hexists(key, path + "/")
+                    else:
+                        check = self.conn.zexists(key, path + "/")
                     if not check:
                         start_response("404 Not Found", [])
                         return ['']
