@@ -4,6 +4,7 @@ AWS="aws --endpoint-url http://localhost:5000"
 BUCKET="bucket-${RANDOM}"
 
 set -e
+set -x
 
 count() {
     local args=
@@ -117,4 +118,48 @@ objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 --prefix subd
 for i in $(seq 1 21); do
     ${AWS} s3 rm s3://${BUCKET}/subdir/subdir-$i/object-$i
 done
+
+# test marker mixing subdir and object
+
+for i in $(seq 1 21); do
+    ${AWS} s3 cp /etc/magic s3://${BUCKET}/folder-$i/object-$i
+done
+
+for i in $(seq 1 21); do
+    ${AWS} s3 cp /etc/magic s3://${BUCKET}/object-$i
+done
+
+for i in $(seq 1 21); do
+    ${AWS} s3 cp /etc/magic s3://${BUCKET}/subdir-$i/object-$i
+done
+
+echo "Recursive listin with default page-size"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key)
+[ $objs -eq 63 ] || exit 1
+
+echo "Recursive listing with page-size 10"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --page-size 10 | grep -c Key)
+[ $objs -eq 63 ] || exit 1
+
+echo "Non recursive listing with default page-size"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --delimiter '/' | grep -c '"Key"\|"Prefix"')
+[ $objs -eq 63 ] || exit 1
+
+echo "Non recursive listing with page-size 10"
+objs=$(${AWS} s3api list-objects --bucket ${BUCKET} --delimiter '/' --page-size 10 | grep -c '"Key"\|"Prefix"')
+[ $objs -eq 63 ] || exit 1
+
+# cleanup
+for i in $(seq 1 21); do
+    ${AWS} s3 rm s3://${BUCKET}/folder-$i/object-$i
+done
+
+for i in $(seq 1 21); do
+    ${AWS} s3 rm s3://${BUCKET}/object-$i
+done
+
+for i in $(seq 1 21); do
+    ${AWS} s3 rm s3://${BUCKET}/subdir-$i/object-$i
+done
+
 ${AWS} s3 rb s3://${BUCKET}
