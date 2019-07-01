@@ -604,7 +604,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 # check is prefix contains only DeleteMarker as latest version
                 # TODO(mbo) avoid this listing if versioning was never enabled
                 # on root container/bucket
-                if self.support_listing_versioning and not versions:
+                if self.support_listing_versioning and not versions\
+                   and recursive:
                     empty = not any(self._list_objects(
                                     env,
                                     account,
