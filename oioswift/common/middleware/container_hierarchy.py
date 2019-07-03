@@ -591,6 +591,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
 
         already_done = set()
 
+        last_object = None
         len_pfx = len(prefix)
         cnt_delimiter = len(prefix.split('/'))
         for mode, entry in matches:
@@ -663,6 +664,11 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                         marker=_marker, versions=versions)
                 for x in ret:
                     all_objs.append(x)
+                # root container is the first one listed
+                if last_object is None:
+                    last_object = len(all_objs)
+                if len(all_objs) > last_object + limit:
+                    break
 
             # it suppose to have proper order but it will help a lot !
             # quick test with page-size 2 to list 10 directories with 10 objets
