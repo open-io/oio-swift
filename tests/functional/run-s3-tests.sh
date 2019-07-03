@@ -24,7 +24,7 @@ for key_format in v1 v2 v3; do
         cp -v conf/s3-container-hierarchy.cfg $name
         sed -e "s/<key_format>/$key_format/g" -e "s/<support_listing_versioning>/$support_listing_versioning/g" -i $name
 
-        run_functional_test $name s3_container_hierarchy_v2.sh s3-marker.sh
+        run_functional_test $name s3_container_hierarchy_v2.sh s3-marker.sh s3-mpu.py
 
         # run only CH versioning
         if [ "${CH_VERSIONING}" == "True" ]; then
@@ -44,7 +44,7 @@ done
 run_functional_test s3-fastcopy.cfg s3-acl-metadata.sh s3-marker.sh
 # Run all suites in the same environment.
 # They do not share buckets so this should be OK.
-run_functional_test s3-default.cfg s3-acl-metadata.sh s3-tagging.sh s3-multipart.sh s3-s3cmd.sh buckets-listing.sh s3-marker.sh s3-basic-test.py
+run_functional_test s3-default.cfg s3-acl-metadata.sh s3-tagging.sh s3-multipart.sh s3-s3cmd.sh buckets-listing.sh s3-marker.sh s3-basic-test.py s3-mpu.py
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET
