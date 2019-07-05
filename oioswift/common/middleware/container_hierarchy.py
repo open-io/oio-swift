@@ -24,6 +24,7 @@ from swift.common.utils import config_true_value, \
 from swift.common.wsgi import make_subrequest, loadcontext, PipelineWrapper
 from oioswift.common.middleware.autocontainerbase import AutoContainerBase
 from oio.common.exceptions import ConfigurationException
+from distutils.version import LooseVersion
 
 LOG = None
 MIDDLEWARE_NAME = 'container_hierarchy'
@@ -144,6 +145,11 @@ class RedisDb(object):
         self._conn_slave = None
         self._script_zkeys = None
 
+        if LooseVersion(self.__redis_mod.__version__) < LooseVersion("3.0.0"):
+            self.zset = self.zset_legacy
+        else:
+            self.zset = self.zset3
+
         if redis_host:
             self._redis_host, self._redis_port = redis_host.rsplit(':', 1)
             self._redis_port = int(self._redis_port)
@@ -192,8 +198,11 @@ class RedisDb(object):
     def hsetnx(self, key, path, val):
         return self.conn.hsetnx(key, path, val)
 
-    def zsetnx(self, key, path):
+    def zset3(self, key, path):
         return self.conn.zadd(key, {path: 1}, nx=True)
+
+    def zset_legacy(self, key, path):
+        return self.conn.zadd(key, 1, path)
 
     def delete(self, key):
         return self.conn.delete(key)
@@ -405,7 +414,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             elif self.redis_keys_format == REDIS_KEYS_FORMAT_V2:
                 self.conn.hsetnx(key, path, "1")
             else:
-                self.conn.zsetnx(key, path)
+                self.conn.zset(key, path)
         except Exception as e:
             LOG.error("%s: failed to create key %s (%s)", self.SWIFT_SOURCE,
                       ':'.join([key, path]), str(e))
