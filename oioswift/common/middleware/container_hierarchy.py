@@ -116,17 +116,15 @@ class RedisDb(object):
                     -- but we should check keys array instead
                     -- instead triggering a new zrangebylex
                  end
-
-                 -- there is no `continue` instruction on Lua
-                 local check = true
                  if prefix ~= "" then
                      local index = string.find(elem, prefix, 1, true)
                      if index == nil or index > 1 then
-                         check = false
+                         finish = true
+                         break
                      end
                  end
 
-                 if check and set[elem] == nil then
+                 if set[elem] == nil then
                      count = count + 1
                      set[elem] = true
                  end
