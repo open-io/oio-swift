@@ -200,9 +200,9 @@ echo -e "${ALL_OBJECTS}" | grep "intérêt"
 echo -e "${ALL_OBJECTS}" | grep "test/gâteau"
 DIRECTORY_LIST=$(${AWS} s3 ls s3://${BUCKET_UTF8})
 [ $(echo -e "${DIRECTORY_LIST}" | wc -l) -eq 3 ]
-echo -e "${DIRECTORY_LIST}" | grep "r?ve/"
+echo -e "${DIRECTORY_LIST}" | grep "r?ve/\|rêve/"
 echo -e "${DIRECTORY_LIST}" | grep "test/"
-echo -e "${DIRECTORY_LIST}" | grep "int?r?t"
+echo -e "${DIRECTORY_LIST}" | grep "int?r?t\|intérêt"
 DIRECTORY_LIST=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8} --delimiter /)
 echo -e "${DIRECTORY_LIST}" | grep "rêve/"
 echo -e "${DIRECTORY_LIST}" | grep "test/"
@@ -214,9 +214,9 @@ DIRECTORY_LIST=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8} --prefix rêv
 echo -e "${DIRECTORY_LIST}" | grep "file"
 DIRECTORY_LIST=$(${AWS} s3 ls s3://${BUCKET_UTF8}/test/)
 [ $(echo -e "${DIRECTORY_LIST}" | wc -l) -eq 1 ]
-echo -e "${DIRECTORY_LIST}" | grep "g?teau"
+echo -e "${DIRECTORY_LIST}" | grep "g?teau\|gâteau"
 DIRECTORY_LIST=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8} --prefix test/ --delimiter /)
-echo -e "${DIRECTORY_LIST}" | grep "gâteau"
+echo -e "${DIRECTORY_LIST}" | grep "g?teau\|gâteau"
 
 # COPY S3<=>S3
 
