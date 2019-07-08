@@ -53,16 +53,20 @@ ${AWS} s3 rm s3://${BUCKET}/path/obj
 
 if [ $LISTING_VERSIONING == "true" ]; then
     echo "*** Check redis key is not removed ***"
-
-    if grep -E "^redis_keys_format.*=.*v2" $CONF_GW; then
-        # new format
+    RESULT="1"
+    if grep -E "^redis_keys_format.*=.*v3" $CONF_GW; then
+        # v3 format
+        CMD="zrank CS:AUTH_demo:${BUCKET}:cnt path/"
+	RESULT="0"
+    elif grep -E "^redis_keys_format.*=.*v2" $CONF_GW; then
+        # v2 format
         CMD="hget CS:AUTH_demo:${BUCKET}:cnt path/"
     else
         # old format
         CMD="get CS:AUTH_demo:${BUCKET}:cnt:path/"
     fi
     VAL=$(redis-cli $CMD)
-    [ "$VAL" == "1" ]
+    [ "$VAL" == "$RESULT" ]
 
     echo "*** Check number of objects ***"
 
