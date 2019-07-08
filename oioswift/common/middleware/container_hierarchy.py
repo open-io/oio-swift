@@ -630,7 +630,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         matches.sort()
 
         already_done = set()
-
+        last_obj = None
         len_pfx = len(prefix)
         cnt_delimiter = len(prefix.split('/'))
         for mode, entry in matches:
@@ -639,7 +639,6 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 subdir = '/'.join(entry.split("/")[:cnt_delimiter]) + '/'
                 if subdir in already_done:
                     continue
-
                 empty = False
                 # check is prefix contains only DeleteMarker as latest version
                 # TODO(mbo) avoid this listing if versioning was never enabled
@@ -655,6 +654,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                                     versions=False))
 
                 if not empty:
+                    if last_obj and \
+                       subdir.decode('utf-8') > all_objs[last_obj - 1]['name']\
+                       and len(all_objs) > limit:
+                        break
                     already_done.add(subdir)
                     all_objs.append({
                         'subdir': subdir.decode('utf-8')
@@ -702,6 +705,11 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                         marker=_marker, versions=versions)
                 for x in ret:
                     all_objs.append(x)
+                # root container is the first one listed
+                if last_obj is None:
+                    last_obj = len(all_objs)
+                if len(all_objs) > last_obj + limit:
+                    break
 
             # it suppose to have proper order but it will help a lot !
             # quick test with page-size 2 to list 10 directories with 10 objets
