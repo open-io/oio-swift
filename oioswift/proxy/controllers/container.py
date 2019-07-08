@@ -163,6 +163,7 @@ class ContainerController(SwiftContainerController):
             record = {'name': p,
                       'subdir': True}
             container_list.append(record)
+        container_list.sort(key=lambda x: x['name'])
         ret = Response(request=req, headers=resp_headers,
                        content_type=out_content_type, charset='utf-8')
         versions = kwargs.get('versions', False)
