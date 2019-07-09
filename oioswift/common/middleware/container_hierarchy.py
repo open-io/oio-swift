@@ -63,6 +63,12 @@ class RedisDb(object):
             -- get_first_level("aaa/bbb/ccc/", 8, '/') = "aaa/bbb/ccc/"
 
             local index = get_index(key, start, delimiter)
+            -- if prefix is like "start" we should return "start/"
+            -- but if prefix is like "start/" we should return "start/*"
+            if index == start then
+                start = index + 1
+                index = get_index(key, start, delimiter)
+            end
             local rv = string.sub(key, 0, index)
             return rv
         end
@@ -90,7 +96,6 @@ class RedisDb(object):
         else
             marker = "[" .. marker
         end
-
         -- We are using the variable `count` to count the element of `set`
         -- `len` and `#` are only possible for continuous numeric indexes
         -- https://stackoverflow.com/questions/2705793/
