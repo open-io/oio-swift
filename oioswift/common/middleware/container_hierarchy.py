@@ -440,7 +440,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                             None,
                             limit=1,
                             force_master=True,
-                            versions=self.support_listing_versioning))
+                            versions=True))
             if not empty:
                 return
 
