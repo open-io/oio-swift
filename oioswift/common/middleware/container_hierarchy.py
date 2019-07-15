@@ -114,7 +114,7 @@ class RedisDb(object):
                  -- there is no `continue` instruction on Lua
                  local check = true
                  if prefix ~= "" then
-                     local index = string.find(elem, prefix)
+                     local index = string.find(elem, prefix, 1, true)
                      if index == nil or index > 1 then
                          check = false
                      end
