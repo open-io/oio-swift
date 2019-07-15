@@ -34,13 +34,17 @@ for key_format in v1 v2 v3; do
             run_functional_test $name s3-versioning-container-hierarchy.sh
         fi
     done
+
+     # only run conversion test on v1 keys
+     if [ "$key_format" == "v1" ]; then
+        run_script tests/functional/s3-conversion-container-hierarchy.sh
+    fi
 done
 
 run_functional_test s3-fastcopy.cfg s3-acl-metadata.sh s3-marker.sh
 # Run all suites in the same environment.
 # They do not share buckets so this should be OK.
 run_functional_test s3-default.cfg s3-acl-metadata.sh s3-tagging.sh s3-multipart.sh s3-s3cmd.sh buckets-listing.sh s3-marker.sh s3-basic-test.py
-run_script tests/functional/s3-conversion-container-hierarchy.sh
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET
