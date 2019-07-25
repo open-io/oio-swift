@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<grammar xmlns="http://relaxng.org/ns/structure/1.0" datatypeLibrary="http://www.w3.org/2001/XMLSchema-datatypes">
+  <include href="common.rng"/>
+  <start>
+    <element name="CORSConfiguration">
+      <zeroOrMore>
+        <element name="CORSRule">
+          <interleave>
+            <element name="AllowedOrigin">
+              <data type="string"/>
+            </element>
+            <zeroOrMore>
+              <element name="AllowedHeader">
+                <data type="string"/>
+              </element>
+            </zeroOrMore>
+            <zeroOrMore>
+              <element name="AllowedMethod">
+                <data type="string"/>
+              </element>
+            </zeroOrMore>
+            <optional>
+              <element name="MaxAgeSeconds">
+                <data type="integer"/>
+              </element>
+            </optional>
+            <zeroOrMore>
+              <element name="ExposeHeader">
+                <data type="string"/>
+              </element>
+            </zeroOrMore>
+          </interleave>
+        </element>
+      </zeroOrMore>
+    </element>
+  </start>
+</grammar>
