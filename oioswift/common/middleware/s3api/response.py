@@ -217,7 +217,7 @@ class ErrorResponse(ResponseBase, swob.HTTPException):
 
     def _dict_to_etree(self, parent, d):
         for key, value in d.items():
-            tag = re.sub('\W', '', snake_to_camel(key))
+            tag = re.sub(r'\W', '', snake_to_camel(key))
             elem = SubElement(parent, tag)
 
             if isinstance(value, (dict, DictMixin)):

@@ -110,7 +110,7 @@ class TestS3Obj(S3TestCase):
                 unexpected_headers.append((key, val))
 
         if unexpected_headers:
-                self.fail('unexpected headers: %r' % unexpected_headers)
+            self.fail('unexpected headers: %r' % unexpected_headers)
 
         self.assertEqual(headers['etag'],
                          '"%s"' % self.response_headers['etag'])

@@ -538,10 +538,13 @@ class TestS3Middleware(S3TestCase):
                          CONF.max_multi_delete_objects)
 
     def test_check_pipeline(self):
-        with nested(patch("oioswift.common.middleware.s3api.s3api.CONF"),
-                    patch("oioswift.common.middleware.s3api.s3api.PipelineWrapper"),
-                    patch("oioswift.common.middleware.s3api.s3api.loadcontext")) as \
-                (conf, pipeline, _):
+        with nested(
+                patch("oioswift.common.middleware.s3api."
+                      "s3api.CONF"),
+                patch("oioswift.common.middleware.s3api."
+                      "s3api.PipelineWrapper"),
+                patch("oioswift.common.middleware.s3api."
+                      "s3api.loadcontext")) as (conf, pipeline, _):
             conf.auth_pipeline_check = True
             conf.__file__ = ''
 
@@ -580,10 +583,13 @@ class TestS3Middleware(S3TestCase):
                           cm.exception.message)
 
     def test_s3api_initialization_with_disabled_pipeline_check(self):
-        with nested(patch("oioswift.common.middleware.s3api.s3api.CONF"),
-                    patch("oioswift.common.middleware.s3api.s3api.PipelineWrapper"),
-                    patch("oioswift.common.middleware.s3api.s3api.loadcontext")) as \
-                (conf, pipeline, _):
+        with nested(
+                patch("oioswift.common.middleware.s3api.s3api.CONF"),
+                patch("oioswift.common.middleware.s3api."
+                      "s3api.PipelineWrapper"),
+                patch("oioswift.common.middleware.s3api."
+                      "s3api.loadcontext")) as \
+                    (conf, pipeline, _):
             # Disable pipeline check
             conf.auth_pipeline_check = False
             conf.__file__ = ''
@@ -1054,6 +1060,7 @@ class TestS3Middleware(S3TestCase):
                 # if no token provided from keystone, we can skip the call to
                 # fetch the token
                 self.assertEqual(0, mock_fetch.call_count)
+
 
 if __name__ == '__main__':
     unittest.main()

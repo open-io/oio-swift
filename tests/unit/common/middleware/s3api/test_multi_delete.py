@@ -289,5 +289,6 @@ class TestS3MultiDelete(S3TestCase):
         self._test_no_body(use_transfer_encoding=True)
         self._test_no_body(use_transfer_encoding=True, string_to_md5='test')
 
+
 if __name__ == '__main__':
     unittest.main()
