@@ -48,7 +48,7 @@ class RedisDb(object):
     lua_script_utilities = """
         local get_index = function(key, start, delimiter)
             -- Get index of the first delimiter of the key
-            local index = string.find(key, delimiter, start)
+            local index = string.find(key, delimiter, start, true)
             if index  == nil then
                 return #key
             end
@@ -93,6 +93,9 @@ class RedisDb(object):
 
         if marker == "" then
             marker = "-"
+            if prefix ~= "" then
+                marker = "[" .. prefix
+            end
         else
             marker = "[" .. marker
         end
@@ -107,8 +110,11 @@ class RedisDb(object):
             for i=1, #keys do
                  local elem = keys[i]
                  if recursive ~= '1' then
-                     elem = get_first_level(keys[i], prefix_len + 1,
+                    elem = get_first_level(keys[i], prefix_len + 1,
                                             delimiter)
+                    -- if we found a prefix, skip remaining stuff ?
+                    -- but we should check keys array instead
+                    -- instead triggering a new zrangebylex
                  end
 
                  -- there is no `continue` instruction on Lua
@@ -126,9 +132,16 @@ class RedisDb(object):
                  end
             end
 
+
             if #keys <= 1 then
                 finish = true
             else
+                if prefix ~= "" then
+                    -- if key doesn't match prefix, stop looping
+                    if string.find(keys[#keys], prefix, 1, true) == nil then
+                        finish = true
+                    end
+                end
                 marker = "[" .. keys[#keys]
             end
         end
@@ -548,7 +561,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                     # empty if key does not exist
                 for entry in key_list:
                     matches.append((mode, entry))
-        LOG.debug("SHARD: prefix %s / matches: %s", prefix_key, matches)
+        LOG.debug("SHARD: prefix %s / matches: %d", prefix_key, len(matches))
 
         if parse_root:
             matches.append((CNT, ""))
