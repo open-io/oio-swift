@@ -16,10 +16,10 @@
 - `ratelimit`
 - `authtoken`: Put before `s3token`
     * when misplaced: Fail when creating a bucket (`403: SignatureDoesNotMatch`)
-- `swift3`: Put before `s3token` or `tempauth`
+- `s3api`: Put before `s3token` or `tempauth`
     * when misplaced: Fail when creating a bucket (`403: SignatureDoesNotMatch`)
 - `tempauth`
-- `s3token`: Put just before `keystoneauth` and after `swift3`
+- `s3token`: Put just before `keystoneauth` and after `s3api`
     * when misplaced: Raise `ValueError: Invalid pipeline`
 - `keystoneauth`: Put just after `s3token`
     * when misplaced: If before `s3token`, raise `ValueError: Invalid pipeline`, else nothing

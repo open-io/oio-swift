@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<grammar xmlns="http://relaxng.org/ns/structure/1.0" datatypeLibrary="http://www.w3.org/2001/XMLSchema-datatypes">
+  <include href="common.rng"/>
+  <start>
+    <element name="Tagging">
+      <element name="TagSet">
+        <zeroOrMore>
+          <element name="Tag">
+            <interleave>
+              <element name="Key">
+                <data type="string"/>
+              </element>
+              <element name="Value">
+                <data type="string"/>
+              </element>
+            </interleave>
+          </element>
+        </zeroOrMore>
+      </element>
+    </element>
+  </start>
+</grammar>

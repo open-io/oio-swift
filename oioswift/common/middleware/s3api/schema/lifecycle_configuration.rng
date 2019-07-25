@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<grammar xmlns="http://relaxng.org/ns/structure/1.0" datatypeLibrary="http://www.w3.org/2001/XMLSchema-datatypes">
+  <include href="common.rng"/>
+  <start>
+    <element name="LifecycleConfiguration">
+      <oneOrMore>
+        <element name="Rule">
+          <interleave>
+            <optional>
+              <element name="ID">
+                <data type="string"/>
+              </element>
+            </optional>
+            <element name="Filter">
+              <ref name="Filter"/>
+            </element>
+            <element name="Status">
+              <choice>
+                <value>Enabled</value>
+                <value>Disabled</value>
+              </choice>
+            </element>
+            <optional>
+              <element name="AbortIncompleteMultipartUpload">
+                <element name="DaysAfterInitiation">
+                  <data type="positiveInteger"/>
+                </element>
+              </element>
+            </optional>
+            <optional>
+              <element name="Expiration">
+                <ref name="Expiration"/>
+              </element>
+            </optional>
+            <optional>
+              <element name="NoncurrentVersionExpiration">
+                <element name="NoncurrentDays">
+                  <data type="positiveInteger"/>
+                </element>
+              </element>
+            </optional>
+            <optional>
+              <element name="NoncurrentVersionTransition">
+                <ref name="NoncurrentVersionTransition"/>
+              </element>
+            </optional>
+            <optional>
+              <element name="Transition">
+                <ref name="Transition"/>
+              </element>
+            </optional>
+          </interleave>
+        </element>
+      </oneOrMore>
+    </element>
+  </start>
+  <define name="Expiration">
+    <choice>
+      <element name="Days">
+        <data type="nonNegativeInteger"/>
+      </element>
+      <element name="Date">
+        <data type="dateTime"/>
+      </element>
+      <element name="ExpiredObjectDeleteMarker">
+        <data type="boolean"/>
+      </element>
+    </choice>
+  </define>
+  <define name="Filter">
+    <interleave>
+      <optional>
+        <element name="Prefix">
+          <data type="string"/>
+        </element>
+      </optional>
+      <zeroOrMore>
+        <element name="Tag">
+          <interleave>
+            <element name="Key">
+              <data type="string"/>
+            </element>
+            <element name="Value">
+              <data type="string"/>
+            </element>
+          </interleave>
+        </element>
+      </zeroOrMore>
+    </interleave>
+  </define>
+  <define name="NoncurrentVersionTransition">
+    <interleave>
+      <element name="NoncurrentDays">
+        <data type="nonNegativeInteger"/>
+      </element>
+      <element name="StorageClass">
+        <ref name="StorageClass"/>
+      </element>
+    </interleave>
+  </define>
+  <define name="Transition">
+    <interleave>
+      <ref name="Expiration"/>
+      <element name="StorageClass">
+        <ref name="StorageClass"/>
+      </element>
+    </interleave>
+  </define>
+</grammar>

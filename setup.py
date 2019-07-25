@@ -40,6 +40,8 @@ setup(
             'copy=oioswift.common.middleware.copy:filter_factory',
             'verb_acl=oioswift.common.middleware.verb_acl:filter_factory',
             'tempauth=oioswift.common.middleware.tempauth:filter_factory',
+            's3api=oioswift.common.middleware.s3api.s3api:filter_factory',
+            's3token=oioswift.common.middleware.s3api.s3token:filter_factory',
         ],
     },
     install_requires=['swift>=2.13.0', 'oio>=4.2.0']
