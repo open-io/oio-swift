@@ -7,7 +7,7 @@
 	path = third_party/oio-sds
 	url = https://github.com/open-io/oio-sds.git
 	# Latest stable/supported version
-	branch = 4.x
+	branch = 5.x
 [submodule "third_party/swift3"]
 	path = third_party/swift3
 	url = https://github.com/open-io/swift3
