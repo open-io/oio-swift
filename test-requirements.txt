@@ -5,6 +5,6 @@ lxml
 mock
 nose
 nose-timer
-oio>=4.1.0
+oio>=4.8.0
 s3cmd
 unittest2
