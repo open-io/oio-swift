@@ -23,7 +23,8 @@ from swift.common import swob
 from swift.common.swob import Request
 from swift.common.utils import json
 
-from oioswift.common.middleware.s3api.etree import tostring, Element, SubElement
+from oioswift.common.middleware.s3api.etree import tostring, Element, \
+    SubElement
 from oioswift.common.middleware.s3api.subresource import ACL, ACLPrivate, \
     User, encode_acl, AuthenticatedUsers, AllUsers, Owner, Grant, PERMISSIONS
 from oioswift.common.middleware.s3api.cfg import CONF
@@ -535,6 +536,7 @@ class TestS3Acl(S3TestCase):
         self.assertRaises(AssertionError, fake_class.s3acl_assert_fail)
         self.assertRaises(TypeError, fake_class.s3acl_s3only_error)
         self.assertIsNone(fake_class.s3acl_s3only_no_error())
+
 
 if __name__ == '__main__':
     unittest.main()

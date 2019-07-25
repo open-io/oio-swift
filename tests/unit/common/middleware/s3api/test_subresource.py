@@ -342,8 +342,8 @@ class TestS3Subresource(unittest.TestCase):
 
     def test_base_grantee(self):
         grantee = Grantee()
-        func = lambda: '' in grantee
-        self.assertRaises(S3NotImplemented, func)
+        self.assertRaises(S3NotImplemented, lambda: '' in grantee)
+
 
 if __name__ == '__main__':
     unittest.main()

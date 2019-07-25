@@ -178,7 +178,7 @@ class TestRequest(S3TestCase):
         self.assertEqual(mock_get_resp.call_count, 2)
         args, kargs = mock_get_resp.call_args_list[0]
         get_resp_obj = args[3]
-        self.assertTrue(get_resp_obj is '')
+        self.assertEqual(get_resp_obj, '')
         self.assertEqual(m_check_permission.call_count, 1)
         args, kargs = m_check_permission.call_args
         permission = args[1]
@@ -768,6 +768,7 @@ class TestRequest(S3TestCase):
         self.assertEqual(expected_sts, sigv2_req._string_to_sign())
         self.assertTrue(sigv2_req.check_signature(
             'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'))
+
 
 if __name__ == '__main__':
     unittest.main()

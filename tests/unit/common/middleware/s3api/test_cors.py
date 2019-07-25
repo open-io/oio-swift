@@ -245,5 +245,6 @@ class TestS3Cors(S3TestCase):
                              'Access-Control-Request-Method': 'POST'})
         self.assertEqual(ret[0], '200 OK')
 
+
 if __name__ == '__main__':
     unittest.main()
