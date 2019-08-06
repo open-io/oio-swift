@@ -396,7 +396,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 ch_index < pipeline.index('versioned_writes')):
             raise ValueError(
                 'Invalid pipeline %r: '
-                '%s must be placed before versioned_writes'
+                '%s must be placed after versioned_writes'
                 % (pipeline, MIDDLEWARE_NAME))
 
     def key(self, account, container, mode, path=None):
