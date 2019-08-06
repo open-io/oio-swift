@@ -190,31 +190,40 @@ class ObjectController(BaseObjectController):
 
         return resp
 
-    def versioning_management(self, req):
+    def enforce_versioning(self, req):
+        """
+        Enforce the versioning mode of a container just before executing
+        an object operation. This is useful when the current object is not
+        stored in the "main" container but in a shard, where the versioning
+        mode may not have been set yet.
+        """
         if not SUPPORT_VERSIONING:
             return None
 
-        container_root = req.headers.get('X-Object-Sysmeta-Oio-Bucket-Name')
-        if container_root is None:
+        root_container = req.headers.get('X-Object-Sysmeta-Oio-Bucket-Name')
+        if root_container is None:
             return None
 
+        # We can't use _get_info_from_caches as it would use local worker cache
+        # first and an update of versioning mode may not be detected.
         memcache = getattr(self.app, 'memcache', None) or \
             req.environ.get('swift.cache')
         if memcache is None:
             return None
 
-        key = "/".join(("versioning", self.account_name, container_root))
+        key = "/".join(("versioning", self.account_name, root_container))
         val = memcache.get(key)
         if val is not None:
             if val != '':
                 req.headers[FORCEVERSIONING_HEADER] = val
             return
 
-        # we can't use get_info_cache or set_info as it use local worker cache
-        # then memcache: an update of versioning may be not detected
         oio_headers = {'X-oio-req-id': self.trans_id}
-        meta = self.app.storage.container_get_properties(
-            self.account_name, container_root, headers=oio_headers)
+        try:
+            meta = self.app.storage.container_get_properties(
+                self.account_name, root_container, headers=oio_headers)
+        except exceptions.NoSuchContainer:
+            raise HTTPNotFound(request=req)
 
         val = meta['system'].get('sys.m2.policy.version', '')
         memcache.set(key, val)
@@ -412,7 +421,7 @@ class ObjectController(BaseObjectController):
             if aresp:
                 return aresp
 
-        self.versioning_management(req)
+        self.enforce_versioning(req)
 
         old_slo_manifest = None
         old_slo_manifest_etag = None
@@ -705,7 +714,7 @@ class ObjectController(BaseObjectController):
 
         self._update_x_timestamp(req)
 
-        self.versioning_management(req)
+        self.enforce_versioning(req)
 
         return self._delete_object(req)
 
