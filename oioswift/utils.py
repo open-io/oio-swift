@@ -28,6 +28,11 @@ try:
 except ImportError:
     from oio.common.exceptions import ClientException as MethodNotAllowed
 
+try:
+    from oio.common.constants import REQID_HEADER
+except ImportError:
+    REQID_HEADER = 'x-oio-req-id'
+
 
 _FORMAT_MAP = {"xml": 'application/xml', "json": 'application/json',
                "plain": 'text/plain'}
@@ -158,7 +163,7 @@ def check_if_none_match(fnc):
     def _if_none_match_wrapper(self, req, *args, **kwargs):
         if req.if_none_match is None:
             return fnc(self, req, *args, **kwargs)
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         try:
             metadata = self.app.storage.object_get_properties(
                 self.account_name, self.container_name, self.object_name,
