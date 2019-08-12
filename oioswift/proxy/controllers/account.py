@@ -37,7 +37,8 @@ from swift.proxy.controllers.base import set_info_cache, clear_info_cache
 
 from oio.common import exceptions
 
-from oioswift.utils import handle_oio_timeout, handle_service_busy
+from oioswift.utils import handle_oio_timeout, handle_service_busy, \
+    REQID_HEADER
 
 
 def get_response_headers(info):
@@ -174,7 +175,7 @@ class AccountController(SwiftAccountController):
         if req.environ.get('swift.source') == 'S3':
             s3_buckets_only = True
 
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         info = None
         if hasattr(self.app.storage, 'account'):
             # Call directly AccountClient.container_list()
@@ -221,7 +222,7 @@ class AccountController(SwiftAccountController):
         return resp
 
     def get_account_head_resp(self, req):
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         info = self.app.storage.account_show(
             self.account_name, headers=oio_headers)
         return account_listing_response(self.account_name, req,
@@ -254,7 +255,7 @@ class AccountController(SwiftAccountController):
         return resp
 
     def get_account_put_resp(self, req, headers):
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         created = self.app.storage.account_create(
             self.account_name, headers=oio_headers)
         metadata = {}
@@ -298,7 +299,7 @@ class AccountController(SwiftAccountController):
         metadata.update((key, value)
                         for key, value in req.headers.items()
                         if is_sys_or_user_meta('account', key))
-        headers['X-oio-req-id'] = self.trans_id
+        headers[REQID_HEADER] = self.trans_id
         try:
             self.app.storage.account_set_properties(
                 account=self.account_name, properties=metadata,

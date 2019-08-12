@@ -43,7 +43,7 @@ from oio.common import exceptions
 
 from oioswift.utils import \
     handle_oio_no_such_container, handle_oio_timeout, \
-    handle_service_busy
+    handle_service_busy, REQID_HEADER
 
 
 class ContainerController(SwiftContainerController):
@@ -140,7 +140,7 @@ class ContainerController(SwiftContainerController):
                 prefix = path.rstrip('/') + '/'
             delimiter = '/'
         opts = req.environ.get('oio.query', {})
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         result = self.app.storage.object_list(
             self.account_name, self.container_name, prefix=prefix,
             limit=limit, delimiter=delimiter, marker=marker,
@@ -242,7 +242,7 @@ class ContainerController(SwiftContainerController):
         headers = dict()
         out_content_type = get_listing_content_type(req)
         headers['Content-Type'] = out_content_type
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         meta = self.app.storage.container_get_properties(
             self.account_name, self.container_name, headers=oio_headers)
         headers.update(self.get_metadata_resp_headers(meta))
@@ -280,7 +280,7 @@ class ContainerController(SwiftContainerController):
     def get_container_create_resp(self, req, headers):
         properties, system = self.properties_from_headers(headers)
         # TODO container update metadata
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         created = self.app.storage.container_create(
             self.account_name, self.container_name,
             properties=properties, system=system,
@@ -373,7 +373,7 @@ class ContainerController(SwiftContainerController):
         if not properties:
             return self.PUT(req)
 
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         try:
             self.app.storage.container_set_properties(
                 self.account_name, self.container_name,
@@ -385,7 +385,7 @@ class ContainerController(SwiftContainerController):
         return resp
 
     def get_container_delete_resp(self, req):
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         try:
             self.app.storage.container_delete(
                 self.account_name, self.container_name, headers=oio_headers)

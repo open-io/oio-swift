@@ -48,13 +48,15 @@ try:
     SUPPORT_VERSIONING = True
 except ImportError:
     SUPPORT_VERSIONING = False
+
 from oio.common.http import ranges_from_http_header
 from oio.common.storage_method import STORAGE_METHODS
 from oio.api.object_storage import _sort_chunks
 
 from oio.common.exceptions import SourceReadTimeout
 from oioswift.utils import check_if_none_match, \
-    handle_not_allowed, handle_oio_timeout, handle_service_busy
+    handle_not_allowed, handle_oio_timeout, handle_service_busy, \
+    REQID_HEADER
 
 SLO = 'x-static-large-object'
 
@@ -218,7 +220,7 @@ class ObjectController(BaseObjectController):
                 req.headers[FORCEVERSIONING_HEADER] = val
             return
 
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         try:
             meta = self.app.storage.container_get_properties(
                 self.account_name, root_container, headers=oio_headers)
@@ -232,7 +234,7 @@ class ObjectController(BaseObjectController):
 
     def get_object_head_resp(self, req):
         storage = self.app.storage
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         version = req.environ.get('oio.query', {}).get('version')
         try:
             if self.app.check_state:
@@ -276,7 +278,7 @@ class ObjectController(BaseObjectController):
             ranges = ranges_from_http_header(req.headers.get('Range'))
         else:
             ranges = None
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         try:
             metadata, stream = storage.object_fetch(
                 self.account_name, self.container_name, self.object_name,
@@ -372,7 +374,7 @@ class ObjectController(BaseObjectController):
     def _post_object(self, req, headers, stgpol):
         # TODO do something with stgpol
         metadata = self.load_object_metadata(headers)
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         try:
             # Genuine Swift clears all properties on POST requests.
             # But for convenience, keep them when the request originates
@@ -513,7 +515,7 @@ class ObjectController(BaseObjectController):
 
         headers = self._prepare_headers(req)
         metadata = self.load_object_metadata(headers)
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         # FIXME(FVE): use object_show, cache in req.environ
         version = req.environ.get('oio.query', {}).get('version')
         props = storage.object_get_properties(from_account, container, obj,
@@ -615,7 +617,7 @@ class ObjectController(BaseObjectController):
                 policy = self._get_auto_policy_from_size(content_length)
 
         metadata = self.load_object_metadata(headers)
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         # only send headers if needed
         if SUPPORT_VERSIONING and headers.get(FORCEVERSIONING_HEADER):
             oio_headers[FORCEVERSIONING_HEADER] = \
@@ -720,7 +722,7 @@ class ObjectController(BaseObjectController):
 
     def _delete_object(self, req):
         storage = self.app.storage
-        oio_headers = {'X-oio-req-id': self.trans_id}
+        oio_headers = {REQID_HEADER: self.trans_id}
         # only send headers if needed
         if SUPPORT_VERSIONING and req.headers.get(FORCEVERSIONING_HEADER):
             oio_headers[FORCEVERSIONING_HEADER] = \
