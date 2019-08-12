@@ -77,7 +77,7 @@ class RedisDb(object):
         local prefix = KEYS[2]
         local delimiter = KEYS[3]
         local marker = KEYS[4]
-        local recursive = KEYS[5]
+        local recursive = tonumber(KEYS[5])
         local limit = tonumber(KEYS[6])
         local prefix_len = string.len(prefix)
         local set = {}
@@ -104,30 +104,29 @@ class RedisDb(object):
         -- https://stackoverflow.com/questions/2705793/
         -- how-to-get-number-of-entries-in-a-lua-table
         local count = 0
-        while count < limit + 2  and finish == false do
+        while count < limit + 2 and not finish do
             keys = redis.call('ZRANGEBYLEX', bucket, marker, '+', 'LIMIT',
                                0, limit)
             for i=1, #keys do
-                 local elem = keys[i]
-                 if recursive ~= '1' then
-                    elem = get_first_level(keys[i], prefix_len + 1,
-                                            delimiter)
+                local elem = keys[i]
+                if recursive == 0 then
+                    elem = get_first_level(keys[i], prefix_len + 1, delimiter)
                     -- if we found a prefix, skip remaining stuff ?
                     -- but we should check keys array instead
                     -- instead triggering a new zrangebylex
-                 end
-                 if prefix ~= "" then
-                     local index = string.find(elem, prefix, 1, true)
-                     if index == nil or index > 1 then
-                         finish = true
-                         break
-                     end
-                 end
+                end
+                if prefix ~= "" then
+                    local index = string.find(elem, prefix, 1, true)
+                    if index == nil or index > 1 then
+                        finish = true
+                        break
+                    end
+                end
 
-                 if set[elem] == nil then
-                     count = count + 1
-                     set[elem] = true
-                 end
+                if set[elem] == nil then
+                    count = count + 1
+                    set[elem] = true
+                end
             end
 
 
@@ -146,7 +145,7 @@ class RedisDb(object):
 
         local lst  = {}
         for k,_ in pairs(set) do
-             table.insert(lst, k)
+            table.insert(lst, k)
         end
         return lst
     """
@@ -238,6 +237,9 @@ class RedisDb(object):
 
     def zkeys(self, key, prefix, delimiter, marker=None, recursive=False,
               limit=DEFAULT_LIMIT):
+        """
+        Return a range of elements from a sorted set (wraps ZRANGEBYLEX).
+        """
         if not self._script_zkeys:
             self._script_zkeys = self.conn_slave.register_script(
                 self.lua_script_zkeys)
@@ -245,7 +247,7 @@ class RedisDb(object):
             pos = marker.rfind(delimiter)
             marker = marker[: pos if pos == -1 else pos + 1]
 
-        return self._script_zkeys([key, prefix[:-1], delimiter, marker or "",
+        return self._script_zkeys([key, prefix, delimiter, marker or "",
                                    1 if recursive else 0, limit])
 
     def exists(self, key):
@@ -566,7 +568,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 # empty if key does not exist
                 key_list = None
                 if self.redis_keys_format == REDIS_KEYS_FORMAT_V3:
-                    key_list = self.conn.zkeys(key, prefix + "*",
+                    key_list = self.conn.zkeys(key, prefix,
                                                self.DELIMITER,
                                                marker, recursive, limit)
                 else:
