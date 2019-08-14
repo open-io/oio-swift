@@ -461,7 +461,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
             res = self.conn.delete(key)
             if not res:
-                LOG.warn("%s: failed to remove key %s", self.SWIFT_SOURCE, key)
+                LOG.debug("%s: _remove_placeholder: %s did not exist",
+                          self.SWIFT_SOURCE, key)
         else:
             path += "/"
             if self.redis_keys_format == REDIS_KEYS_FORMAT_V2:
@@ -469,8 +470,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             else:
                 res = self.conn.zdel(key, path)
             if not res:
-                LOG.warn("%s: failed to remove path %s key %s",
-                         self.SWIFT_SOURCE, path, key)
+                LOG.debug("%s: _remove_placeholder: %s was not in %s",
+                          self.SWIFT_SOURCE, path, key)
 
     def _build_object_listing_mpu(self, start_response, env,
                                   account, container, prefix,
@@ -845,6 +846,11 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 super(ContainerHierarchyMiddleware, self).should_bypass(env))
 
     def update_copy_headers(self, req, env2):
+        """
+        When the requested operation is a server-side copy, rewrite the
+        header telling where is the source to make it point to the proper
+        shard.
+        """
         if 'Oio-Copy-From' in req.headers and req.method == 'PUT':
             # TODO(mb): check if MPU is used here (with upload-part-copy)
             _, c_container, c_obj = req.headers['Oio-Copy-From'].split('/', 2)
@@ -951,7 +957,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                                                    account, container, path)
 
                 # HEAD dir1/dir2 : this case is partially managed by checking
-                # is # Redis Key CNT exists for dir1, if key if not present, we
+                # if a container key exists for dir1: if key is not present, we
                 # can reply 404 because there is no objects in dir1/ container
                 if not is_mpu and req.method in ('GET', 'HEAD'):
                     key = self.key(account, container, CNT, path)
@@ -983,7 +989,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                                              recursive=must_recurse,
                                              is_mpu=is_mpu)
         else:
-            # should be other operation that listing
+            # should be another operation than listing
             if obj:
                 env2['PATH_INFO'] = "/v1/%s/%s/%s" % (account, container2,
                                                       obj2)
