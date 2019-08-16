@@ -250,16 +250,23 @@ class RedisDb(object):
                 self.conn_slave.hscan_iter(key, match=match, count=count)]
 
     def zkeys(self, key, prefix, delimiter, marker=None, recursive=False,
-              limit=DEFAULT_LIMIT):
+              limit=DEFAULT_LIMIT, exclude_marker=False):
         """
         Return a range of elements from a sorted set (wraps ZRANGEBYLEX).
+
+        :param exclude_marker: for unobvious reasons, some parts of this code
+            require the marker to be included in the results. When true, this
+            parameter disables this behavior.
         """
         if not self._script_zkeys:
             self._script_zkeys = self.conn_slave.register_script(
                 self.lua_script_zkeys)
         if marker:
-            pos = marker.rfind(delimiter)
-            marker = marker[: pos if pos == -1 else pos + 1]
+            if exclude_marker:
+                marker = marker + '\x09'  # Lowest printable character
+            else:
+                pos = marker.rfind(delimiter)
+                marker = marker[: pos if pos == -1 else pos + 1]
 
         return self._script_zkeys([key, prefix, delimiter, marker or "",
                                    1 if recursive else 0, limit])
@@ -347,8 +354,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         sentinel_name = kwargs.pop('sentinel_name', None)
         self.redis_keys_format = kwargs.pop('keys_format',
                                             REDIS_KEYS_FORMAT_V1)
-        self.support_listing_versioning = \
-            kwargs.pop('support_listing_versioning')
+        self.mask_empty_prefixes = kwargs.pop('mask_empty_prefixes')
         if self.redis_keys_format not in [REDIS_KEYS_FORMAT_V1,
                                           REDIS_KEYS_FORMAT_V2,
                                           REDIS_KEYS_FORMAT_V3]:
@@ -538,6 +544,56 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         start_response("200 OK", oheaders.items())
         return [body]
 
+    def has_nested_subdir(self, key, subdir):
+        """
+        Check if the subdirectory has at least one nested subdirectory.
+        In that case, the subdirectory must appear in listings, even if it
+        does not host any object.
+        """
+        if self.redis_keys_format == REDIS_KEYS_FORMAT_V1:
+            # The first result will be the subdir itself
+            key_list = list(self.conn.keys(key + '*', count=2))
+            return key_list and (key_list[0] != key + subdir or
+                                 len(key_list) > 1)
+        elif self.redis_keys_format == REDIS_KEYS_FORMAT_V2:
+            # The first result will be the subdir itself
+            key_list = self.conn.hkeys(key, subdir + '*', count=2)
+            return key_list and (key_list[0] != subdir or len(key_list) > 1)
+        else:
+            key_list = self.conn.zkeys(key, prefix=subdir,
+                                       delimiter=self.DELIMITER,
+                                       marker=subdir, limit=1,
+                                       exclude_marker=True)
+            return bool(key_list)
+
+    def hosts_visible_objects(self, env, account, container, prefix):
+        """
+        Tell if the container hosts visible objects (i.e. without delete
+        marker) directly under the prefix. If it does not, the prefix
+        should not appear in listings.
+        """
+        pfx_parts = prefix.strip(self.DELIMITER).split(self.DELIMITER)
+        return any(self._list_objects(
+            env, account, [container] + pfx_parts, None,
+            limit=1, versions=False))
+
+    def prefix_can_be_listed(self, env, account, container, prefix):
+        """
+        Tell if a prefix can appear in listings:
+        - if self.mask_empty_prefixes is False;
+        - if user explicitly asked to list object versions and delete markers;
+        - if there are visible objects starting with this prefix;
+        - if there are nested prefixes.
+        """
+        if (not self.mask_empty_prefixes or
+                env.get('oio.query', {}).get('versions')):
+            return True
+        cnt_key = self.key(account, container, CNT)
+        obj_key = self.key(account, container, OBJ)
+        return (self.has_nested_subdir(cnt_key, prefix) or
+                self.has_nested_subdir(obj_key, prefix) or
+                self.hosts_visible_objects(env, account, container, prefix))
+
     def _build_object_listing(self, start_response, env,
                               account, container, prefix,
                               limit=DEFAULT_LIMIT,
@@ -564,8 +620,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         versions = env.get('oio.query', {}).get('versions')
 
         prefix = prefix[0] if prefix else ''
-        # have we to parse root container ?
-        # / must be absent from prefix or if marker is set
+        # Do we need to list from the root container?
+        # / must be absent from the prefix or marker must be set.
         parse_root = self.DELIMITER not in prefix or marker
         # (not marker or self.DELIMITER not in marker)
         LOG.debug("%s: parse root container ? %s",
@@ -648,39 +704,23 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         matches.sort()
 
         already_done = set()
-        last_obj = None
-        len_pfx = len(prefix)
+        last_obj_idx = None
+        pfx_len = len(prefix)
         cnt_delimiter = len(prefix.split('/'))
         for mode, entry in matches:
-            if self.DELIMITER in entry[len_pfx:] and not recursive:
+            if self.DELIMITER in entry[pfx_len:] and not recursive:
                 # append subdir entry, no difference between CNT and OBJ
                 subdir = '/'.join(entry.split("/")[:cnt_delimiter]) + '/'
                 if subdir in already_done:
                     continue
-                empty = False
-                # check is prefix contains only DeleteMarker as latest version
-                # TODO(mbo) avoid this listing if versioning was never enabled
-                # on root container/bucket
-                if self.support_listing_versioning and not versions:
-                    empty = not any(self._list_objects(
-                                    env,
-                                    account,
-                                    [container] + entry.strip(self.DELIMITER)
-                                                       .split(self.DELIMITER),
-                                    None,
-                                    limit=1,
-                                    versions=False))
-
-                if not empty:
-                    if last_obj and \
-                       subdir.decode('utf-8') > all_objs[last_obj - 1]['name']\
+                if self.prefix_can_be_listed(env, account, container, subdir):
+                    usubdir = subdir.decode('utf-8')
+                    if last_obj_idx and \
+                       usubdir > all_objs[last_obj_idx - 1]['name']\
                        and len(all_objs) > limit:
                         break
                     already_done.add(subdir)
-                    all_objs.append({
-                        'subdir': subdir.decode('utf-8')
-                    })
-
+                    all_objs.append({'subdir': usubdir})
             else:
                 _prefix = ''
                 if len(entry) < len(prefix):
@@ -700,7 +740,7 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                     LOG.debug("%s: convert marker %s to %s",
                               self.SWIFT_SOURCE, marker, _marker)
 
-                if mode == "obj":
+                if mode == OBJ:
                     ret = [{'name': entry.decode('utf-8'),
                             'bytes': 0,
                             'hash': MD5_OF_EMPTY_STRING,
@@ -724,9 +764,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 for x in ret:
                     all_objs.append(x)
                 # root container is the first one listed
-                if last_obj is None:
-                    last_obj = len(all_objs)
-                if len(all_objs) > last_obj + limit:
+                if last_obj_idx is None:
+                    last_obj_idx = len(all_objs)
+                if len(all_objs) > last_obj_idx + limit:
                     break
 
             # it suppose to have proper order but it will help a lot !
@@ -1035,8 +1075,12 @@ def filter_factory(global_conf, **local_config):
     strip_v1 = config_true_value(local_config.get('strip_v1'))
     sentinel_hosts = local_config.get('sentinel_hosts')
     sentinel_name = local_config.get('sentinel_name')
-    support_listing_versioning = config_true_value(
-                local_config.get('support_listing_versioning'))
+    beurk = local_config.get('support_listing_versioning')
+    if beurk is not None:
+        LOG.warn('"support_listing_versioning" is a deprecated alias for '
+                 '"mask_empty_prefixes".')
+    mask_empty_prefixes = config_true_value(
+        local_config.get('mask_empty_prefixes', beurk))
     redis_conf = {k[6:]: v
                   for k, v in conf.iteritems()
                   if k.startswith("redis_")}
@@ -1049,6 +1093,6 @@ def filter_factory(global_conf, **local_config):
             swift3_compat=swift3_compat,
             sentinel_hosts=sentinel_hosts,
             sentinel_name=sentinel_name,
-            support_listing_versioning=support_listing_versioning,
+            mask_empty_prefixes=mask_empty_prefixes,
             **redis_conf)
     return factory
