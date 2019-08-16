@@ -496,10 +496,12 @@ class ObjectController(BaseObjectController):
 
         from_account = req.headers.get('X-Copy-From-Account',
                                        self.account_name)
-        self.app.logger.info("LINK (%s,%s,%s) TO (%s,%s,%s)",
-                             from_account, self.container_name,
-                             self.object_name,
-                             self.account_name, container, obj)
+        self.app.logger.info("Creating link from %s/%s/%s to %s/%s/%s",
+                             # Existing
+                             from_account, container, obj,
+                             # New
+                             self.account_name, self.container_name,
+                             self.object_name)
         storage = self.app.storage
 
         if req.headers.get('Range'):
