@@ -827,8 +827,9 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             obj_prefix = self.DELIMITER.join(ct_parts[1:] + ['', ])
 
         if not resp.is_success or resp.content_length == 0:
-            LOG.warn("%s: Failed to list %s",
-                     self.SWIFT_SOURCE, sub_path)
+            if resp.status_int != 404:
+                LOG.warn("%s: Failed to list %s: %s",
+                         self.SWIFT_SOURCE, sub_path, resp.status)
             return
         with closing_if_possible(resp.app_iter):
             items = json.loads(resp.body)
