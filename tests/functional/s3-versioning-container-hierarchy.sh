@@ -2,7 +2,7 @@
 
 export OIO_NS="${1:-OPENIO}"
 export OIO_ACCOUNT="${2:-AUTH_demo}"
-LISTING_VERSIONING=$(cat $CONF_GW | grep support_listing_versioning | cut -d= -f2 | sed 's/ //g' )
+MASK_EMPTY_PREFIXES=$(grep support_listing_versioning "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 
@@ -10,7 +10,6 @@ BUCKET="bucket-ch-vers-$RANDOM"
 
 OBJ_0="/etc/magic"
 OBJ_1="/etc/passwd"
-OBJ_2="/etc/fstab"
 
 set -x
 set -e
@@ -51,14 +50,14 @@ ${AWS} s3api put-bucket-versioning --versioning-configuration Status=Enabled --b
 echo "*** Delete current version ***"
 ${AWS} s3 rm s3://${BUCKET}/path/obj
 
-if [ $LISTING_VERSIONING == "true" ]; then
+if [ "$MASK_EMPTY_PREFIXES" == "true" ]; then
     echo "*** Check redis key is not removed ***"
     RESULT="1"
-    if grep -E "^redis_keys_format.*=.*v3" $CONF_GW; then
+    if grep -E "^redis_keys_format.*=.*v3" "$GW_CONF"; then
         # v3 format
         CMD="zrank CS:AUTH_demo:${BUCKET}:cnt path/"
 	RESULT="0"
-    elif grep -E "^redis_keys_format.*=.*v2" $CONF_GW; then
+    elif grep -E "^redis_keys_format.*=.*v2" "$GW_CONF"; then
         # v2 format
         CMD="hget CS:AUTH_demo:${BUCKET}:cnt path/"
     else

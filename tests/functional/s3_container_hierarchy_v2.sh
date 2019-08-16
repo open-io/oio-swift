@@ -2,7 +2,8 @@
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 BUCKET=bucket-ch1-$RANDOM
-LISTING_VERSIONING=$(cat $CONF_GW | grep support_listing_versioning | cut -d= -f2 | sed 's/ //g' )
+CH_VERSION=$(grep '^redis_key_format' "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
+MASK_EMPTY_PREFIXES=$(grep '^support_listing_versioning' "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
 
 echo "Bucket name: $BUCKET"
 
@@ -46,8 +47,8 @@ echo ${OUT} | grep dir1/dir2/object
 
 # LISTING WITH : (simulate cloudberry)
 
-echo "$LISTING_VERSIONING"
-if [ "$LISTING_VERSIONING" != "true" ]; then
+echo "$MASK_EMPTY_PREFIXES"
+if [ "$MASK_EMPTY_PREFIXES" != "true" ]; then
     d=$(date +%s)
     ${AWS} s3api put-object --bucket ${BUCKET} --key key1/key2/dot:/${d}/
 
@@ -175,7 +176,7 @@ ${AWS} s3api put-object --bucket ${BUCKET} --key v1/o2 --body aa
 sleep 0.5
 CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
 OBJECT=14
-if [ "$LISTING_VERSIONING" != "true" ]; then
+if [ "$MASK_EMPTY_PREFIXES" != "true" ]; then
     OBJECT=$((OBJECT + 1))
 fi
 [ "$CNT" -eq $OBJECT ]
@@ -223,6 +224,25 @@ ${AWS} s3 rm s3://${BUCKET_UTF8}/rêve/file
 DIRECTORY_LIST=$(${AWS} s3api list-objects --bucket ${BUCKET_UTF8})
 [ -z "$DIRECTORY_LIST" ]
 ${AWS} s3api delete-bucket --bucket ${BUCKET_UTF8}
+
+
+################################
+# Objects only in subdirectories
+################################
+
+# Check that directory prefixes are listed when the only
+# objects of the bucket are stored in subdirectories.
+if [ "${MASK_EMPTY_PREFIXES}" = "true" ]
+then
+    BCK0=bucket-${RANDOM}
+    ${AWS} s3 mb s3://${BCK0}
+    ${AWS} s3 cp /etc/passwd s3://${BCK0}/dir/subdir/subsubdir/passwd
+    ENTRIES=$(${AWS} s3 ls s3://${BCK0}/)
+    echo -e "${ENTRIES}" | grep "PRE dir/"
+
+    ${AWS} s3 rm --recursive s3://${BCK0}/
+    ${AWS} s3 rb s3://${BCK0}
+fi
 
 # COPY S3<=>S3
 
