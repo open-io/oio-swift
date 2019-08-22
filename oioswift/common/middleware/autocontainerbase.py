@@ -33,7 +33,7 @@ class AutoContainerBase(object):
 
     def __init__(self, app, acct,
                  strip_v1=False, account_first=False, swift3_compat=False,
-                 stop_at_first_match=True, skip_metadata=False):
+                 stop_at_first_match=True, skip_metadata=False, **_kwargs):
         self.app = app
         self.account = acct
         self.bypass_header_key = ("HTTP_" +
