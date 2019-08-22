@@ -151,7 +151,8 @@ class RedisDb(object):
     """
 
     def __init__(self, redis_host=None,
-                 sentinel_hosts=None, sentinel_name=None):
+                 sentinel_hosts=None, sentinel_name=None,
+                 **connection_kwargs):
         self.__redis_mod = importlib.import_module('redis')
         self.__redis_sentinel_mod = importlib.import_module('redis.sentinel')
         self._sentinel_hosts = None
@@ -159,6 +160,7 @@ class RedisDb(object):
         self._conn = None
         self._conn_slave = None
         self._script_zkeys = None
+        self.connection_kwargs = self._filter_conn_kwargs(connection_kwargs)
 
         if LooseVersion(self.__redis_mod.__version__) < LooseVersion("3.0.0"):
             self.zset = self.zset_legacy
@@ -180,7 +182,17 @@ class RedisDb(object):
         self._master_name = sentinel_name
 
         self._sentinel = self.__redis_sentinel_mod.Sentinel(
-            self._sentinel_hosts)
+            self._sentinel_hosts, **self.connection_kwargs)
+
+    def _filter_conn_kwargs(self, connection_kwargs):
+        """
+        Keep only keyword arguments known by Redis classes, cast them to
+        the appropriate type.
+        """
+        parsers = self.__redis_mod.connection.URL_QUERY_ARGUMENT_PARSERS
+        return {k: parsers[k](v)
+                for k, v in connection_kwargs.items()
+                if k in parsers}
 
     @property
     def conn(self):
@@ -188,7 +200,8 @@ class RedisDb(object):
             return self._sentinel.master_for(self._master_name)
         if not self._conn:
             self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
-                                                      port=self._redis_port)
+                                                      port=self._redis_port,
+                                                      **self.connection_kwargs)
         return self._conn
 
     @property
@@ -198,7 +211,8 @@ class RedisDb(object):
 
         if not self._conn:
             self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
-                                                      port=self._redis_port)
+                                                      port=self._redis_port,
+                                                      **self.connection_kwargs)
         return self._conn
 
     def set(self, key, val):
@@ -328,10 +342,10 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
     PREFIX = 'CS:'
 
     def __init__(self, app, conf, acct, **kwargs):
-        redis_host = kwargs.pop('redis_host', None)
+        redis_host = kwargs.pop('host', None)
         sentinel_hosts = kwargs.pop('sentinel_hosts', None)
         sentinel_name = kwargs.pop('sentinel_name', None)
-        self.redis_keys_format = kwargs.pop('redis_keys_format',
+        self.redis_keys_format = kwargs.pop('keys_format',
                                             REDIS_KEYS_FORMAT_V1)
         self.support_listing_versioning = \
             kwargs.pop('support_listing_versioning')
@@ -351,7 +365,8 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
             self.conn = RedisDb(
                 redis_host=redis_host,
                 sentinel_hosts=sentinel_hosts,
-                sentinel_name=sentinel_name)
+                sentinel_name=sentinel_name,
+                **kwargs)
         else:
             self.conn = FakeRedis()
 
@@ -1018,13 +1033,13 @@ def filter_factory(global_conf, **local_config):
     account_first = config_true_value(local_config.get('account_first'))
     swift3_compat = config_true_value(local_config.get('swift3_compat'))
     strip_v1 = config_true_value(local_config.get('strip_v1'))
-    redis_keys_format = local_config.get('redis_keys_format',
-                                         REDIS_KEYS_FORMAT_V1)
-    redis_host = local_config.get('redis_host')
     sentinel_hosts = local_config.get('sentinel_hosts')
     sentinel_name = local_config.get('sentinel_name')
     support_listing_versioning = config_true_value(
                 local_config.get('support_listing_versioning'))
+    redis_conf = {k[6:]: v
+                  for k, v in conf.iteritems()
+                  if k.startswith("redis_")}
 
     def factory(app):
         return ContainerHierarchyMiddleware(
@@ -1032,9 +1047,8 @@ def filter_factory(global_conf, **local_config):
             strip_v1=strip_v1,
             account_first=account_first,
             swift3_compat=swift3_compat,
-            redis_keys_format=redis_keys_format,
-            redis_host=redis_host,
             sentinel_hosts=sentinel_hosts,
             sentinel_name=sentinel_name,
-            support_listing_versioning=support_listing_versioning)
+            support_listing_versioning=support_listing_versioning,
+            **redis_conf)
     return factory
