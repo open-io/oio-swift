@@ -39,6 +39,8 @@ from oio.common import exceptions
 
 from oioswift.utils import handle_oio_timeout, handle_service_busy, \
     REQID_HEADER
+from oioswift.common.middleware.container_hierarchy \
+        import ContainerHierarchyMiddleware as CH
 
 
 def get_response_headers(info):
@@ -57,7 +59,7 @@ def get_response_headers(info):
 
 
 def account_listing_response(account, req, response_content_type,
-                             info=None, listing=None):
+                             info=None, listing=None, s3_buckets_only=False):
     now = time.time()
     if info is None:
         info = {'containers': 0,
@@ -77,7 +79,8 @@ def account_listing_response(account, req, response_content_type,
         data = []
         for (name, object_count, bytes_used, is_subdir, mtime) in listing:
             if is_subdir:
-                data.append({'subdir': name})
+                if not s3_buckets_only:
+                    data.append({'subdir': name})
             else:
                 data.append({'name': name, 'count': object_count,
                              'bytes': bytes_used,
@@ -88,8 +91,9 @@ def account_listing_response(account, req, response_content_type,
                        '<account name=%s>' % saxutils.quoteattr(account)]
         for (name, object_count, bytes_used, is_subdir, mtime) in listing:
             if is_subdir:
-                output_list.append(
-                    '<subdir name=%s />' % saxutils.quoteattr(name))
+                if not s3_buckets_only:
+                    output_list.append(
+                        '<subdir name=%s />' % saxutils.quoteattr(name))
             else:
                 item = '<container><name>%s</name><count>%s</count>' \
                        '<bytes>%s</bytes><last_modified>%s</last_modified>' \
@@ -174,6 +178,7 @@ class AccountController(SwiftAccountController):
         s3_buckets_only = False
         if req.environ.get('swift.source') == 'S3':
             s3_buckets_only = True
+            delimiter = CH.ENCODED_DELIMITER[0]
 
         oio_headers = {REQID_HEADER: self.trans_id}
         info = None
@@ -195,7 +200,7 @@ class AccountController(SwiftAccountController):
                 delimiter=delimiter, headers=oio_headers)
         return account_listing_response(
             self.account_name, req, get_listing_content_type(req),
-            info=info, listing=listing)
+            info=info, listing=listing, s3_buckets_only=s3_buckets_only)
 
     @public
     @handle_account_not_found_autocreate
