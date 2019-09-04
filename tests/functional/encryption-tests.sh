@@ -7,7 +7,7 @@ export OIO_NS="${OIO_NS:-OPENIO}"
 export OIO_ACCOUNT="${OIO_ACCOUNT:-AUTH_demo}"
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
-BUCKET=bucket-$RANDOM
+BUCKET=bucket-enc-$RANDOM
 ETAG_REGEX='s/(.*ETag.*)([[:xdigit:]]{32})(.*)/\2/p'
 WORKDIR=$(mktemp -d -t encryption-tests-XXXX)
 OBJ_1_SRC="/etc/magic"

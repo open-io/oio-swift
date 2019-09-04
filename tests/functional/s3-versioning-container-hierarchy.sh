@@ -6,7 +6,7 @@ LISTING_VERSIONING=$(cat $CONF_GW | grep support_listing_versioning | cut -d= -f
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 
-BUCKET="bucket-$RANDOM"
+BUCKET="bucket-ch-vers-$RANDOM"
 
 OBJ_0="/etc/magic"
 OBJ_1="/etc/passwd"

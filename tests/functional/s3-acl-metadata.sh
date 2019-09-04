@@ -2,10 +2,7 @@
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 
-BUCKET=bucket-$RANDOM
-
-# AWS="aws --profil amazon"
-# BUCKET=openio.michael
+BUCKET=bucket-acl-$RANDOM
 
 echo "Bucket name: $BUCKET"
 

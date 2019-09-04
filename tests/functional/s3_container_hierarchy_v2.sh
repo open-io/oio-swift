@@ -1,7 +1,7 @@
 #!/bin/bash
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
-BUCKET=bucket-$RANDOM
+BUCKET=bucket-ch1-$RANDOM
 LISTING_VERSIONING=$(cat $CONF_GW | grep support_listing_versioning | cut -d= -f2 | sed 's/ //g' )
 
 echo "Bucket name: $BUCKET"
@@ -186,7 +186,7 @@ ${AWS} s3api head-object --bucket ${BUCKET} --key dir1/dir2/
 
 # UTF-8 PATH
 # The '?' are caused by "s3 ls": https://github.com/aws/aws-cli/issues/3902
-BUCKET_UTF8=bucket-${RANDOM}
+BUCKET_UTF8=bucket-utf8-${RANDOM}
 ${AWS} s3api create-bucket --bucket ${BUCKET_UTF8}
 ${AWS} s3 cp /etc/passwd s3://${BUCKET_UTF8}/rêve/file
 ${AWS} s3api head-object --bucket ${BUCKET_UTF8} --key rêve/file
@@ -220,8 +220,8 @@ echo -e "${DIRECTORY_LIST}" | grep "g?teau\|gâteau"
 
 # COPY S3<=>S3
 
-BCK1=bucket-${RANDOM}
-BCK2=bucket-${RANDOM}
+BCK1=bucket-copy-${RANDOM}
+BCK2=bucket-copy-${RANDOM}
 
 ${AWS} s3api create-bucket --bucket ${BCK1}
 ${AWS} s3api create-bucket --bucket ${BCK2}
