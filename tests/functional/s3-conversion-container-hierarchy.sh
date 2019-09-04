@@ -3,7 +3,7 @@
 set -x
 set -e
 ACCOUNT="AUTH_demo"
-BUCKET=bucket-$RANDOM
+BUCKET=bucket-conv-$RANDOM
 REDIS_CLI="redis-cli"
 
 ${REDIS_CLI} set "CS:${ACCOUNT}:${BUCKET}:cnt:v1/" 1

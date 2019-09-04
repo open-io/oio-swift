@@ -5,7 +5,7 @@ export OIO_ACCOUNT="${2:-AUTH_demo}"
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 
-BUCKET="bucket-$RANDOM"
+BUCKET="bucket-vers-$RANDOM"
 
 OBJ_0="/etc/magic"
 OBJ_1="/etc/passwd"
