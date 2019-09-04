@@ -14,7 +14,7 @@ ${AWS} s3api create-bucket --bucket ${BUCKET_2}
 # Listing limit is 1000, no need to simulate a lot more containers.
 for i in ${BUCKET_1} ${BUCKET_1}%2F${SUBPATH}%2F{1..2000} ${BUCKET_2};
 do
-    echo ZADD containers:${OIO_ACCOUNT} 1 ${i};
+    echo ZADD containers:${OIO_ACCOUNT} 0 ${i};
     echo HSET container:${OIO_ACCOUNT}:${i} bytes 0;
     echo HSET container:${OIO_ACCOUNT}:${i} objects 0;
     echo HSET container:${OIO_ACCOUNT}:${i} dtime 0;
