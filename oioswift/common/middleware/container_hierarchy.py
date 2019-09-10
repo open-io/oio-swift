@@ -150,6 +150,16 @@ class RedisDb(object):
         return lst
     """
 
+    # Imported from redis-py, for compatibility with pre 2.10.6 versions.
+    URL_QUERY_ARGUMENT_PARSERS = {
+        'socket_timeout': float,
+        'socket_connect_timeout': float,
+        'socket_keepalive': config_true_value,
+        'retry_on_timeout': config_true_value,
+        'max_connections': int,
+        'health_check_interval': int,
+    }
+
     def __init__(self, redis_host=None,
                  sentinel_hosts=None, sentinel_name=None,
                  **connection_kwargs):
@@ -189,7 +199,10 @@ class RedisDb(object):
         Keep only keyword arguments known by Redis classes, cast them to
         the appropriate type.
         """
-        parsers = self.__redis_mod.connection.URL_QUERY_ARGUMENT_PARSERS
+        if hasattr(self.__redis_mod.connection, 'URL_QUERY_ARGUMENT_PARSERS'):
+            parsers = self.__redis_mod.connection.URL_QUERY_ARGUMENT_PARSERS
+        else:
+            parsers = RedisDb.URL_QUERY_ARGUMENT_PARSERS
         return {k: parsers[k](v)
                 for k, v in connection_kwargs.items()
                 if k in parsers}
