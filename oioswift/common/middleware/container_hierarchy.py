@@ -26,6 +26,103 @@ from oioswift.common.middleware.autocontainerbase import AutoContainerBase
 from oio.common.exceptions import ConfigurationException
 from distutils.version import LooseVersion
 
+try:
+    from oio.common.redis_conn import RedisConnection
+except ImportError:
+    # TODO(adu): Delete when it will no longer be used
+    class RedisConnection(object):
+
+        # Imported from redis-py, for compatibility with pre 2.10.6 versions.
+        URL_QUERY_ARGUMENT_PARSERS = {
+            'socket_timeout': float,
+            'socket_connect_timeout': float,
+            'socket_keepalive': config_true_value,
+            'retry_on_timeout': config_true_value,
+            'max_connections': int,
+            'health_check_interval': int,
+        }
+
+        def __init__(self, host=None, sentinel_hosts=None,
+                     sentinel_name=None, **kwargs):
+            self.__redis_mod = importlib.import_module('redis')
+            self.__redis_sentinel_mod = importlib.import_module(
+                'redis.sentinel')
+
+            self._conn = None
+            self._host = None
+            self._port = None
+            self._sentinel = None
+            self._sentinel_hosts = None
+            self._sentinel_name = None
+            self._conn_kwargs = self._filter_conn_kwargs(kwargs)
+
+            if host:
+                self._host, self._port = host.rsplit(':', 1)
+                self._port = int(self._port)
+                return
+
+            if not sentinel_name:
+                raise ValueError("missing parameter 'sentinel_name'")
+
+            if isinstance(sentinel_hosts, basestring):
+                sentinel_hosts = sentinel_hosts.split(',')
+            self._sentinel_hosts = [(h, int(p)) for h, p, in (hp.rsplit(':', 1)
+                                    for hp in sentinel_hosts)]
+            self._sentinel_name = sentinel_name
+            self._sentinel_conn_kwargs = self._filter_sentinel_conn_kwargs(
+                kwargs)
+            self._sentinel = self.__redis_sentinel_mod.Sentinel(
+                self._sentinel_hosts,
+                sentinel_kwargs=self._sentinel_conn_kwargs,
+                **self._conn_kwargs)
+
+        def _filter_conn_kwargs(self, conn_kwargs):
+            """
+            Keep only keyword arguments known by Redis classes, cast them to
+            the appropriate type.
+            """
+            if conn_kwargs is None:
+                return None
+            if hasattr(self.__redis_mod.connection,
+                       'URL_QUERY_ARGUMENT_PARSERS'):
+                parsers = \
+                    self.__redis_mod.connection.URL_QUERY_ARGUMENT_PARSERS
+            else:
+                parsers = self.URL_QUERY_ARGUMENT_PARSERS
+            return {k: parsers[k](v)
+                    for k, v in conn_kwargs.items()
+                    if k in parsers}
+
+        def _filter_sentinel_conn_kwargs(self, sentinel_conn_kwargs):
+            if sentinel_conn_kwargs is None:
+                return None
+            return self._filter_conn_kwargs(
+                {k[9:]: v for k, v in sentinel_conn_kwargs.items()
+                 if k.startswith('sentinel_')})
+
+        @property
+        def conn(self):
+            """Retrieve Redis connection (normal or sentinel)"""
+            if self._sentinel:
+                return self._sentinel.master_for(self._sentinel_name)
+            if not self._conn:
+                self._conn = self.__redis_mod.StrictRedis(
+                    host=self._host, port=self._port,
+                    **self._conn_kwargs)
+            return self._conn
+
+        @property
+        def conn_slave(self):
+            """Retrieve Redis connection (normal or sentinel)"""
+            if self._sentinel:
+                return self._sentinel.master_for(self._sentinel_name)
+            return self.conn
+
+        def register_script(self, script):
+            """Register a LUA script and return Script object."""
+            return self.conn.register_script(script)
+
+
 LOG = None
 MIDDLEWARE_NAME = 'container_hierarchy'
 DEFAULT_LIMIT = 10000
@@ -44,7 +141,7 @@ FAKE_ACL = '''{"Owner":"internal:internal",
                         {"Grantee":"AllUsers","Permission":"WRITE"}]}'''
 
 
-class RedisDb(object):
+class RedisDb(RedisConnection):
     lua_script_utilities = """
         local get_index = function(key, start, delimiter)
             -- Get index of the first delimiter of the key
@@ -150,83 +247,19 @@ class RedisDb(object):
         return lst
     """
 
-    # Imported from redis-py, for compatibility with pre 2.10.6 versions.
-    URL_QUERY_ARGUMENT_PARSERS = {
-        'socket_timeout': float,
-        'socket_connect_timeout': float,
-        'socket_keepalive': config_true_value,
-        'retry_on_timeout': config_true_value,
-        'max_connections': int,
-        'health_check_interval': int,
-    }
+    def __init__(self, host=None, sentinel_hosts=None, sentinel_name=None,
+                 **kwargs):
+        super(RedisDb, self).__init__(
+            host=host, sentinel_hosts=sentinel_hosts,
+            sentinel_name=sentinel_name, **kwargs)
 
-    def __init__(self, redis_host=None,
-                 sentinel_hosts=None, sentinel_name=None,
-                 **connection_kwargs):
-        self.__redis_mod = importlib.import_module('redis')
-        self.__redis_sentinel_mod = importlib.import_module('redis.sentinel')
-        self._sentinel_hosts = None
-        self._sentinel = None
-        self._conn = None
-        self._conn_slave = None
         self._script_zkeys = None
-        self.connection_kwargs = self._filter_conn_kwargs(connection_kwargs)
 
-        if LooseVersion(self.__redis_mod.__version__) < LooseVersion("3.0.0"):
+        if LooseVersion(self._RedisConnection__redis_mod.__version__) \
+                < LooseVersion("3.0.0"):
             self.zset = self.zset_legacy
         else:
             self.zset = self.zset3
-
-        if redis_host:
-            self._redis_host, self._redis_port = redis_host.rsplit(':', 1)
-            self._redis_port = int(self._redis_port)
-            return
-
-        if not sentinel_name:
-            raise ValueError("missing parameter 'sentinel_name'")
-
-        if isinstance(sentinel_hosts, basestring):
-            sentinel_hosts = sentinel_hosts.split(',')
-        self._sentinel_hosts = [(h, int(p)) for h, p, in (hp.rsplit(':', 1)
-                                for hp in sentinel_hosts)]
-        self._master_name = sentinel_name
-
-        self._sentinel = self.__redis_sentinel_mod.Sentinel(
-            self._sentinel_hosts, **self.connection_kwargs)
-
-    def _filter_conn_kwargs(self, connection_kwargs):
-        """
-        Keep only keyword arguments known by Redis classes, cast them to
-        the appropriate type.
-        """
-        if hasattr(self.__redis_mod.connection, 'URL_QUERY_ARGUMENT_PARSERS'):
-            parsers = self.__redis_mod.connection.URL_QUERY_ARGUMENT_PARSERS
-        else:
-            parsers = RedisDb.URL_QUERY_ARGUMENT_PARSERS
-        return {k: parsers[k](v)
-                for k, v in connection_kwargs.items()
-                if k in parsers}
-
-    @property
-    def conn(self):
-        if self._sentinel:
-            return self._sentinel.master_for(self._master_name)
-        if not self._conn:
-            self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
-                                                      port=self._redis_port,
-                                                      **self.connection_kwargs)
-        return self._conn
-
-    @property
-    def conn_slave(self):
-        if self._sentinel:
-            return self._sentinel.slave_for(self._master_name)
-
-        if not self._conn:
-            self._conn = self.__redis_mod.StrictRedis(host=self._redis_host,
-                                                      port=self._redis_port,
-                                                      **self.connection_kwargs)
-        return self._conn
 
     def set(self, key, val):
         return self.conn.set(key, val)
@@ -361,13 +394,12 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
     SWIFT_SOURCE = 'SHARD'
     PREFIX = 'CS:'
 
-    def __init__(self, app, conf, acct, **kwargs):
-        redis_host = kwargs.pop('host', None)
-        sentinel_hosts = kwargs.pop('sentinel_hosts', None)
-        sentinel_name = kwargs.pop('sentinel_name', None)
-        self.redis_keys_format = kwargs.pop('keys_format',
-                                            REDIS_KEYS_FORMAT_V1)
-        self.mask_empty_prefixes = kwargs.pop('mask_empty_prefixes')
+    def __init__(self, app, conf, acct, mask_empty_prefixes=None,
+                 redis_conf=None, **kwargs):
+        self.mask_empty_prefixes = mask_empty_prefixes
+        redis_conf = redis_conf or dict()
+        self.redis_keys_format = redis_conf.pop(
+            'keys_format', REDIS_KEYS_FORMAT_V1)
         if self.redis_keys_format not in [REDIS_KEYS_FORMAT_V1,
                                           REDIS_KEYS_FORMAT_V2,
                                           REDIS_KEYS_FORMAT_V3]:
@@ -380,12 +412,15 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         LOG.debug(self.SWIFT_SOURCE)
         self.check_pipeline(conf)
 
-        if redis_host or sentinel_hosts:
+        redis_host = redis_conf.pop('host', None)
+        redis_sentinel_hosts = redis_conf.pop('sentinel_hosts', None)
+        if redis_host or redis_sentinel_hosts:
+            redis_sentinel_name = redis_conf.pop('sentinel_name', None)
             self.conn = RedisDb(
-                redis_host=redis_host,
-                sentinel_hosts=sentinel_hosts,
-                sentinel_name=sentinel_name,
-                **kwargs)
+                host=redis_host,
+                sentinel_hosts=redis_sentinel_hosts,
+                sentinel_name=redis_sentinel_name,
+                **redis_conf)
         else:
             self.conn = FakeRedis()
 
@@ -1086,8 +1121,6 @@ def filter_factory(global_conf, **local_config):
     account_first = config_true_value(local_config.get('account_first'))
     swift3_compat = config_true_value(local_config.get('swift3_compat'))
     strip_v1 = config_true_value(local_config.get('strip_v1'))
-    sentinel_hosts = local_config.get('sentinel_hosts')
-    sentinel_name = local_config.get('sentinel_name')
     beurk = local_config.get('support_listing_versioning')
     if beurk is not None:
         LOG.warn('"support_listing_versioning" is a deprecated alias for '
@@ -1095,8 +1128,14 @@ def filter_factory(global_conf, **local_config):
     mask_empty_prefixes = config_true_value(
         local_config.get('mask_empty_prefixes', beurk))
     redis_conf = {k[6:]: v
-                  for k, v in conf.iteritems()
+                  for k, v in conf.items()
                   if k.startswith("redis_")}
+    if redis_conf.get('sentinel_hosts') is None:
+        # TODO(adu): Delete when it will no longer be used
+        redis_conf['sentinel_hosts'] = local_config.get('sentinel_hosts')
+    if redis_conf.get('sentinel_name') is None:
+        # TODO(adu): Delete when it will no longer be used
+        redis_conf['sentinel_name'] = local_config.get('sentinel_name')
 
     def factory(app):
         return ContainerHierarchyMiddleware(
@@ -1104,8 +1143,6 @@ def filter_factory(global_conf, **local_config):
             strip_v1=strip_v1,
             account_first=account_first,
             swift3_compat=swift3_compat,
-            sentinel_hosts=sentinel_hosts,
-            sentinel_name=sentinel_name,
             mask_empty_prefixes=mask_empty_prefixes,
-            **redis_conf)
+            redis_conf=redis_conf)
     return factory
