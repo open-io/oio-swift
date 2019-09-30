@@ -115,7 +115,7 @@ except ImportError:
         def conn_slave(self):
             """Retrieve Redis connection (normal or sentinel)"""
             if self._sentinel:
-                return self._sentinel.master_for(self._sentinel_name)
+                return self._sentinel.slave_for(self._sentinel_name)
             return self.conn
 
         def register_script(self, script):
