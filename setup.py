@@ -42,5 +42,8 @@ setup(
             'tempauth=oioswift.common.middleware.tempauth:filter_factory',
         ],
     },
+    scripts=[
+        'bin/oioswift-proxy-server',
+    ],
     install_requires=['swift>=2.13.0', 'oio>=4.2.0']
 )
