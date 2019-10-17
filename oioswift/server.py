@@ -1,4 +1,4 @@
-# Copyright (c) 2016-2018 OpenIO SAS
+# Copyright (c) 2016-2019 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import multiprocessing
 from swift.common import request_helpers, storage_policy
 from oioswift.common.request_helpers import OioSegmentedIterable
 from oioswift.common.storage_policy import POLICIES
@@ -99,6 +100,25 @@ class Application(SwiftApplication):
             config_true_value(conf.get('delete_slo_parts', False))
         self.check_state = \
             config_true_value(conf.get('check_state', False))
+
+
+def global_conf_callback(preloaded_app_conf, global_conf):
+    """
+    Callback for swift.common.wsgi.run_wsgi during the global_conf
+    creation so that we can add our shared memory manager.
+
+    :param preloaded_app_conf: The preloaded conf for the WSGI app.
+                               This conf instance will go away, so
+                               just read from it, don't write.
+    :param global_conf: The global conf that will eventually be
+                        passed to the app_factory function later.
+                        This conf is created before the worker
+                        subprocesses are forked, so can be useful to
+                        set up semaphores, shared memory, etc.
+    """
+    global_conf['oioswift_counters'] = {
+        'current_requests': multiprocessing.Value('i', 0),
+    }
 
 
 def app_factory(global_conf, **local_conf):
