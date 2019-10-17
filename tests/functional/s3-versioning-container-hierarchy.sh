@@ -50,6 +50,12 @@ ${AWS} s3api put-bucket-versioning --versioning-configuration Status=Enabled --b
 echo "*** Delete current version ***"
 ${AWS} s3 rm s3://${BUCKET}/path/obj
 
+echo "*** Creating empty object ***"
+${AWS} s3api put-object --bucket ${BUCKET} --key dir1/dir2/
+DATA=$(${AWS} s3api list-object-versions --bucket ${BUCKET})
+echo ${DATA} | grep dir1/dir2/
+${AWS} s3 rm s3://${BUCKET}/dir1/dir2/
+
 if [ "$MASK_EMPTY_PREFIXES" == "true" ]; then
     echo "*** Check redis key is not removed ***"
     RESULT="1"
@@ -86,9 +92,8 @@ if [ "$MASK_EMPTY_PREFIXES" == "true" ]; then
     echo "*** Check bucket is empty ***"
 
     DATA=$(${AWS} s3api list-object-versions --bucket ${BUCKET})
-    [ -z $DATA ]
+    [ -z "$DATA" ]
 fi
-
 
 ${AWS} s3api delete-bucket --bucket ${BUCKET}
 

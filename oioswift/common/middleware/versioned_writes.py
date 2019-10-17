@@ -109,7 +109,8 @@ class OioVersionedWritesContext(vw.VersionedWritesContext):
                     subdirs.append(obj)
                     continue
                 ver = int(obj.get('version', '0'))
-                if ver > latest.get(obj['name'], 0):
+                # An integer is always strictly greater than None
+                if ver > latest.get(obj['name']):
                     latest[obj['name']] = ver
             versioned_objects = [
                 obj for obj in versioned_objects
