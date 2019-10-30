@@ -396,7 +396,8 @@ class ObjectController(BaseObjectController):
         for part in manifest:
             path = '/'.join(('', 'v1', self.account_name)) + part['name']
             try:
-                del_req = make_subrequest(req.environ, 'DELETE', path=path)
+                del_req = make_subrequest(req.environ, 'DELETE',
+                                          path=path.encode('utf-8'))
                 del_req.get_response(self.app)
             except Exception as exc:
                 self.app.logger.warn('Failed to delete SLO part %s: %s',
