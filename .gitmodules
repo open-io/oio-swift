@@ -2,7 +2,7 @@
 	path = third_party/swift
 	url = https://github.com/openstack/swift.git
 	# Latest stable/supported version
-	branch = stable/queens
+	branch = stable/train
 [submodule "third_party/oio-sds"]
 	path = third_party/oio-sds
 	url = https://github.com/open-io/oio-sds.git
