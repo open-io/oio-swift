@@ -13,17 +13,15 @@ addons:
 env:
   matrix:
     - TEST_SUITE=s3 # Latest stable/supported versions
-    - TEST_SUITE=s3 SDS_BRANCH=master  # Integration with latest versions
-    - TEST_SUITE=s3 SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike # Previous versions
+    - TEST_SUITE=s3 SDS_BRANCH=master SWIFT_BRANCH=master # Integration with latest versions
     - TEST_SUITE=encryption
-    - TEST_SUITE=encryption SDS_BRANCH=master
-    - TEST_SUITE=encryption SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=encryption SDS_BRANCH=master SWIFT_BRANCH=master
     - TEST_SUITE=swift
-    - TEST_SUITE=swift SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=swift SDS_BRANCH=master SWIFT_BRANCH=master
     - TEST_SUITE=ns-wide-versioning
-    - TEST_SUITE=ns-wide-versioning SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=ns-wide-versioning SDS_BRANCH=master SWIFT_BRANCH=master
     - TEST_SUITE=unit
-    - TEST_SUITE=unit SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=unit SDS_BRANCH=master SWIFT_BRANCH=master
 
 before_install:
   - sudo apt-get update -qq
@@ -37,7 +35,7 @@ install:
   - test -n "$SWIFT_BRANCH" && git config --local submodule.third_party/swift.branch "$SWIFT_BRANCH" || true
   - test -n "$SDS_BRANCH" && git config --local submodule.third_party/oio-sds.branch "$SDS_BRANCH" || true
   - git submodule update --init --remote
-  - ( grep -v PyECLib third_party/oio-sds/all-requirements.txt ; grep -v eventlet third_party/swift/requirements.txt ) > deps-requirements.txt
+  - ( grep -v -e "PyECLib" -e "requests" -e "six" third_party/oio-sds/all-requirements.txt ; grep -v -e "eventlet" -e "lxml" third_party/swift/requirements.txt ) | sort > deps-requirements.txt
   - pip install --upgrade -r deps-requirements.txt
   - cd third_party/oio-sds && python setup.py install && cd ../..
   - cd third_party/swift && python setup.py install && cd ../..
