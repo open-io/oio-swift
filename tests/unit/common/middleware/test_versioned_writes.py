@@ -186,3 +186,26 @@ class OioVersionedWritesTestCase(test_vw.VersionedWritesTestCase):
         # Subdir should be listed here, but the object is the latest
         # version, and should not be listed either.
         self.assertEqual('[{"subdir": "v1/"}]', body)
+
+    def test_put_versioned_object_including_url_encoded_name_success(self):
+        self.app.register(
+            'PUT', '/v1/a/c/%ff', swob.HTTPOk, {}, 'passed')
+        self.app.register(
+            'GET', '/v1/a/c/%ff', swob.HTTPNotFound, {}, None)
+
+        cache = FakeCache({'sysmeta': {'versions-location': 'ver_cont'}})
+        req = Request.blank(
+            '/v1/a/c/%25ff',
+            environ={'REQUEST_METHOD': 'PUT', 'swift.cache': cache,
+                     'CONTENT_LENGTH': '100',
+                     'swift.trans_id': 'fake_trans_id',
+                     'swift.source': 'test'})
+        status, headers, body = self.call_vw(req)
+        self.assertEqual(status, '200 OK')
+        # XXX: oioswift's versioned_writes only does one request
+        # (genuine versioned_writes does 2)
+        self.assertEqual(len(self.authorized), 1)
+        self.assertRequestEqual(req, self.authorized[0])
+        self.assertEqual(1, self.app.call_count)
+        self.assertEqual(['test'], self.app.swift_sources)
+        self.assertEqual({'fake_trans_id'}, set(self.app.txn_ids))

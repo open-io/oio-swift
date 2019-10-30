@@ -22,7 +22,7 @@ from swift.proxy.controllers.base import get_object_info
 
 class DecrypterObjContext(decrypter.DecrypterObjContext):
 
-    def get_decryption_keys(self, req):
+    def get_decryption_keys(self, req, crypto_meta=None):
         """
         Determine if a response should be decrypted, and if so then fetch keys.
 
@@ -38,14 +38,16 @@ class DecrypterObjContext(decrypter.DecrypterObjContext):
             # object is not cyphered
             return None
 
+        key_id = crypto_meta.get('key_id') if crypto_meta else None
         try:
-            return self.get_keys(req.environ)
+            return self.get_keys(req.environ, key_id=key_id)
         except HTTPException:
             # FIXME(FVE): check swift_source, accept if it is internal
             # FIXME(FVE): move that code to avoid printing an error
             if req.method in ('HEAD', 'GET'):
                 try:
-                    return self.get_keys(req.environ, ['container'])
+                    return self.get_keys(req.environ, ['container'],
+                                         key_id=key_id)
                 except HTTPException:
                     pass
                 return None
@@ -116,13 +118,11 @@ class Decrypter(decrypter.Decrypter):
         except ValueError:
             return self.app(env, start_response)
 
-        if parts[3] and req.method == 'GET':
-            handler = DecrypterObjContext(self, self.logger).handle_get
-        elif parts[3] and req.method == 'HEAD':
-            handler = DecrypterObjContext(self, self.logger).handle_head
+        if parts[3] and req.method in ('HEAD', 'GET'):
+            handler = DecrypterObjContext(self, self.logger).handle
         elif parts[2] and req.method == 'GET':
             handler = decrypter.DecrypterContContext(self,
-                                                     self.logger).handle_get
+                                                     self.logger).handle
         else:
             # url and/or request verb is not handled by decrypter
             return self.app(env, start_response)

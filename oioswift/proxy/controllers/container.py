@@ -217,6 +217,8 @@ class ContainerController(SwiftContainerController):
                         'mime_type', 'application/octet-stream')}
         if hash_:
             response['hash'] = hash_
+        else:
+            response['hash'] = ''
         if record.get('deleted', False):
             response['content_type'] = DELETE_MARKER_CONTENT_TYPE
         if versions:
