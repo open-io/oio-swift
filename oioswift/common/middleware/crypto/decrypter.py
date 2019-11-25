@@ -1,5 +1,5 @@
 # Copyright (c) 2015-2016 OpenStack Foundation
-# Copyright (c) 2018 OpenIO SAS
+# Copyright (c) 2018-2019 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 from swift.common.swob import Request, HTTPException, HTTPForbidden
 from swift.common.middleware.crypto import decrypter
+from swift.common.request_helpers import get_container_update_override_key
 from swift.common.utils import config_true_value
 from swift.proxy.controllers.base import get_object_info
 
@@ -54,41 +55,47 @@ class DecrypterObjContext(decrypter.DecrypterObjContext):
             else:
                 raise
 
-    def decrypt_resp_headers(self, keys):
+    def decrypt_resp_headers(self, put_keys, post_keys):
         """
         Find encrypted headers and replace with the decrypted versions.
 
-        :param keys: a dict of decryption keys.
+        :param put_keys: a dict of decryption keys used for object PUT.
+        :param post_keys: a dict of decryption keys used for object POST.
+
         :return: A list of headers with any encrypted headers replaced by their
                  decrypted values.
         :raises HTTPInternalServerError: if any error occurs while decrypting
                                          headers
+        :raises HTTPForbidden: if the decryption key is invalid
         """
         mod_hdr_pairs = []
 
-        # Decrypt plaintext etag and place in Etag header for client response
-        etag_header = 'X-Object-Sysmeta-Crypto-Etag'
-        encrypted_etag = self._response_header_value(etag_header)
-        decrypted_etag = None
-        if encrypted_etag and 'object' in keys:
-            decrypted_etag = self._decrypt_header(
-                etag_header, encrypted_etag, keys['object'], required=True)
-            mod_hdr_pairs.append(('Etag', decrypted_etag))
+        if put_keys:
+            # Decrypt plaintext etag and place in Etag header for client
+            # response
+            etag_header = 'X-Object-Sysmeta-Crypto-Etag'
+            encrypted_etag = self._response_header_value(etag_header)
+            decrypted_etag = None
+            if encrypted_etag and 'object' in put_keys:
+                decrypted_etag = self._decrypt_header(
+                    etag_header, encrypted_etag, put_keys['object'],
+                    required=True)
+                mod_hdr_pairs.append(('Etag', decrypted_etag))
 
-        etag_header = 'X-Object-Sysmeta-Container-Update-Override-Etag'
-        encrypted_etag = self._response_header_value(etag_header)
-        if encrypted_etag and 'container' in keys:
-            decrypted_etag_override = self._decrypt_header(
-                etag_header, encrypted_etag, keys['container'])
-            if decrypted_etag and decrypted_etag_override != decrypted_etag:
-                self.app.logger.debug('Failed ETag verification')
-                raise HTTPForbidden('Invalid key')
-            mod_hdr_pairs.append((etag_header, decrypted_etag_override))
-            # The real swift saves the cyphered ETag in the 'ETag' field,
-            # whereas we store the ETag of the cyphered object.
-            # The ETag of the cyphered object is of no use for previous
-            # middlewares, so we replace it with the plaintext ETag.
-            mod_hdr_pairs.append(('ETag', decrypted_etag_override))
+            etag_header = get_container_update_override_key('etag')
+            encrypted_etag = self._response_header_value(etag_header)
+            if encrypted_etag and 'container' in put_keys:
+                dcrypt_etag_override = self._decrypt_header(
+                    etag_header, encrypted_etag, put_keys['container'])
+                if decrypted_etag and dcrypt_etag_override != decrypted_etag:
+                    self.app.logger.debug('Failed ETag verification')
+                    raise HTTPForbidden('Invalid key')
+                mod_hdr_pairs.append((etag_header, dcrypt_etag_override))
+                # The real swift saves the cyphered ETag in the 'ETag' field,
+                # whereas we store the ETag of the cyphered object.
+                # The ETag of the cyphered object is of no use for previous
+                # middlewares, so we replace it with the plaintext ETag.
+                mod_hdr_pairs.append(('ETag', dcrypt_etag_override))
 
         # Decrypt all user metadata. Encrypted user metadata values are stored
         # in the x-object-transient-sysmeta-crypto-meta- namespace. Those are
@@ -98,7 +105,8 @@ class DecrypterObjContext(decrypter.DecrypterObjContext):
         # that map to the same x-object-meta- header names i.e. decrypted
         # headers win over unexpected, unencrypted headers.
         try:
-            mod_hdr_pairs.extend(self.decrypt_user_metadata(keys))
+            if post_keys:
+                mod_hdr_pairs.extend(self.decrypt_user_metadata(post_keys))
 
             mod_hdr_names = {h.lower() for h, v in mod_hdr_pairs}
             mod_hdr_pairs.extend([(h, v) for h, v in self._response_headers
