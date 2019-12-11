@@ -3,11 +3,15 @@ dist: bionic
 language: python
 python:
     - "2.7"
+virtualenv:
+    system_site_packages: true
 addons:
   apt:
     sources:
     - sourceline: 'deb http://mirror2.openio.io/pub/repo/openio/sds/19.10/ubuntu/ bionic/'
       key_url: 'http://mirror2.openio.io/pub/repo/openio/APT-GPG-KEY-OPENIO-0'
+    packages:
+    - python-zookeeper # Required because not published on pypi
 
 env:
   matrix:
@@ -28,8 +32,6 @@ before_install:
 
 install:
   - echo -en "travis_fold:start:install\r"
-  - virtualenv $HOME/venv
-  - source $HOME/venv/bin/activate
   - pip install --upgrade pip setuptools virtualenv tox flake8
   - test -n "$SWIFT_BRANCH" && git config --local submodule.third_party/swift.branch "$SWIFT_BRANCH" || true
   - test -n "$SDS_BRANCH" && git config --local submodule.third_party/oio-sds.branch "$SDS_BRANCH" || true

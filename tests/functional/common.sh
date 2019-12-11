@@ -25,7 +25,7 @@ function install_deps() {
     libsqlite3-dev \
     libzmq3-dev \
     libzookeeper-mt-dev \
-    openio-gridinit openio-asn1c \
+    openio-gridinit asn1c \
     python-all-dev python-virtualenv
   echo "travis_fold:end:install_deps"
 }
