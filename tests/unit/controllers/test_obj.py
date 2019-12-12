@@ -153,7 +153,7 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_get_properties = Mock(return_value=ret_val)
         resp = req.get_response(self.app)
         self.storage.object_get_properties.assert_called_once_with(
-            'a', 'c', 'o', version=None, headers=ANY)
+            'a', 'c', 'o', version=None, headers=ANY, force_master=False)
         self.assertEqual(resp.status_int, 200)
         self.assertIn('Accept-Ranges', resp.headers)
 
