@@ -236,17 +236,31 @@ class ObjectController(BaseObjectController):
         storage = self.app.storage
         oio_headers = {REQID_HEADER: self.trans_id}
         version = req.environ.get('oio.query', {}).get('version')
-        try:
-            if self.app.check_state:
-                metadata, chunks = storage.object_locate(
-                    self.account_name, self.container_name, self.object_name,
-                    version=version, headers=oio_headers)
-            else:
-                metadata = storage.object_get_properties(
-                    self.account_name, self.container_name, self.object_name,
-                    version=version, headers=oio_headers)
-        except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
-            return HTTPNotFound(request=req)
+        force_master = False
+        while True:
+            try:
+                if self.app.check_state:
+                    metadata, chunks = storage.object_locate(
+                        self.account_name, self.container_name,
+                        self.object_name, version=version,
+                        headers=oio_headers, force_master=force_master)
+                else:
+                    metadata = storage.object_get_properties(
+                        self.account_name, self.container_name,
+                        self.object_name, version=version,
+                        headers=oio_headers, force_master=force_master)
+                break
+            except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
+                if force_master \
+                        or not self.container_name.endswith('+segments'):
+                    # Either the request failed with the master,
+                    # or it is not an MPU
+                    return HTTPNotFound(request=req)
+
+                # This part appears in the manifest, so it should be there.
+                # To be sure, we must go check the master
+                # in case of desynchronization.
+                force_master = True
 
         if self.app.check_state:
             storage_method = STORAGE_METHODS.load(metadata['chunk_method'])
@@ -279,13 +293,26 @@ class ObjectController(BaseObjectController):
         else:
             ranges = None
         oio_headers = {REQID_HEADER: self.trans_id}
-        try:
-            metadata, stream = storage.object_fetch(
-                self.account_name, self.container_name, self.object_name,
-                ranges=ranges, headers=oio_headers,
-                version=req.environ.get('oio.query', {}).get('version'))
-        except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
-            return HTTPNotFound(request=req)
+        force_master = False
+        while True:
+            try:
+                metadata, stream = storage.object_fetch(
+                    self.account_name, self.container_name, self.object_name,
+                    ranges=ranges, headers=oio_headers,
+                    version=req.environ.get('oio.query', {}).get('version'),
+                    force_master=force_master)
+                break
+            except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
+                if force_master \
+                        or not self.container_name.endswith('+segments'):
+                    # Either the request failed with the master,
+                    # or it is not an MPU
+                    return HTTPNotFound(request=req)
+
+                # This part appears in the manifest, so it should be there.
+                # To be sure, we must go check the master
+                # in case of desynchronization.
+                force_master = True
         resp = self.make_object_response(req, metadata, stream)
         return resp
 
