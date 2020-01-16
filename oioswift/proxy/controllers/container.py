@@ -167,13 +167,15 @@ class ContainerController(SwiftContainerController):
         ret = Response(request=req, headers=resp_headers,
                        content_type=out_content_type, charset='utf-8')
         versions = kwargs.get('versions', False)
+        slo = kwargs.get('slo', False)
         if out_content_type == 'application/json':
             ret.body = json.dumps(
-                [self.update_data_record(r, versions) for r in container_list])
+                [self.update_data_record(r, versions, slo)
+                 for r in container_list])
         elif out_content_type.endswith('/xml'):
             doc = Element('container', name=container.decode('utf-8'))
             for obj in container_list:
-                record = self.update_data_record(obj, versions)
+                record = self.update_data_record(obj, versions, slo)
                 if 'subdir' in record:
                     name = record['subdir'].decode('utf-8')
                     sub = SubElement(doc, 'subdir', name=name)
@@ -197,7 +199,7 @@ class ContainerController(SwiftContainerController):
 
         return ret
 
-    def update_data_record(self, record, versions=False):
+    def update_data_record(self, record, versions=False, slo=False):
         if 'subdir' in record:
             return {'subdir': record['name']}
 
@@ -221,6 +223,8 @@ class ContainerController(SwiftContainerController):
             response['content_type'] = DELETE_MARKER_CONTENT_TYPE
         if versions:
             response['version'] = record.get('version', 'null')
+        if slo:
+            response['slo'] = props.get("x-static-large-object")
         override_bytes_from_content_type(response)
         return response
 
