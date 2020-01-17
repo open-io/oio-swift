@@ -39,8 +39,6 @@ from oio.common import exceptions
 
 from oioswift.utils import handle_oio_timeout, handle_service_busy, \
     REQID_HEADER
-from oioswift.common.middleware.container_hierarchy \
-        import ContainerHierarchyMiddleware as CH
 
 
 def get_response_headers(info):
@@ -178,7 +176,7 @@ class AccountController(SwiftAccountController):
         s3_buckets_only = False
         if req.environ.get('swift.source') == 'S3':
             s3_buckets_only = True
-            delimiter = CH.ENCODED_DELIMITER[0]
+            delimiter = '%'  # first character of encoded delimiter of CH
 
         oio_headers = {REQID_HEADER: self.trans_id}
         info = None
