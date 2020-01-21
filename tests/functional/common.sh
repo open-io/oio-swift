@@ -69,10 +69,22 @@ function configure_aws() {
 [default]
 aws_access_key_id=demo:demo
 aws_secret_access_key=DEMO_PASS
+
+[user1]
+aws_access_key_id=demo:user1
+aws_secret_access_key=USER_PASS
 EOF
 
   cat <<EOF >"$HOME/.aws/config"
 [default]
+s3 =
+    signature_version = s3
+    max_concurrent_requests = 10
+    max_queue_size = 100
+    multipart_threshold = 15MB
+    multipart_chunksize = 5MB
+
+[profile user1]
 s3 =
     signature_version = s3
     max_concurrent_requests = 10
@@ -103,7 +115,7 @@ EOF
 }
 
 function configure_oioswift() {
-    sed -i "s/USER/$(id -un)/g" "$1"
+    sed -i "s/%USER%/$(id -un)/g" "$1"
 }
 
 function run_script() {

@@ -42,9 +42,18 @@ for key_format in v1 v2 v3; do
 done
 
 run_functional_test s3-fastcopy.cfg s3-acl-metadata.sh s3-marker.sh
+
 # Run all suites in the same environment.
 # They do not share buckets so this should be OK.
-run_functional_test s3-default.cfg s3-acl-metadata.sh s3-tagging.sh s3-multipart.sh s3-s3cmd.sh buckets-listing.sh s3-marker.sh s3-basic-test.py s3-mpu.py
+run_functional_test s3-default.cfg \
+    s3-acl-metadata.sh \
+    s3-tagging.sh \
+    s3-multipart.sh \
+    s3-s3cmd.sh \
+    buckets-listing.sh \
+    s3-marker.sh \
+    s3-basic-test.py \
+    s3-mpu.py
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET

@@ -11,3 +11,4 @@
 [submodule "third_party/swift3"]
 	path = third_party/swift3
 	url = https://github.com/open-io/swift3
+	branch = master
