@@ -2,7 +2,7 @@
 
 export OIO_NS="${1:-OPENIO}"
 export OIO_ACCOUNT="${2:-AUTH_demo}"
-MASK_EMPTY_PREFIXES=$(grep support_listing_versioning "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
+MASK_EMPTY_PREFIXES=$(grep mask_empty_prefixes "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 
