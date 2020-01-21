@@ -3,7 +3,7 @@
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 BUCKET=bucket-ch1-$RANDOM
 CH_VERSION=$(grep '^redis_key_format' "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
-MASK_EMPTY_PREFIXES=$(grep '^support_listing_versioning' "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
+MASK_EMPTY_PREFIXES=$(grep '^mask_empty_prefixes' "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
 
 echo "Bucket name: $BUCKET"
 
