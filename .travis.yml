@@ -18,16 +18,16 @@ env:
   matrix:
     - TEST_SUITE=s3 # Latest stable/supported versions
     - TEST_SUITE=s3 SDS_BRANCH=master  # Integration with latest versions
-    - TEST_SUITE=s3 SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike # Previous versions
+    - TEST_SUITE=s3 SDS_BRANCH=4.x # Previous versions
     - TEST_SUITE=encryption
     - TEST_SUITE=encryption SDS_BRANCH=master
-    - TEST_SUITE=encryption SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=encryption SDS_BRANCH=4.x
     - TEST_SUITE=swift
-    - TEST_SUITE=swift SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=swift SDS_BRANCH=4.x
     - TEST_SUITE=ns-wide-versioning
-    - TEST_SUITE=ns-wide-versioning SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=ns-wide-versioning SDS_BRANCH=4.x
     - TEST_SUITE=unit
-    - TEST_SUITE=unit SDS_BRANCH=4.x SWIFT_BRANCH=stable/pike
+    - TEST_SUITE=unit SDS_BRANCH=4.x
 
 before_install:
   - sudo apt-get update -qq
