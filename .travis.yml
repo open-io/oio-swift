@@ -16,6 +16,7 @@ addons:
 
 env:
   matrix:
+    - TEST_SUITE=iam
     - TEST_SUITE=s3 # Latest stable/supported versions
     - TEST_SUITE=s3 SDS_BRANCH=master  # Integration with latest versions
     - TEST_SUITE=s3 SDS_BRANCH=4.x # Previous versions
@@ -39,6 +40,7 @@ install:
   - source $HOME/venv/bin/activate
   - pip install --upgrade pip setuptools virtualenv tox flake8
   - test -n "$SWIFT_BRANCH" && git config --local submodule.third_party/swift.branch "$SWIFT_BRANCH" || true
+  - test -n "$SWIFT3_BRANCH" && git config --local submodule.third_party/swift3.branch "$SWIFT3_BRANCH" || true
   - test -n "$SDS_BRANCH" && git config --local submodule.third_party/oio-sds.branch "$SDS_BRANCH" || true
   - git submodule update --init --remote
   - ( grep -v -e PyECLib -e six -e ZooKeeper third_party/oio-sds/all-requirements.txt ; grep -v eventlet third_party/swift/requirements.txt ) > deps-requirements.txt
