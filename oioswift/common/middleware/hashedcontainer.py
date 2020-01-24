@@ -27,11 +27,14 @@ class HashedContainerMiddleware(AutoContainerBase):
 
     def __init__(self, app, ns, acct, proxy=None,
                  strip_v1=False, account_first=False,
-                 skip_metadata=False, **kwargs):
+                 skip_metadata=False, sds_conf=None,
+                 **kwargs):
         super(HashedContainerMiddleware, self).__init__(
             app, acct, strip_v1=strip_v1, account_first=account_first,
             skip_metadata=skip_metadata)
         conf = {"namespace": ns, "proxyd_url": proxy}
+        if sds_conf:
+            conf.update(sds_conf)
         try:
             # New API (openio-sds >= 4.2)
             from oio.cli.common.clientmanager import ClientManager
@@ -67,10 +70,17 @@ def filter_factory(global_conf, **local_config):
     account_first = config_true_value(local_config.pop('account_first', False))
     skip_metadata = config_true_value(local_config.pop('skip_metadata', False))
 
+    sds_conf = {}
+    for key in ['cert_reqs', 'ca_certs']:
+        value = conf.get('sds_%s' % key)
+        if value:
+            sds_conf[key] = value
+
     def factory(app):
         return HashedContainerMiddleware(app, ns, acct, proxy,
                                          strip_v1=strip_v1,
                                          account_first=account_first,
                                          skip_metadata=skip_metadata,
+                                         sds_conf=sds_conf,
                                          **local_config)
     return factory
