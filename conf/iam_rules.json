@@ -54,5 +54,35 @@
                 ]
             }
         ]
+    },
+    "account2:admin": {
+        "Statement": [
+            {
+                "Sid": "FullAccess",
+                "Action": [
+                    "s3:*"
+                ],
+                "Effect": "Allow",
+                "Resource": [
+                    "*"
+                ]
+            }
+        ]
+    },
+    "account2:user1": {
+        "Statement": [
+            {
+                "Sid": "SharedBucketAllObjects",
+                "Action": [
+                    "s3:GetObject",
+                    "s3:ListBucket"
+                ],
+                "Effect": "Allow",
+                "Resource": [
+                    "arn:aws:s3:::sharedbucket",
+                    "arn:aws:s3:::sharedbucket/*"
+                ]
+            }
+        ]
     }
 }

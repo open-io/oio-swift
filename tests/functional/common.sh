@@ -73,6 +73,14 @@ aws_secret_access_key=DEMO_PASS
 [user1]
 aws_access_key_id=demo:user1
 aws_secret_access_key=USER_PASS
+
+[a2adm]
+aws_access_key_id=account2:admin
+aws_secret_access_key=ADMIN_PASS
+
+[a2u1]
+aws_access_key_id=account2:user1
+aws_secret_access_key=USER_PASS
 EOF
 
   cat <<EOF >"$HOME/.aws/config"
@@ -85,6 +93,22 @@ s3 =
     multipart_chunksize = 5MB
 
 [profile user1]
+s3 =
+    signature_version = s3
+    max_concurrent_requests = 10
+    max_queue_size = 100
+    multipart_threshold = 15MB
+    multipart_chunksize = 5MB
+
+[profile a2adm]
+s3 =
+    signature_version = s3
+    max_concurrent_requests = 10
+    max_queue_size = 100
+    multipart_threshold = 15MB
+    multipart_chunksize = 5MB
+
+[profile a2u1]
 s3 =
     signature_version = s3
     max_concurrent_requests = 10
