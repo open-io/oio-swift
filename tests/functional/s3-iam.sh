@@ -9,8 +9,10 @@ AWSA2ADM="aws --profile a2adm --endpoint-url http://localhost:5000"
 # "a2u1" is only allowed some operations
 AWSA2U1="aws --profile a2u1 --endpoint-url http://localhost:5000"
 
-U1_BUCKET="user1bucket"
+COMPANY_BUCKET="companybucket"
 SHARED_BUCKET="sharedbucket"
+U1_BUCKET="user1bucket"
+
 TEMPDIR=$(mktemp -td s3-iam-XXXXXX)
 BIGFILE="$TEMPDIR/bigfile"
 dd if=/dev/urandom of="${BIGFILE}" bs=1M count=16
@@ -26,6 +28,7 @@ test_create_bucket() {
   # admin can create buckets
   ${AWSA1ADM} s3 mb s3://$U1_BUCKET
   ${AWSA1ADM} s3 mb s3://$SHARED_BUCKET
+  ${AWSA1ADM} s3 mb s3://$COMPANY_BUCKET
 }
 
 test_create_objects() {
@@ -45,6 +48,14 @@ test_create_objects() {
   ${AWSA1U1} s3 cp /etc/magic s3://${U1_BUCKET}/magic
   ${AWSA1U1} s3 cp /etc/magic s3://${U1_BUCKET}/not_so_magic
   ${AWSA1U1} s3 cp "${BIGFILE}" s3://${U1_BUCKET}/bigfiles/bigfile
+
+  # user1 can create objects in his company's bucket,
+  # but only in a specific folder.
+  OUT=$(${AWSA1U1} s3 cp /etc/magic s3://${COMPANY_BUCKET}/magic 2>&1 | tail -n 1)
+  echo "$OUT" | grep "AccessDenied"
+  OUT=$(${AWSA1U1} s3 cp /etc/magic s3://${COMPANY_BUCKET}/home/user2/magic 2>&1 | tail -n 1)
+  echo "$OUT" | grep "AccessDenied"
+  ${AWSA1U1} s3 cp /etc/magic s3://${COMPANY_BUCKET}/home/user1/magic
 }
 
 test_multipart_ops() {
@@ -92,6 +103,12 @@ test_read_objects() {
   ${AWSA1U1} s3 cp s3://${SHARED_BUCKET}/user1_magic "$TEMPDIR/user1_magic"
   ${AWSA1U1} s3 cp s3://${SHARED_BUCKET}/bigfiles/bigfile "$TEMPDIR/bigfile_from_shared_bucket"
 
+  # user1 can list objects from his folder in the company bucket,
+  # but not from other folders
+  OUT=$(${AWSA1U1} s3 ls s3://${COMPANY_BUCKET}/home/user2/ 2>&1 | tail -n 1)
+  echo "$OUT" | grep "AccessDenied"
+  ${AWSA1U1} s3 ls s3://${COMPANY_BUCKET}/home/user1/
+
   # admin can read objects from any bucket
   ${AWSA1ADM} s3 cp s3://${U1_BUCKET}/magic "$TEMPDIR/magic"
   ${AWSA1ADM} s3 cp s3://${U1_BUCKET}/bigfiles/bigfile "$TEMPDIR/bigfile_from_u1_bucket"
@@ -108,6 +125,9 @@ test_delete_objects() {
   # except objects prefixed by its user name.
   ${AWSA1U1} s3 rm s3://${SHARED_BUCKET}/user1_magic
 
+  # user1 can delete objects from its folder in his company's bucket
+  ${AWSA1U1} s3 rm s3://${COMPANY_BUCKET}/home/user1/magic
+
   # admin can delete objects from any bucket
   ${AWSA1ADM} s3 rm s3://${SHARED_BUCKET}/magic
   ${AWSA1ADM} s3 rm s3://${SHARED_BUCKET}/user1_bigfile
@@ -123,6 +143,7 @@ test_delete_buckets() {
   # admin can delete any bucket
   ${AWSA1ADM} s3 rb s3://$U1_BUCKET
   ${AWSA1ADM} s3 rb s3://$SHARED_BUCKET
+  ${AWSA1ADM} s3 rb s3://$COMPANY_BUCKET
 }
 
 test_create_bucket

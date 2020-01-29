@@ -50,7 +50,7 @@ use = egg:swift#staticweb
 [filter:iam]
 use = egg:swift3#iam
 log_level = DEBUG
-rules_file = %RULES_FILE%
+connection = file://%RULES_FILE%
 
 [filter:swift3]
 use = egg:swift3#swift3
