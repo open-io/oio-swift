@@ -16,6 +16,7 @@
 import base64
 import json
 import importlib
+from datetime import datetime
 from paste.deploy import loadwsgi
 from six.moves.urllib.parse import parse_qs, quote
 from swift.common.swob import Request, HTTPInternalServerError
@@ -834,6 +835,21 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
         start_response("200 OK", oheaders.items())
         return [body]
 
+    def _is_cloudberry_backup(self, obj_parts):
+        if len(obj_parts) >= 3 \
+                and len(obj_parts[-3]) > 1 \
+                and obj_parts[-3][-1] in (':', '$') \
+                and (obj_parts[-1] == obj_parts[-3][:-1]
+                     or obj_parts[-1].endswith('.cbrevision')
+                     or obj_parts[-1].endswith('.cbbitmap')
+                     or obj_parts[-1] == 'cbbdeleted'):
+            try:
+                datetime.strptime(obj_parts[-2], '%Y%m%d%H%M%S')
+                return True
+            except ValueError:
+                pass
+        return False
+
     def _container_suffix(self, obj_parts, is_mpu, sep=None):
         """
         Build a suffix for the name of the container, by aggregating object
@@ -852,20 +868,17 @@ class ContainerHierarchyMiddleware(AutoContainerBase):
                 if len(item) > 32:
                     try:
                         base64.b64decode(item)
-                        # CloudBerry: mitigate number of container created
-                        if i >= 3:
-                            if obj_parts[i-3] == obj_parts[i-1] + ':':
-                                return sep.join(obj_parts[:i-3]), i-3
-                        return sep.join(obj_parts[:i-1]), i-1
                     except TypeError:
-                        pass
+                        continue
+                    # CloudBerry Backup: mitigate number of containers created
+                    if self._is_cloudberry_backup(obj_parts[:i]):
+                        return sep.join(obj_parts[:i-3]), i-3
+                    return sep.join(obj_parts[:i-1]), i-1
             LOG.error("MPU fails to detect UploadId")
 
-        # CloudBerry: mitigate number of container created
-        if len(obj_parts) >= 3:
-            if obj_parts[-1] + ':' == obj_parts[-3]:
-                return sep.join(obj_parts[:-3]), -3
-
+        # CloudBerry: mitigate number of containers created
+        if self._is_cloudberry_backup(obj_parts):
+            return sep.join(obj_parts[:-3]), -3
         return sep.join(obj_parts[:-1]), len(obj_parts)-1
 
     def _fake_container_and_obj(self, container, obj_parts, is_listing=False,

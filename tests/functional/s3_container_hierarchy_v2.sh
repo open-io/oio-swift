@@ -73,29 +73,125 @@ for subpath in "CBB_DESKTOP-1LC5CCV/C:/Bombay/Logs" ""; do
     if [ ! -z ${subpath} ];then
         subpath2="${subpath}/"
     fi
-    echo "##### Single Object"
-    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier:/${d}/fichier
-    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier:/${d}/fichier /tmp/fichier
+
+    d=$(date +%Y%m%d%H%M%S)
+
+    echo "##### Single Object (with ':')"
+    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier01:/${d}/fichier01
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier01:/${d}/fichier01 /tmp/fichier
     [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
 
-    cntpath=$(echo ${subpath}| sed  's~/~%2F~g')
-    if [ -n "${cntpath}" ]; then
-        openio object list ${BUCKET}%2F${cntpath} -f csv --quote none -c Name --oio-account AUTH_demo | grep fichier
-    else
-        openio object list ${BUCKET} -f csv --quote none -c Name --oio-account AUTH_demo  | grep fichier
-    fi
+    echo "##### MPU Object (with ':')"
+    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier02:/${d}/fichier02
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier02:/${d}/fichier02 /tmp/fichier
+    [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
 
-    echo "##### MPU Object"
-    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier:/${d}/fichier
-    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier:/${d}/fichier /tmp/fichier
+    echo "##### Single Object ending with '.cbrevision' (with ':')"
+    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier03:/${d}/0.cbrevision
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier03:/${d}/0.cbrevision /tmp/fichier
+    [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### MPU Object ending with '.cbrevision' (with ':')"
+    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier04:/${d}/0.cbrevision
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier04:/${d}/0.cbrevision /tmp/fichier
+    [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### Single Object ending with '.cbbitmap' (with ':')"
+    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier05:/${d}/test.cbbitmap
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier05:/${d}/test.cbbitmap /tmp/fichier
+    [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### MPU Object ending with '.cbbitmap' (with ':')"
+    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier06:/${d}/test.cbbitmap
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier06:/${d}/test.cbbitmap /tmp/fichier
+    [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### Single Object named 'cbbdeleted' (with ':')"
+    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier07:/${d}/cbbdeleted
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier07:/${d}/cbbdeleted /tmp/fichier
+    [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### MPU Object named 'cbbdeleted' (with ':')"
+    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier08:/${d}/cbbdeleted
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier08:/${d}/cbbdeleted /tmp/fichier
+    [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### Single Object (with '$')"
+    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier11$/${d}/fichier11
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier11$/${d}/fichier11 /tmp/fichier
+    [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### MPU Object (with '$')"
+    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier12$/${d}/fichier12
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier12$/${d}/fichier12 /tmp/fichier
+    [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### Single Object ending with '.cbrevision' (with '$')"
+    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier13$/${d}/0.cbrevision
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier13$/${d}/0.cbrevision /tmp/fichier
+    [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### MPU Object ending with '.cbrevision' (with '$')"
+    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier14$/${d}/0.cbrevision
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier14$/${d}/0.cbrevision /tmp/fichier
+    [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### Single Object ending with '.cbbitmap' (with '$')"
+    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier15$/${d}/test.cbbitmap
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier15$/${d}/test.cbbitmap /tmp/fichier
+    [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### MPU Object ending with '.cbbitmap' (with '$')"
+    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier16$/${d}/test.cbbitmap
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier16$/${d}/test.cbbitmap /tmp/fichier
+    [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### Single Object named 'cbbdeleted' (with '$')"
+    ${AWS} s3 cp /etc/passwd s3://${BUCKET}/${subpath2}fichier17$/${d}/cbbdeleted
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier17$/${d}/cbbdeleted /tmp/fichier
+    [ "$(md5sum /etc/passwd | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
+
+    echo "##### MPU Object named 'cbbdeleted' (with '$')"
+    ${AWS} s3 cp randfile s3://${BUCKET}/${subpath2}fichier18$/${d}/cbbdeleted
+    ${AWS} s3 cp s3://${BUCKET}/${subpath2}fichier18$/${d}/cbbdeleted /tmp/fichier
     [ "$(md5sum randfile | cut -d\  -f1)" = "$(md5sum /tmp/fichier | cut -d\  -f1)" ]
 
     cntpath=$(echo ${subpath}| sed  's~/~%2F~g')
     if [ -n "${cntpath}" ]; then
-        openio object list ${BUCKET}+segments%2F${cntpath} -f csv --quote none -c Name --oio-account AUTH_demo | grep fichier
+        CLOUDBERRY_LIST=$(openio object list ${BUCKET}%2F${cntpath} -f csv --quote none -c Name --oio-account AUTH_demo)
     else
-        openio object list ${BUCKET}+segments -f csv --quote none -c Name --oio-account AUTH_demo | grep fichier
+        CLOUDBERRY_LIST=$(openio object list ${BUCKET} -f csv --quote none -c Name --oio-account AUTH_demo)
     fi
+    echo "${CLOUDBERRY_LIST}" | grep fichier01
+    echo "${CLOUDBERRY_LIST}" | grep fichier02
+    echo "${CLOUDBERRY_LIST}" | grep fichier03
+    echo "${CLOUDBERRY_LIST}" | grep fichier04
+    echo "${CLOUDBERRY_LIST}" | grep fichier05
+    echo "${CLOUDBERRY_LIST}" | grep fichier06
+    echo "${CLOUDBERRY_LIST}" | grep fichier07
+    echo "${CLOUDBERRY_LIST}" | grep fichier08
+    echo "${CLOUDBERRY_LIST}" | grep fichier11
+    echo "${CLOUDBERRY_LIST}" | grep fichier12
+    echo "${CLOUDBERRY_LIST}" | grep fichier13
+    echo "${CLOUDBERRY_LIST}" | grep fichier14
+    echo "${CLOUDBERRY_LIST}" | grep fichier15
+    echo "${CLOUDBERRY_LIST}" | grep fichier16
+    echo "${CLOUDBERRY_LIST}" | grep fichier17
+    echo "${CLOUDBERRY_LIST}" | grep fichier18
+    cntpath=$(echo ${subpath}| sed  's~/~%2F~g')
+    if [ -n "${cntpath}" ]; then
+        CLOUDBERRY_LIST=$(openio object list ${BUCKET}+segments%2F${cntpath} -f csv --quote none -c Name --oio-account AUTH_demo)
+    else
+        CLOUDBERRY_LIST=$(openio object list ${BUCKET}+segments -f csv --quote none -c Name --oio-account AUTH_demo)
+    fi
+    echo "${CLOUDBERRY_LIST}" | grep fichier02
+    echo "${CLOUDBERRY_LIST}" | grep fichier04
+    echo "${CLOUDBERRY_LIST}" | grep fichier06
+    echo "${CLOUDBERRY_LIST}" | grep fichier08
+    echo "${CLOUDBERRY_LIST}" | grep fichier12
+    echo "${CLOUDBERRY_LIST}" | grep fichier14
+    echo "${CLOUDBERRY_LIST}" | grep fichier16
+    echo "${CLOUDBERRY_LIST}" | grep fichier18
 done
 
 # LISTING WITH SPACE
@@ -175,7 +271,7 @@ ${AWS} s3api put-object --bucket ${BUCKET} --key d1/d2/d3/d4/o2 --body aa
 ${AWS} s3api put-object --bucket ${BUCKET} --key v1/o2 --body aa
 sleep 0.5
 CNT=$( ${AWS} s3api list-objects --bucket ${BUCKET} | grep -c Key )
-OBJECT=14
+OBJECT=44
 if [ "$MASK_EMPTY_PREFIXES" != "true" ]; then
     OBJECT=$((OBJECT + 1))
 fi
