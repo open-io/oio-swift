@@ -16,9 +16,12 @@ addons:
 
 env:
   matrix:
-    - TEST_SUITE=s3 # Latest stable/supported versions
-    - TEST_SUITE=s3 SDS_BRANCH=master  # Integration with latest versions
-    - TEST_SUITE=s3 SDS_BRANCH=4.x # Previous versions
+    - TEST_SUITE=s3 CH_VERSIONS=v3 # Latest stable/supported versions
+    - TEST_SUITE=s3 SDS_BRANCH=master CH_VERSIONS=v3 # Integration with latest versions
+    - TEST_SUITE=s3 SDS_BRANCH=4.x CH_VERSIONS=v3 # Previous versions
+    - TEST_SUITE=s3 CH_VERSIONS=v1,v2
+    - TEST_SUITE=s3 SDS_BRANCH=master CH_VERSIONS=v1,v2
+    - TEST_SUITE=s3 SDS_BRANCH=4.x CH_VERSIONS=v1,v2
     - TEST_SUITE=encryption
     - TEST_SUITE=encryption SDS_BRANCH=master
     - TEST_SUITE=encryption SDS_BRANCH=4.x
