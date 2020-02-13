@@ -85,7 +85,9 @@ class AutoContainerBase(object):
 
     def _save_bucket_name(self, env):
         req = Request(env)
-        account, container, obj = self._extract_path(req.path_info)
+        # XXX(FVE): we should probably filter the name we extract here,
+        # it may contain MULTIUPLOAD_SUFFIX or whatever.
+        _account, container, _obj = self._extract_path(req.path_info)
         sys_meta_key = '%soio-bucket-name' % get_sys_meta_prefix('object')
         req.headers[sys_meta_key] = container
 

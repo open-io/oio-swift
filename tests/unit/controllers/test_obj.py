@@ -203,7 +203,7 @@ class TestObjectController(unittest.TestCase):
                      'a', 'c', obj_name='o', etag='',
                      properties={}, mime_type='application/octet-stream',
                      file_or_path=req.environ['wsgi.input'], policy=None,
-                     headers=ANY)
+                     headers=ANY, container_properties=ANY)
         self.assertEqual(201, resp.status_int)
         self.assertIn('Last-Modified', resp.headers)
         self.assertIn('Etag', resp.headers)
