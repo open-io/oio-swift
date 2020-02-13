@@ -56,9 +56,10 @@ from oio.api.object_storage import _sort_chunks
 from oio.common.exceptions import SourceReadTimeout
 from oioswift.utils import check_if_none_match, \
     handle_not_allowed, handle_oio_timeout, handle_service_busy, \
-    REQID_HEADER
+    REQID_HEADER, BUCKET_NAME_PROP, MULTIUPLOAD_SUFFIX
 
 SLO = 'x-static-large-object'
+BUCKET_NAME_HEADER = 'X-Object-Sysmeta-Oio-Bucket-Name'
 
 
 class ObjectControllerRouter(object):
@@ -202,7 +203,7 @@ class ObjectController(BaseObjectController):
         if not SUPPORT_VERSIONING:
             return None
 
-        root_container = req.headers.get('X-Object-Sysmeta-Oio-Bucket-Name')
+        root_container = req.headers.get(BUCKET_NAME_HEADER)
         if root_container is None:
             return None
 
@@ -251,8 +252,8 @@ class ObjectController(BaseObjectController):
                         headers=oio_headers, force_master=force_master)
                 break
             except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
-                if force_master \
-                        or not self.container_name.endswith('+segments'):
+                if force_master or not \
+                        self.container_name.endswith(MULTIUPLOAD_SUFFIX):
                     # Either the request failed with the master,
                     # or it is not an MPU
                     return HTTPNotFound(request=req)
@@ -303,8 +304,8 @@ class ObjectController(BaseObjectController):
                     force_master=force_master)
                 break
             except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
-                if force_master \
-                        or not self.container_name.endswith('+segments'):
+                if force_master or not \
+                        self.container_name.endswith(MULTIUPLOAD_SUFFIX):
                     # Either the request failed with the master,
                     # or it is not an MPU
                     return HTTPNotFound(request=req)
@@ -622,7 +623,6 @@ class ObjectController(BaseObjectController):
 
     def _store_object(self, req, data_source, headers):
         content_type = req.headers.get('content-type', 'octet/stream')
-        storage = self.app.storage
         policy = None
         container_info = self.container_info(self.account_name,
                                              self.container_name, req)
@@ -645,24 +645,35 @@ class ObjectController(BaseObjectController):
                 content_length = int(req.headers.get('content-length', 0))
                 policy = self._get_auto_policy_from_size(content_length)
 
+        ct_props = {'properties': {}, 'system': {}}
         metadata = self.load_object_metadata(headers)
         oio_headers = {REQID_HEADER: self.trans_id}
         # only send headers if needed
         if SUPPORT_VERSIONING and headers.get(FORCEVERSIONING_HEADER):
             oio_headers[FORCEVERSIONING_HEADER] = \
                 headers.get(FORCEVERSIONING_HEADER)
+        # In case a shard is being created, save the name of the S3 bucket
+        # in a container property. This will be used when aggregating
+        # container statistics to make bucket statistics.
+        if BUCKET_NAME_HEADER in headers:
+            bname = headers[BUCKET_NAME_HEADER]
+            # FIXME(FVE): the segments container is not part of another bucket!
+            # We should not have to strip this here.
+            if bname and bname.endswith(MULTIUPLOAD_SUFFIX):
+                bname = bname[:-len(MULTIUPLOAD_SUFFIX)]
+            ct_props['system'][BUCKET_NAME_PROP] = bname
         try:
             _chunks, _size, checksum, _meta = self._object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
                 mime_type=content_type, policy=policy, headers=oio_headers,
                 etag=req.headers.get('etag', '').strip('"'),
-                properties=metadata)
+                properties=metadata, container_properties=ct_props)
             # TODO(FVE): when oio-sds supports it, do that in a callback
             # passed to object_create (or whatever upload method supports it)
             footer_md = self.load_object_metadata(self._get_footers(req))
             if footer_md:
-                storage.object_set_properties(
+                self.app.storage.object_set_properties(
                     self.account_name, self.container_name, self.object_name,
                     version=_meta.get('version', None), properties=footer_md)
         except exceptions.Conflict:

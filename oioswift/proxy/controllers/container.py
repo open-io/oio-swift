@@ -43,7 +43,7 @@ from oio.common import exceptions
 
 from oioswift.utils import \
     handle_oio_no_such_container, handle_oio_timeout, \
-    handle_service_busy, REQID_HEADER
+    handle_service_busy, REQID_HEADER, BUCKET_NAME_PROP, MULTIUPLOAD_SUFFIX
 
 
 class ContainerController(SwiftContainerController):
@@ -283,6 +283,13 @@ class ContainerController(SwiftContainerController):
 
     def get_container_create_resp(self, req, headers):
         properties, system = self.properties_from_headers(headers)
+        # Save the name of the S3 bucket in a container property.
+        # This will be used when aggregating container statistics
+        # to make bucket statistics.
+        bname = self.container_name
+        if bname.endswith(MULTIUPLOAD_SUFFIX):
+            bname = bname[:-len(MULTIUPLOAD_SUFFIX)]
+        system[BUCKET_NAME_PROP] = bname
         # TODO container update metadata
         oio_headers = {REQID_HEADER: self.trans_id}
         created = self.app.storage.container_create(
