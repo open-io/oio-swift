@@ -222,9 +222,11 @@ class ObjectController(BaseObjectController):
             return
 
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
         try:
             meta = self.app.storage.container_get_properties(
-                self.account_name, root_container, headers=oio_headers)
+                self.account_name, root_container, headers=oio_headers,
+                cache=oio_cache)
         except exceptions.NoSuchContainer:
             raise HTTPNotFound(request=req)
 
@@ -236,6 +238,7 @@ class ObjectController(BaseObjectController):
     def get_object_head_resp(self, req):
         storage = self.app.storage
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
         version = req.environ.get('oio.query', {}).get('version')
         force_master = False
         while True:
@@ -244,12 +247,14 @@ class ObjectController(BaseObjectController):
                     metadata, chunks = storage.object_locate(
                         self.account_name, self.container_name,
                         self.object_name, version=version,
-                        headers=oio_headers, force_master=force_master)
+                        headers=oio_headers, force_master=force_master,
+                        cache=oio_cache)
                 else:
                     metadata = storage.object_get_properties(
                         self.account_name, self.container_name,
                         self.object_name, version=version,
-                        headers=oio_headers, force_master=force_master)
+                        headers=oio_headers, force_master=force_master,
+                        cache=oio_cache)
                 break
             except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
                 if force_master or not \
@@ -294,6 +299,7 @@ class ObjectController(BaseObjectController):
         else:
             ranges = None
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
         force_master = False
         while True:
             try:
@@ -301,7 +307,7 @@ class ObjectController(BaseObjectController):
                     self.account_name, self.container_name, self.object_name,
                     ranges=ranges, headers=oio_headers,
                     version=req.environ.get('oio.query', {}).get('version'),
-                    force_master=force_master)
+                    force_master=force_master, cache=oio_cache)
                 break
             except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
                 if force_master or not \
@@ -403,6 +409,7 @@ class ObjectController(BaseObjectController):
         # TODO do something with stgpol
         metadata = self.load_object_metadata(headers)
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
         try:
             # Genuine Swift clears all properties on POST requests.
             # But for convenience, keep them when the request originates
@@ -411,7 +418,8 @@ class ObjectController(BaseObjectController):
             self.app.storage.object_set_properties(
                 self.account_name, self.container_name, self.object_name,
                 metadata, clear=clear, headers=oio_headers,
-                version=req.environ.get('oio.query', {}).get('version'))
+                version=req.environ.get('oio.query', {}).get('version'),
+                cache=oio_cache)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
         resp = HTTPAccepted(request=req)
@@ -546,11 +554,13 @@ class ObjectController(BaseObjectController):
         headers = self._prepare_headers(req)
         metadata = self.load_object_metadata(headers)
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
         # FIXME(FVE): use object_show, cache in req.environ
         version = req.environ.get('oio.query', {}).get('version')
         props = storage.object_get_properties(from_account, container, obj,
                                               headers=oio_headers,
-                                              version=version)
+                                              version=version,
+                                              cache=oio_cache)
         if props['properties'].get(SLO, None):
             raise Exception("Fast Copy with SLO is unsupported")
         else:
@@ -564,7 +574,8 @@ class ObjectController(BaseObjectController):
                 from_account, container, obj,
                 self.account_name, self.container_name, self.object_name,
                 headers=oio_headers, properties=metadata,
-                properties_directive='REPLACE', target_version=version)
+                properties_directive='REPLACE', target_version=version,
+                cache=oio_cache)
         # TODO(FVE): this exception catching block has to be refactored
         # TODO check which ones are ok or make non sense
         except exceptions.Conflict:
@@ -648,6 +659,7 @@ class ObjectController(BaseObjectController):
         ct_props = {'properties': {}, 'system': {}}
         metadata = self.load_object_metadata(headers)
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
         # only send headers if needed
         if SUPPORT_VERSIONING and headers.get(FORCEVERSIONING_HEADER):
             oio_headers[FORCEVERSIONING_HEADER] = \
@@ -668,14 +680,16 @@ class ObjectController(BaseObjectController):
                 obj_name=self.object_name, file_or_path=data_source,
                 mime_type=content_type, policy=policy, headers=oio_headers,
                 etag=req.headers.get('etag', '').strip('"'),
-                properties=metadata, container_properties=ct_props)
+                properties=metadata, container_properties=ct_props,
+                cache=oio_cache)
             # TODO(FVE): when oio-sds supports it, do that in a callback
             # passed to object_create (or whatever upload method supports it)
             footer_md = self.load_object_metadata(self._get_footers(req))
             if footer_md:
                 self.app.storage.object_set_properties(
                     self.account_name, self.container_name, self.object_name,
-                    version=_meta.get('version', None), properties=footer_md)
+                    version=_meta.get('version', None), properties=footer_md,
+                    headers=oio_headers, cache=oio_cache)
         except exceptions.Conflict:
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
@@ -763,6 +777,7 @@ class ObjectController(BaseObjectController):
     def _delete_object(self, req):
         storage = self.app.storage
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
         # only send headers if needed
         if SUPPORT_VERSIONING and req.headers.get(FORCEVERSIONING_HEADER):
             oio_headers[FORCEVERSIONING_HEADER] = \
@@ -771,7 +786,7 @@ class ObjectController(BaseObjectController):
             storage.object_delete(
                 self.account_name, self.container_name, self.object_name,
                 version=req.environ.get('oio.query', {}).get('version'),
-                headers=oio_headers)
+                headers=oio_headers, cache=oio_cache)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         except exceptions.NoSuchObject:
