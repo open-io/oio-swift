@@ -17,20 +17,11 @@
 
 import sys
 from optparse import OptionParser
-from swift.common.utils import parse_options
+
+# Immediately change "wsgi" before importing the other modules
+# for this modification to be propagated everywhere
 from oioswift.common import wsgi as oiowsgi
 from swift.common import wsgi
-from oioswift.server import global_conf_callback
-
-
-GLOBAL_CONF = None
-
-
-def global_conf_callback_wrapper(preloaded_app_conf, global_conf):
-    global GLOBAL_CONF
-    global_conf_callback(preloaded_app_conf, global_conf)
-    GLOBAL_CONF = global_conf
-
 
 orig_run_server = wsgi.run_server
 
@@ -45,6 +36,19 @@ def run_server_wrapper(conf, logger, sock, global_conf=None):
 wsgi.make_env = oiowsgi.oio_make_env
 wsgi.make_subrequest = oiowsgi.oio_make_subrequest
 wsgi.run_server = run_server_wrapper
+
+
+from oioswift.server import global_conf_callback  # noqa
+from swift.common.utils import parse_options  # noqa
+
+
+GLOBAL_CONF = None
+
+
+def global_conf_callback_wrapper(preloaded_app_conf, global_conf):
+    global GLOBAL_CONF
+    global_conf_callback(preloaded_app_conf, global_conf)
+    GLOBAL_CONF = global_conf
 
 
 def run_objgraph(types):
