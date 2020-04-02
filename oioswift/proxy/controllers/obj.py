@@ -280,7 +280,8 @@ class ObjectController(BaseObjectController):
                 nb_chunks_ok = 0
                 for entry in entries[1]:
                     try:
-                        storage.blob_client.chunk_head(entry['url'])
+                        storage.blob_client.chunk_head(
+                            entry['url'], headers=oio_headers)
                         nb_chunks_ok += 1
                     except exceptions.OioException:
                         pass
