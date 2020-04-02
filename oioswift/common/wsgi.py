@@ -24,6 +24,7 @@ def oio_make_env(env, *args, **kwargs):
     """Same as swift's make_env, but let some more headers pass through."""
     newenv = orig_make_env(env, *args, **kwargs)
     newenv['oio.query'] = env.get('oio.query', {}).copy()
+    newenv['oio.cache'] = env.get('oio.cache')
     return newenv
 
 
