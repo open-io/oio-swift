@@ -105,6 +105,7 @@ class TestObjectController(unittest.TestCase):
         self.app.container_info = dict(self.container_info)
         self.storage.account.account_show = Mock(
             return_value={
+                'ctime': 0,
                 'mtime': 0,
                 'containers': 1,
                 'objects': 1,
@@ -130,7 +131,8 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_delete = Mock()
         resp = req.get_response(self.app)
         self.storage.object_delete.assert_called_once_with(
-            'a', 'c', 'o', version=None, headers=ANY, cache=None)
+            'a', 'c', 'o', version=None, headers=ANY, cache=None,
+            perfdata=ANY)
         self.assertEqual(204, resp.status_int)
 
     def test_DELETE_not_found(self):
@@ -138,7 +140,8 @@ class TestObjectController(unittest.TestCase):
         self.storage.object_delete = Mock(side_effect=exc.NoSuchObject)
         resp = req.get_response(self.app)
         self.storage.object_delete.assert_called_once_with(
-            'a', 'c', 'o', version=None, headers=ANY, cache=None)
+            'a', 'c', 'o', version=None, headers=ANY, cache=None,
+            perfdata=ANY)
         self.assertEqual(204, resp.status_int)
 
     def test_HEAD_simple(self):
@@ -154,7 +157,7 @@ class TestObjectController(unittest.TestCase):
         resp = req.get_response(self.app)
         self.storage.object_get_properties.assert_called_once_with(
             'a', 'c', 'o', version=None, headers=ANY, force_master=False,
-            cache=None)
+            cache=None, perfdata=ANY)
         self.assertEqual(resp.status_int, 200)
         self.assertIn('Accept-Ranges', resp.headers)
 
@@ -204,7 +207,8 @@ class TestObjectController(unittest.TestCase):
                      'a', 'c', obj_name='o', etag='',
                      properties={}, mime_type='application/octet-stream',
                      file_or_path=req.environ['wsgi.input'], policy=None,
-                     headers=ANY, container_properties=ANY, cache=None)
+                     headers=ANY, container_properties=ANY, cache=None,
+                     perfdata=ANY)
         self.assertEqual(201, resp.status_int)
         self.assertIn('Last-Modified', resp.headers)
         self.assertIn('Etag', resp.headers)
