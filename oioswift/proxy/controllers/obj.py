@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016-2018 OpenIO SAS
+# Copyright (c) 2016-2020 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -203,8 +203,12 @@ class ObjectController(BaseObjectController):
         if not SUPPORT_VERSIONING:
             return None
 
+        # There is no reason to save several versions of segments:
+        # a new version of a multipart object manifest will point to a
+        # completely different set of segments, with another uploadId.
         root_container = req.headers.get(BUCKET_NAME_HEADER)
-        if root_container is None:
+        if (root_container is None or
+                root_container.endswith(MULTIUPLOAD_SUFFIX)):
             return None
 
         # We can't use _get_info_from_caches as it would use local worker cache
