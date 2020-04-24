@@ -6,5 +6,7 @@ mock
 nose
 nose-timer
 oio>=4.8.0
+# required by swift3, remove when getting rid of it
+python-keystoneclient
 s3cmd
 unittest2
