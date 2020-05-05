@@ -25,6 +25,8 @@ def oio_make_env(env, *args, **kwargs):
     newenv = orig_make_env(env, *args, **kwargs)
     newenv['oio.query'] = env.get('oio.query', {}).copy()
     newenv['oio.cache'] = env.get('oio.cache')
+    newenv['oio.ephemeral_object'] = env.get('oio.ephemeral_object')
+    newenv['oio.list_mpu'] = env.get('oio.list_mpu')
     return newenv
 
 
