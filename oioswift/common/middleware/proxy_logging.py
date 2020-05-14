@@ -52,8 +52,9 @@ def perfdata_to_str(perfdata):
     perfdata_list = list()
     perfdata_list.append('PERFDATA')
     for key, value in sorted(flat_perfdata.items()):
-        if key.startswith('rawx.http'):
-            key = 'rawx.http'
+        if key.startswith('rawx.'):
+            if 'http' in key[5:]:
+                key = key[:key.index('http') + 4]
         perfdata_list.append(key + ':' + '%.4f' % value)
     return '...'.join(perfdata_list)
 
