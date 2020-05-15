@@ -7,8 +7,8 @@ from oioswift.common.middleware import versioned_writes
 # Hack PYTHONPATH so "test" is swift's test directory
 sys.path.insert(1, os.path.abspath(os.path.join(__file__, '../../../../..')))  # noqa: E402 E501
 import test  # noqa: E402, F401
-from test.unit.common.middleware import test_versioned_writes as test_vw
-from test.unit.common.middleware.test_versioned_writes import FakeCache
+from test.unit.common.middleware \
+    import test_versioned_writes as test_vw  # noqa: E402
 
 
 class OioVersionedWritesTestCase(test_vw.VersionedWritesTestCase):
@@ -24,7 +24,8 @@ class OioVersionedWritesTestCase(test_vw.VersionedWritesTestCase):
         self.app.register(
             'GET', '/v1/a/c/o', swob.HTTPNotFound, {}, None)
 
-        cache = FakeCache({'sysmeta': {'versions-location': 'ver_cont'}})
+        cache = test_vw.FakeCache(
+            {'sysmeta': {'versions-location': 'ver_cont'}})
         req = Request.blank(
             '/v1/a/c/o',
             environ={'REQUEST_METHOD': 'PUT', 'swift.cache': cache,
@@ -50,7 +51,7 @@ class OioVersionedWritesTestCase(test_vw.VersionedWritesTestCase):
         # self.app.register(
         #     'PUT', '/v1/a/ver_cont/001o/0000000060.00000', swob.HTTPCreated,
         #     {}, '')
-        cache = FakeCache({'versions': 'ver_cont'})
+        cache = test_vw.FakeCache({'versions': 'ver_cont'})
         req = Request.blank(
             '/v1/a/c/o',
             headers={'X-Object-Manifest': 'req/manifest'},
@@ -85,7 +86,8 @@ class OioVersionedWritesTestCase(test_vw.VersionedWritesTestCase):
         self.app.register(
             'PUT', '/v1/a/ver_cont/001o/0000000001.00000', swob.HTTPCreated,
             {}, None)
-        cache = FakeCache({'sysmeta': {'versions-location': 'ver_cont'}})
+        cache = test_vw.FakeCache(
+            {'sysmeta': {'versions-location': 'ver_cont'}})
         req = Request.blank(
             '/v1/a/c/o',
             environ={'REQUEST_METHOD': 'PUT', 'swift.cache': cache,
@@ -120,7 +122,8 @@ class OioVersionedWritesTestCase(test_vw.VersionedWritesTestCase):
             '/v1/a/ver_cont?format=json&prefix=001o/&marker=&reverse=on',
             swob.HTTPOk, {}, '[]')
 
-        cache = FakeCache({'sysmeta': {'versions-location': 'ver_cont'}})
+        cache = test_vw.FakeCache(
+            {'sysmeta': {'versions-location': 'ver_cont'}})
         req = Request.blank(
             '/v1/a/c/o',
             environ={'REQUEST_METHOD': 'DELETE', 'swift.cache': cache,
@@ -175,7 +178,7 @@ class OioVersionedWritesTestCase(test_vw.VersionedWritesTestCase):
                  "version": 1542212443748591,
                  "content_type": "text/plain"}
             ]''')
-        cache = FakeCache({'sysmeta': {
+        cache = test_vw.FakeCache({'sysmeta': {
             'versions-location': 'c' + versioned_writes.VERSIONING_SUFFIX}})
         req = Request.blank(
             '/v1/a/c' + versioned_writes.VERSIONING_SUFFIX + '?delimiter=%2F',
