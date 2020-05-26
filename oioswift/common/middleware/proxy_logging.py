@@ -94,10 +94,11 @@ class OioProxyLoggingMiddleware(ProxyLoggingMiddleware):
                 add_perfata = True
             else:
                 req = Request(env)
-                for pat in self.perfdata_user_agents:
-                    if pat.match(req.user_agent):
-                        add_perfata = True
-                        break
+                if req.user_agent:
+                    for pat in self.perfdata_user_agents:
+                        if pat.match(req.user_agent):
+                            add_perfata = True
+                            break
             if add_perfata:
                 env.setdefault('oio.perfdata', dict())
         return super(OioProxyLoggingMiddleware, self).__call__(
