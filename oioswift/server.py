@@ -59,6 +59,9 @@ class Application(SwiftApplication):
                     for k, v in conf.iteritems()
                     if k.startswith("sds_")}
 
+        self.use_bucket_storage_policy = config_true_value(
+            conf.get('use_bucket_storage_policy', 'false'))
+
         self.oio_stgpol = []
         if 'auto_storage_policies' in conf:
             for elem in conf['auto_storage_policies'].split(','):
