@@ -1,14 +1,12 @@
 sudo: required
-dist: xenial
+dist: bionic
 language: python
 python: '2.7'
-virtualenv:
-    system_site_packages: true
 addons:
   apt:
     sources:
-      - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ xenial-backports main restricted universe multiverse'
-      - sourceline: 'deb http://mirror.openio.io/pub/repo/openio/sds/19.04/ubuntu/ xenial/'
+      - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ bionic-backports main restricted universe multiverse'
+      - sourceline: 'deb http://mirror.openio.io/pub/repo/openio/sds/19.04/ubuntu/ bionic/'
         key_url: 'http://mirror.openio.io/pub/repo/openio/APT-GPG-KEY-OPENIO-0'
     update: true
     packages:

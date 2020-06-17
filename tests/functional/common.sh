@@ -40,7 +40,6 @@ function compile_sds() {
     -DCMAKE_INSTALL_PREFIX="/tmp/oio" \
     -DLD_LIBDIR="lib" \
     -DCMAKE_BUILD_TYPE="Debug" \
-    -DSTACK_PROTECTOR=1 \
     -DZK_LIBDIR="/usr/lib" \
     -DZK_INCDIR="/usr/include/zookeeper" \
     -DAPACHE2_LIBDIR="/usr/lib/apache2" \
