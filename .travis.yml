@@ -8,7 +8,7 @@ addons:
   apt:
     sources:
       - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ xenial-backports main restricted universe multiverse'
-      - sourceline: 'deb http://mirror.openio.io/pub/repo/openio/sds/18.04/ubuntu/ xenial/'
+      - sourceline: 'deb http://mirror.openio.io/pub/repo/openio/sds/19.04/ubuntu/ xenial/'
         key_url: 'http://mirror.openio.io/pub/repo/openio/APT-GPG-KEY-OPENIO-0'
     update: true
     packages:
@@ -19,16 +19,16 @@ env:
     - TEST_SUITE=iam
     - TEST_SUITE=s3 # Latest stable/supported versions
     - TEST_SUITE=s3 SDS_BRANCH=master  # Integration with latest versions
-    - TEST_SUITE=s3 SDS_BRANCH=4.x # Previous versions
+    - TEST_SUITE=s3 SDS_BRANCH=5.x # Previous versions
     - TEST_SUITE=encryption
     - TEST_SUITE=encryption SDS_BRANCH=master
-    - TEST_SUITE=encryption SDS_BRANCH=4.x
+    - TEST_SUITE=encryption SDS_BRANCH=5.x
     - TEST_SUITE=swift
-    - TEST_SUITE=swift SDS_BRANCH=4.x
+    - TEST_SUITE=swift SDS_BRANCH=5.x
     - TEST_SUITE=ns-wide-versioning
-    - TEST_SUITE=ns-wide-versioning SDS_BRANCH=4.x
+    - TEST_SUITE=ns-wide-versioning SDS_BRANCH=5.x
     - TEST_SUITE=unit
-    - TEST_SUITE=unit SDS_BRANCH=4.x
+    - TEST_SUITE=unit SDS_BRANCH=5.x
 
 before_install:
   - sudo apt-get update -qq
