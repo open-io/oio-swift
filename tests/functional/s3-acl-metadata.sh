@@ -56,4 +56,27 @@ if [ $(echo "$data" | grep -c Grantee) -ne 3 ]; then
     exit 1
 fi
 
+
+### CORS
+
+CORS_RULES='{
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["http://openio.io"],
+      "AllowedHeaders": ["Authorization"],
+      "ExposeHeaders": ["x-amz-server-side-encryption"],
+      "AllowedMethods": ["GET"],
+      "MaxAgeSeconds": 3000
+    }
+  ]
+}'
+${AWS} s3api put-bucket-cors --bucket ${BUCKET} --cors-configuration "${CORS_RULES}"
+
+# check a valid CORS request
+curl -sS "http://localhost:5000/${BUCKET}" -H "Origin: http://openio.io" -X OPTIONS -H "Access-Control-Request-Method: GET" -H 'Access-Control-Request-Headers: Authorization'
+
+# check a denied CORS request
+curl -sS "http://localhost:5000/${BUCKET}" -H "Origin: http://example.com" -X OPTIONS -H "Access-Control-Request-Method: GET" -H 'Access-Control-Request-Headers: Authorization' | grep "not allowed"
+
+
 echo "OK"
