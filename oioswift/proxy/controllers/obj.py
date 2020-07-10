@@ -32,7 +32,7 @@ from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator, \
     HTTPServiceUnavailable
 from swift.common.request_helpers import is_sys_or_user_meta, \
-    is_object_transient_sysmeta
+    is_object_transient_sysmeta, resolve_etag_is_at_header
 from swift.common.wsgi import make_subrequest
 from swift.proxy.controllers.base import set_object_info_cache, \
         delay_denial, cors_validation, get_object_info
@@ -333,10 +333,8 @@ class ObjectController(BaseObjectController):
         return resp
 
     def make_object_response(self, req, metadata, stream=None):
-        conditional_etag = None
-        if 'X-Backend-Etag-Is-At' in req.headers:
-            conditional_etag = metadata.get(
-                req.headers['X-Backend-Etag-Is-At'])
+        conditional_etag = resolve_etag_is_at_header(
+            req, metadata.get('properties'))
 
         resp = Response(request=req, conditional_response=True,
                         conditional_etag=conditional_etag)
