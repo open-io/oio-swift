@@ -29,19 +29,258 @@ import time
 
 from oio.common.json import json
 
+from swift.common.exceptions import ListingIterError, SegmentError
 from swift.common.middleware.bulk import ACCEPTABLE_FORMATS, get_response_body
 from swift.common.middleware.listing_formats import \
     MAX_CONTAINER_LISTING_CONTENT_LENGTH
 from swift.common.middleware.slo import DEFAULT_MAX_MANIFEST_SEGMENTS, \
     DEFAULT_MAX_MANIFEST_SIZE, DEFAULT_YIELD_FREQUENCY, \
     parse_and_validate_input, StaticLargeObject, SYSMETA_SLO_ETAG, \
-    SYSMETA_SLO_SIZE
+    SYSMETA_SLO_SIZE, SloGetContext
+from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import Request, HTTPBadRequest, HTTPMethodNotAllowed, \
-    HTTPRequestEntityTooLarge, HTTPLengthRequired, HTTPUnprocessableEntity, \
-    HTTPException, RESPONSE_REASONS
-from swift.common.utils import closing_if_possible, config_true_value, \
-    get_valid_utf8_str, quote, register_swift_info
+    HTTPRequestEntityTooLarge, HTTPLengthRequired, HTTPOk, HTTPConflict, \
+    HTTPUnprocessableEntity, HTTPException, RESPONSE_REASONS, Response
+from swift.common.utils import close_if_possible, closing_if_possible, \
+    config_true_value, get_valid_utf8_str, override_bytes_from_content_type, \
+    quote, register_swift_info, RateLimitedIterator
+from swift.common.request_helpers import SegmentedIterable, \
+    update_etag_is_at_header, resolve_etag_is_at_header
 from swift.common.wsgi import make_subrequest
+
+
+class OioSloGetContext(SloGetContext):
+
+    def __init__(self, slo):
+        super(OioSloGetContext, self).__init__(slo)
+
+    def handle_slo_get_or_head(self, req, start_response):
+        """
+        Takes a request and a start_response callable and does the normal WSGI
+        thing with them. Returns an iterator suitable for sending up the WSGI
+        chain.
+
+        :param req: :class:`~swift.common.swob.Request` object; is a ``GET`` or
+                    ``HEAD`` request aimed at what may (or may not) be a static
+                    large object manifest.
+        :param start_response: WSGI start_response callable
+        """
+        if req.params.get('multipart-manifest') != 'get':
+            # If this object is an SLO manifest, we may have saved off the
+            # large object etag during the original PUT. Send an
+            # X-Backend-Etag-Is-At header so that, if the SLO etag *was*
+            # saved, we can trust the object-server to respond appropriately
+            # to If-Match/If-None-Match requests.
+            update_etag_is_at_header(req, SYSMETA_SLO_ETAG)
+        resp_iter = self._app_call(req.environ)
+
+        # make sure this response is for a static large object manifest
+        slo_marker = slo_etag = slo_size = None
+        for header, value in self._response_headers:
+            header = header.lower()
+            if header == SYSMETA_SLO_ETAG:
+                slo_etag = value
+            elif header == SYSMETA_SLO_SIZE:
+                slo_size = value
+            elif (header == 'x-static-large-object' and
+                  config_true_value(value)):
+                slo_marker = value
+
+            if slo_marker and slo_etag and slo_size:
+                break
+
+        if not slo_marker:
+            # Not a static large object manifest. Just pass it through.
+            start_response(self._response_status,
+                           self._response_headers,
+                           self._response_exc_info)
+            return resp_iter
+
+        # Handle pass-through request for the manifest itself
+        if req.params.get('multipart-manifest') == 'get':
+            if req.params.get('format') == 'raw':
+                resp_iter = self.convert_segment_listing(
+                    self._response_headers, resp_iter)
+            else:
+                new_headers = []
+                for header, value in self._response_headers:
+                    if header.lower() == 'content-type':
+                        new_headers.append(('Content-Type',
+                                            'application/json; charset=utf-8'))
+                    else:
+                        new_headers.append((header, value))
+                self._response_headers = new_headers
+            start_response(self._response_status,
+                           self._response_headers,
+                           self._response_exc_info)
+            return resp_iter
+
+        is_conditional = self._response_status.startswith(('304', '412')) and (
+            req.if_match or req.if_none_match)
+        if slo_etag and slo_size and (
+                req.method == 'HEAD' or is_conditional):
+            # Since we have length and etag, we can respond immediately
+            resp = Response(
+                status=self._response_status,
+                headers=self._response_headers,
+                app_iter=resp_iter,
+                request=req,
+                conditional_etag=resolve_etag_is_at_header(
+                    req, self._response_headers),
+                conditional_response=True)
+            resp.headers.update({
+                'Etag': '"%s"' % slo_etag,
+                'Content-Length': slo_size,
+            })
+            return resp(req.environ, start_response)
+
+        if self._need_to_refetch_manifest(req):
+            req.environ['swift.non_client_disconnect'] = True
+            close_if_possible(resp_iter)
+            del req.environ['swift.non_client_disconnect']
+
+            get_req = make_subrequest(
+                req.environ, method='GET',
+                headers={'x-auth-token': req.headers.get('x-auth-token')},
+                agent='%(orig)s SLO MultipartGET', swift_source='SLO')
+            resp_iter = self._app_call(get_req.environ)
+
+        # Any Content-Range from a manifest is almost certainly wrong for the
+        # full large object.
+        resp_headers = [(h, v) for h, v in self._response_headers
+                        if not h.lower() == 'content-range']
+
+        response = self.get_or_head_response(
+            req, resp_headers, resp_iter)
+        return response(req.environ, start_response)
+
+    def get_or_head_response(self, req, resp_headers, resp_iter):
+        segments = self._get_manifest_read(resp_iter)
+        slo_etag = None
+        content_length = None
+        response_headers = []
+        for header, value in resp_headers:
+            lheader = header.lower()
+            if lheader not in ('etag', 'content-length'):
+                response_headers.append((header, value))
+
+            if lheader == SYSMETA_SLO_ETAG:
+                slo_etag = value
+            elif lheader == SYSMETA_SLO_SIZE:
+                # it's from sysmeta, so we don't worry about non-integer
+                # values here
+                content_length = int(value)
+
+        # Prep to calculate content_length & etag if necessary
+        if slo_etag is None:
+            calculated_etag = md5()
+        if content_length is None:
+            calculated_content_length = 0
+
+        for seg_dict in segments:
+            # Decode any inlined data; it's important that we do this *before*
+            # calculating the segment length and etag
+            if 'data' in seg_dict:
+                seg_dict['raw_data'] = base64.b64decode(seg_dict.pop('data'))
+
+            if slo_etag is None:
+                if 'raw_data' in seg_dict:
+                    calculated_etag.update(
+                        md5(seg_dict['raw_data']).hexdigest())
+                elif seg_dict.get('range'):
+                    calculated_etag.update(
+                        '%s:%s;' % (seg_dict['hash'], seg_dict['range']))
+                else:
+                    calculated_etag.update(seg_dict['hash'])
+
+            if content_length is None:
+                if config_true_value(seg_dict.get('sub_slo')):
+                    override_bytes_from_content_type(
+                        seg_dict, logger=self.slo.logger)
+                calculated_content_length += self._segment_length(seg_dict)
+
+        if slo_etag is None:
+            slo_etag = calculated_etag.hexdigest()
+        if content_length is None:
+            content_length = calculated_content_length
+
+        response_headers.append(('Content-Length', str(content_length)))
+        response_headers.append(('Etag', '"%s"' % slo_etag))
+
+        if req.method == 'HEAD':
+            return self._manifest_head_response(req, response_headers)
+        else:
+            return self._manifest_get_response(
+                req, content_length, response_headers, segments)
+
+    def _manifest_head_response(self, req, response_headers):
+        conditional_etag = resolve_etag_is_at_header(req, response_headers)
+        return HTTPOk(request=req, headers=response_headers, body='',
+                      conditional_etag=conditional_etag,
+                      conditional_response=True)
+
+    def _manifest_get_response(self, req, content_length, response_headers,
+                               segments):
+        if req.range:
+            byteranges = [
+                # For some reason, swob.Range.ranges_for_length adds 1 to the
+                # last byte's position.
+                (start, end - 1) for start, end
+                in req.range.ranges_for_length(content_length)]
+        else:
+            byteranges = []
+
+        ver, account, _junk = req.split_path(3, 3, rest_with_last=True)
+        plain_listing_iter = self._segment_listing_iterator(
+            req, ver, account, segments, byteranges)
+
+        def ratelimit_predicate(seg_dict):
+            if 'raw_data' in seg_dict:
+                return False  # it's already in memory anyway
+            start = seg_dict.get('start_byte') or 0
+            end = seg_dict.get('end_byte')
+            if end is None:
+                end = int(seg_dict['bytes']) - 1
+            is_small = (end - start + 1) < self.slo.rate_limit_under_size
+            return is_small
+
+        ratelimited_listing_iter = RateLimitedIterator(
+            plain_listing_iter,
+            self.slo.rate_limit_segments_per_sec,
+            limit_after=self.slo.rate_limit_after_segment,
+            ratelimit_if=ratelimit_predicate)
+
+        # data segments are already in the correct format, but object-backed
+        # segments need a path key added
+        segment_listing_iter = (
+            seg_dict if 'raw_data' in seg_dict else
+            dict(seg_dict, path=self._segment_path(ver, account, seg_dict))
+            for seg_dict in ratelimited_listing_iter)
+
+        segmented_iter = SegmentedIterable(
+            req, self.slo.app, segment_listing_iter,
+            name=req.path, logger=self.slo.logger,
+            ua_suffix="SLO MultipartGET",
+            swift_source="SLO",
+            max_get_time=self.slo.max_get_time)
+
+        try:
+            segmented_iter.validate_first_segment()
+        except (ListingIterError, SegmentError):
+            # Copy from the SLO explanation in top of this file.
+            # If any of the segments from the manifest are not found or
+            # their Etag/Content Length no longer match the connection
+            # will drop. In this case a 409 Conflict will be logged in
+            # the proxy logs and the user will receive incomplete results.
+            return HTTPConflict(request=req)
+
+        conditional_etag = resolve_etag_is_at_header(req, response_headers)
+        response = Response(request=req, content_length=content_length,
+                            headers=response_headers,
+                            conditional_response=True,
+                            conditional_etag=conditional_etag,
+                            app_iter=segmented_iter)
+        return response
 
 
 class OioStaticLargeObject(StaticLargeObject):
@@ -49,6 +288,21 @@ class OioStaticLargeObject(StaticLargeObject):
     def __init__(self, app, conf, **kwargs):
         super(OioStaticLargeObject, self).__init__(app, conf, **kwargs)
         self.logger.warning("oioswift.slo in use")
+
+    def handle_multipart_get_or_head(self, req, start_response):
+        """
+        Handles the GET or HEAD of a SLO manifest.
+
+        The response body (only on GET, of course) will consist of the
+        concatenation of the segments.
+
+        :param req: a :class:`~swift.common.swob.Request` with a path
+                    referencing an object
+        :param start_response: WSGI start_response callable
+        :raises HttpException: on errors
+        """
+        return OioSloGetContext(self).handle_slo_get_or_head(
+            req, start_response)
 
     def handle_multipart_put(self, req, start_response):
         """
@@ -346,7 +600,8 @@ class OioStaticLargeObject(StaticLargeObject):
             return resp(req.environ, start_response)
 
         for item in listing:
-            if 'subdir' in item:
+            if 'subdir' in item \
+                    or item.get('content_type') == DELETE_MARKER_CONTENT_TYPE:
                 continue
             etag, params = parse_header(item['hash'])
             if 'slo_etag' in params:
