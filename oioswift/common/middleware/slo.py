@@ -19,6 +19,7 @@ Please check original doc from swift/common/middleware/slo.py
 """
 
 import base64
+from cgi import parse_header
 from collections import defaultdict
 from datetime import datetime
 from hashlib import md5
@@ -29,13 +30,15 @@ import time
 from oio.common.json import json
 
 from swift.common.middleware.bulk import ACCEPTABLE_FORMATS, get_response_body
+from swift.common.middleware.listing_formats import \
+    MAX_CONTAINER_LISTING_CONTENT_LENGTH
 from swift.common.middleware.slo import DEFAULT_MAX_MANIFEST_SEGMENTS, \
     DEFAULT_MAX_MANIFEST_SIZE, DEFAULT_YIELD_FREQUENCY, \
     parse_and_validate_input, StaticLargeObject, SYSMETA_SLO_ETAG, \
     SYSMETA_SLO_SIZE
-from swift.common.swob import HTTPBadRequest, HTTPMethodNotAllowed, \
+from swift.common.swob import Request, HTTPBadRequest, HTTPMethodNotAllowed, \
     HTTPRequestEntityTooLarge, HTTPLengthRequired, HTTPUnprocessableEntity, \
-    RESPONSE_REASONS
+    HTTPException, RESPONSE_REASONS
 from swift.common.utils import closing_if_possible, config_true_value, \
     get_valid_utf8_str, quote, register_swift_info
 from swift.common.wsgi import make_subrequest
@@ -293,6 +296,14 @@ class OioStaticLargeObject(StaticLargeObject):
                 'Etag': md5(json_data).hexdigest(),
             })
 
+            # Ensure container listings have both etags. However, if any
+            # middleware to the left of us touched the base value, trust them.
+            override_header = 'X-Object-Sysmeta-Container-Update-Override-Etag'
+            val, sep, params = req.headers.get(
+                override_header, '').partition(';')
+            req.headers[override_header] = '%s; slo_etag=%s' % (
+                (val or req.headers['Etag']) + sep + params, slo_etag)
+
             env = req.environ
             if not env.get('CONTENT_TYPE'):
                 guessed_type, _junk = mimetypes.guess_type(req.path_info)
@@ -317,6 +328,72 @@ class OioStaticLargeObject(StaticLargeObject):
                     yield chunk
 
         return resp_iter()
+
+    def handle_container_listing(self, req, start_response):
+        resp = req.get_response(self.app)
+        if not resp.is_success or resp.content_type != 'application/json':
+            return resp(req.environ, start_response)
+        if resp.content_length is None:
+            return resp(req.environ, start_response)
+        if resp.content_length > MAX_CONTAINER_LISTING_CONTENT_LENGTH:
+            self.logger.warn(
+                'The content length (%d) of the listing is too long (max=%d)',
+                resp.content_length, MAX_CONTAINER_LISTING_CONTENT_LENGTH)
+            return resp(req.environ, start_response)
+        try:
+            listing = json.loads(resp.body)
+        except ValueError:
+            return resp(req.environ, start_response)
+
+        for item in listing:
+            if 'subdir' in item:
+                continue
+            etag, params = parse_header(item['hash'])
+            if 'slo_etag' in params:
+                item['slo_etag'] = '"%s"' % params.pop('slo_etag')
+                item['hash'] = etag + ''.join(
+                    '; %s=%s' % kv for kv in params.items())
+
+        resp.body = json.dumps(listing).encode('ascii')
+        return resp(req.environ, start_response)
+
+    def __call__(self, env, start_response):
+        """
+        WSGI entry point
+        """
+        if env.get('swift.slo_override'):
+            return self.app(env, start_response)
+
+        req = Request(env)
+        try:
+            vrs, account, container, obj = req.split_path(3, 4, True)
+        except ValueError:
+            return self.app(env, start_response)
+
+        if not obj:
+            if req.method == 'GET':
+                return self.handle_container_listing(req, start_response)
+            return self.app(env, start_response)
+
+        try:
+            if req.method == 'PUT' and \
+                    req.params.get('multipart-manifest') == 'put':
+                return self.handle_multipart_put(req, start_response)
+            if req.method == 'DELETE' and \
+                    req.params.get('multipart-manifest') == 'delete':
+                return self.handle_multipart_delete(req)(env, start_response)
+            if req.method == 'GET' or req.method == 'HEAD':
+                return self.handle_multipart_get_or_head(req, start_response)
+            if 'X-Static-Large-Object' in req.headers:
+                raise HTTPBadRequest(
+                    request=req,
+                    body='X-Static-Large-Object is a reserved header. '
+                    'To create a static large object add query param '
+                    'multipart-manifest=put.')
+        except HTTPException as err_resp:
+            return err_resp(env, start_response)
+
+        return self.app(env, start_response)
 
 
 def filter_factory(global_conf, **local_conf):
