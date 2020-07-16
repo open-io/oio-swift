@@ -609,7 +609,7 @@ class OioStaticLargeObject(StaticLargeObject):
                 item['hash'] = etag + ''.join(
                     '; %s=%s' % kv for kv in params.items())
 
-        resp.body = json.dumps(listing).encode('ascii')
+        resp.body = json.dumps(listing)
         return resp(req.environ, start_response)
 
     def __call__(self, env, start_response):
