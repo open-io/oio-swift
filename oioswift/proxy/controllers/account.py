@@ -56,6 +56,25 @@ def get_response_headers(info):
     return resp_headers
 
 
+def account_listing_bucket_response(account, req, response_content_type,
+                                    listing=None):
+    if response_content_type != 'application/json':
+        # AWS S3 is always call wit format=json
+        # check method GET in ServiceController (swift3/controllers/service.py)
+        return HTTPPreconditionFailed(body='Invalid content type')
+
+    data = []
+    for entry in listing:
+        data.append({'name': entry['name'], 'count': entry['objects'],
+                     'bytes': entry['bytes'],
+                     'last_modified': Timestamp(entry['mtime']).isoformat})
+    account_list = json.dumps(data, encoding="utf-8")
+    ret = HTTPOk(body=account_list, request=req, headers={})
+    ret.content_type = response_content_type
+    ret.charset = 'utf-8'
+    return ret
+
+
 def account_listing_response(account, req, response_content_type,
                              info=None, listing=None, s3_buckets_only=False):
     now = time.time()
@@ -174,28 +193,31 @@ class AccountController(SwiftAccountController):
         marker = get_param(req, 'marker')
         end_marker = get_param(req, 'end_marker')
         s3_buckets_only = False
+        oio_headers = {REQID_HEADER: self.trans_id}
+        info = None
+
         if req.environ.get('swift.source') == 'S3':
+            if hasattr(self.app.storage.account, 'bucket_list'):
+                # Call directly AccountClient.bucket_list()
+                info = self.app.storage.account.bucket_list(
+                    self.account_name, limit=limit, marker=marker,
+                    end_marker=end_marker, prefix=prefix,
+                    delimiter=delimiter, headers=oio_headers)
+                listing = info.pop('listing')
+                return account_listing_bucket_response(
+                    self.account_name, req, get_listing_content_type(req),
+                    listing=listing)
+
+            # Fallback: use legacy method to list buckets
             s3_buckets_only = True
             delimiter = '%'  # first character of encoded delimiter of CH
 
-        oio_headers = {REQID_HEADER: self.trans_id}
-        info = None
-        if hasattr(self.app.storage, 'account'):
-            # Call directly AccountClient.container_list()
-            # because storage.container_list() does not return
-            # account metadata
-            info = self.app.storage.account.container_list(
-                self.account_name, limit=limit, marker=marker,
-                end_marker=end_marker, prefix=prefix,
-                delimiter=delimiter, headers=oio_headers,
-                s3_buckets_only=s3_buckets_only)
-            listing = info.pop('listing')
-        else:
-            # Legacy call to account service
-            listing, info = self.app.storage.container_list(
-                self.account_name, limit=limit, marker=marker,
-                end_marker=end_marker, prefix=prefix,
-                delimiter=delimiter, headers=oio_headers)
+        info = self.app.storage.account.container_list(
+            self.account_name, limit=limit, marker=marker,
+            end_marker=end_marker, prefix=prefix,
+            delimiter=delimiter, headers=oio_headers,
+            s3_buckets_only=s3_buckets_only)
+        listing = info.pop('listing')
         return account_listing_response(
             self.account_name, req, get_listing_content_type(req),
             info=info, listing=listing, s3_buckets_only=s3_buckets_only)
