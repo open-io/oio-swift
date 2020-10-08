@@ -128,7 +128,9 @@ class ExpectedSizeReader(object):
         rc = self.source.read(*args, **kwargs)
         if len(rc) == 0:
             if self.consumed != self.expected:
-                raise exceptions.SourceReadError("Truncated input")
+                raise exceptions.SourceReadError(
+                    "Truncated input (%s bytes read, %s bytes expected)" % (
+                        self.consumed, self.expected))
         else:
             self.consumed = self.consumed + len(rc)
         return rc
@@ -137,7 +139,9 @@ class ExpectedSizeReader(object):
         rc = self.source.readline(*args, **kwargs)
         if len(rc) == 0:
             if self.consumed != self.expected:
-                raise exceptions.SourceReadError("Truncated input")
+                raise exceptions.SourceReadError(
+                    "Truncated input (%s bytes read, %s bytes expected)" % (
+                        self.consumed, self.expected))
         else:
             self.consumed = self.consumed + len(rc)
         return rc
@@ -592,12 +596,6 @@ class ObjectController(BaseObjectController):
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
-        except exceptions.SourceReadError:
-            req.client_disconnect = True
-            self.app.logger.warning(
-                _('Client disconnected without sending last chunk'))
-            self.app.logger.increment('client_disconnects')
-            raise HTTPClientDisconnect(request=req)
         except exceptions.EtagMismatch:
             return HTTPUnprocessableEntity(request=req)
         except (exceptions.ServiceBusy, exceptions.OioTimeout,
@@ -710,10 +708,11 @@ class ObjectController(BaseObjectController):
                 _('ERROR Client read timeout (%s)'), err)
             self.app.logger.increment('client_timeouts')
             raise HTTPRequestTimeout(request=req)
-        except exceptions.SourceReadError:
+        except exceptions.SourceReadError as err:
             req.client_disconnect = True
             self.app.logger.warning(
-                _('Client disconnected without sending last chunk'))
+                _('Client disconnected without sending last chunk') + (
+                    ': %s' % str(err)))
             self.app.logger.increment('client_disconnects')
             raise HTTPClientDisconnect(request=req)
         except exceptions.EtagMismatch:
