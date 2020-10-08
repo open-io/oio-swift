@@ -41,7 +41,7 @@ install:
   - test -n "$SWIFT3_BRANCH" && git config --local submodule.third_party/swift3.branch "$SWIFT3_BRANCH" || true
   - test -n "$SDS_BRANCH" && git config --local submodule.third_party/oio-sds.branch "$SDS_BRANCH" || true
   - git submodule update --init --remote
-  - ( grep -v -e PyECLib -e six -e ZooKeeper third_party/oio-sds/all-requirements.txt ; grep -v eventlet third_party/swift/requirements.txt ) > deps-requirements.txt
+  - ( grep -v -e PyECLib -e six -e "\<xattr\>" -e ZooKeeper third_party/oio-sds/all-requirements.txt ; grep -v eventlet third_party/swift/requirements.txt ) > deps-requirements.txt
   - pip install --upgrade -r deps-requirements.txt
   - cd third_party/oio-sds && python setup.py install && cd ../..
   - cd third_party/swift && python setup.py install && cd ../..
