@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016-2018 OpenIO SAS
+# Copyright (c) 2016-2020 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPNoContent, Response, HTTPInternalServerError, multi_range_iterator, \
     HTTPServiceUnavailable
 from swift.common.request_helpers import is_sys_or_user_meta, \
-    is_object_transient_sysmeta
+    is_object_transient_sysmeta, resolve_etag_is_at_header
 from swift.common.wsgi import make_subrequest
 from swift.proxy.controllers.base import set_object_info_cache, \
         delay_denial, cors_validation, get_object_info
@@ -56,9 +56,10 @@ from oio.api.object_storage import _sort_chunks
 from oio.common.exceptions import SourceReadTimeout
 from oioswift.utils import check_if_none_match, \
     handle_not_allowed, handle_oio_timeout, handle_service_busy, \
-    REQID_HEADER
+    REQID_HEADER, BUCKET_NAME_PROP, MULTIUPLOAD_SUFFIX
 
 SLO = 'x-static-large-object'
+BUCKET_NAME_HEADER = 'X-Object-Sysmeta-Oio-Bucket-Name'
 
 
 class ObjectControllerRouter(object):
@@ -127,7 +128,9 @@ class ExpectedSizeReader(object):
         rc = self.source.read(*args, **kwargs)
         if len(rc) == 0:
             if self.consumed != self.expected:
-                raise exceptions.SourceReadError("Truncated input")
+                raise exceptions.SourceReadError(
+                    "Truncated input (%s bytes read, %s bytes expected)" % (
+                        self.consumed, self.expected))
         else:
             self.consumed = self.consumed + len(rc)
         return rc
@@ -136,7 +139,9 @@ class ExpectedSizeReader(object):
         rc = self.source.readline(*args, **kwargs)
         if len(rc) == 0:
             if self.consumed != self.expected:
-                raise exceptions.SourceReadError("Truncated input")
+                raise exceptions.SourceReadError(
+                    "Truncated input (%s bytes read, %s bytes expected)" % (
+                        self.consumed, self.expected))
         else:
             self.consumed = self.consumed + len(rc)
         return rc
@@ -202,8 +207,12 @@ class ObjectController(BaseObjectController):
         if not SUPPORT_VERSIONING:
             return None
 
-        root_container = req.headers.get('X-Object-Sysmeta-Oio-Bucket-Name')
-        if root_container is None:
+        # There is no reason to save several versions of segments:
+        # a new version of a multipart object manifest will point to a
+        # completely different set of segments, with another uploadId.
+        root_container = req.headers.get(BUCKET_NAME_HEADER)
+        if (root_container is None or
+                root_container.endswith(MULTIUPLOAD_SUFFIX)):
             return None
 
         # We can't use _get_info_from_caches as it would use local worker cache
@@ -221,9 +230,12 @@ class ObjectController(BaseObjectController):
             return
 
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         try:
             meta = self.app.storage.container_get_properties(
-                self.account_name, root_container, headers=oio_headers)
+                self.account_name, root_container, headers=oio_headers,
+                cache=oio_cache, perfdata=perfdata)
         except exceptions.NoSuchContainer:
             raise HTTPNotFound(request=req)
 
@@ -235,6 +247,8 @@ class ObjectController(BaseObjectController):
     def get_object_head_resp(self, req):
         storage = self.app.storage
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         version = req.environ.get('oio.query', {}).get('version')
         force_master = False
         while True:
@@ -243,16 +257,18 @@ class ObjectController(BaseObjectController):
                     metadata, chunks = storage.object_locate(
                         self.account_name, self.container_name,
                         self.object_name, version=version,
-                        headers=oio_headers, force_master=force_master)
+                        headers=oio_headers, force_master=force_master,
+                        cache=oio_cache, perfdata=perfdata)
                 else:
                     metadata = storage.object_get_properties(
                         self.account_name, self.container_name,
                         self.object_name, version=version,
-                        headers=oio_headers, force_master=force_master)
+                        headers=oio_headers, force_master=force_master,
+                        cache=oio_cache, perfdata=perfdata)
                 break
             except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
-                if force_master \
-                        or not self.container_name.endswith('+segments'):
+                if force_master or not \
+                        self.container_name.endswith(MULTIUPLOAD_SUFFIX):
                     # Either the request failed with the master,
                     # or it is not an MPU
                     return HTTPNotFound(request=req)
@@ -274,7 +290,8 @@ class ObjectController(BaseObjectController):
                 nb_chunks_ok = 0
                 for entry in entries[1]:
                     try:
-                        storage.blob_client.chunk_head(entry['url'])
+                        storage.blob_client.chunk_head(
+                            entry['url'], headers=oio_headers)
                         nb_chunks_ok += 1
                     except exceptions.OioException:
                         pass
@@ -293,6 +310,8 @@ class ObjectController(BaseObjectController):
         else:
             ranges = None
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         force_master = False
         while True:
             try:
@@ -300,11 +319,12 @@ class ObjectController(BaseObjectController):
                     self.account_name, self.container_name, self.object_name,
                     ranges=ranges, headers=oio_headers,
                     version=req.environ.get('oio.query', {}).get('version'),
-                    force_master=force_master)
+                    force_master=force_master, cache=oio_cache,
+                    perfdata=perfdata)
                 break
             except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
-                if force_master \
-                        or not self.container_name.endswith('+segments'):
+                if force_master or not \
+                        self.container_name.endswith(MULTIUPLOAD_SUFFIX):
                     # Either the request failed with the master,
                     # or it is not an MPU
                     return HTTPNotFound(request=req)
@@ -317,10 +337,8 @@ class ObjectController(BaseObjectController):
         return resp
 
     def make_object_response(self, req, metadata, stream=None):
-        conditional_etag = None
-        if 'X-Backend-Etag-Is-At' in req.headers:
-            conditional_etag = metadata.get(
-                req.headers['X-Backend-Etag-Is-At'])
+        conditional_etag = resolve_etag_is_at_header(
+            req, metadata.get('properties'))
 
         resp = Response(request=req, conditional_response=True,
                         conditional_etag=conditional_etag)
@@ -402,6 +420,8 @@ class ObjectController(BaseObjectController):
         # TODO do something with stgpol
         metadata = self.load_object_metadata(headers)
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         try:
             # Genuine Swift clears all properties on POST requests.
             # But for convenience, keep them when the request originates
@@ -410,7 +430,8 @@ class ObjectController(BaseObjectController):
             self.app.storage.object_set_properties(
                 self.account_name, self.container_name, self.object_name,
                 metadata, clear=clear, headers=oio_headers,
-                version=req.environ.get('oio.query', {}).get('version'))
+                version=req.environ.get('oio.query', {}).get('version'),
+                cache=oio_cache, perfdata=perfdata)
         except (exceptions.NoSuchObject, exceptions.NoSuchContainer):
             return HTTPNotFound(request=req)
         resp = HTTPAccepted(request=req)
@@ -546,11 +567,15 @@ class ObjectController(BaseObjectController):
         headers = self._prepare_headers(req)
         metadata = self.load_object_metadata(headers)
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         # FIXME(FVE): use object_show, cache in req.environ
         version = req.environ.get('oio.query', {}).get('version')
         props = storage.object_get_properties(from_account, container, obj,
                                               headers=oio_headers,
-                                              version=version)
+                                              version=version,
+                                              cache=oio_cache,
+                                              perfdata=perfdata)
         if props['properties'].get(SLO, None):
             raise Exception("Fast Copy with SLO is unsupported")
         else:
@@ -564,19 +589,14 @@ class ObjectController(BaseObjectController):
                 from_account, container, obj,
                 self.account_name, self.container_name, self.object_name,
                 headers=oio_headers, properties=metadata,
-                properties_directive='REPLACE', target_version=version)
+                properties_directive='REPLACE', target_version=version,
+                cache=oio_cache, perfdata=perfdata)
         # TODO(FVE): this exception catching block has to be refactored
         # TODO check which ones are ok or make non sense
         except exceptions.Conflict:
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
             raise HTTPPreconditionFailed(request=req)
-        except exceptions.SourceReadError:
-            req.client_disconnect = True
-            self.app.logger.warning(
-                _('Client disconnected without sending last chunk'))
-            self.app.logger.increment('client_disconnects')
-            raise HTTPClientDisconnect(request=req)
         except exceptions.EtagMismatch:
             return HTTPUnprocessableEntity(request=req)
         except (exceptions.ServiceBusy, exceptions.OioTimeout,
@@ -623,7 +643,6 @@ class ObjectController(BaseObjectController):
 
     def _store_object(self, req, data_source, headers):
         content_type = req.headers.get('content-type', 'octet/stream')
-        storage = self.app.storage
         policy = None
         container_info = self.container_info(self.account_name,
                                              self.container_name, req)
@@ -646,26 +665,41 @@ class ObjectController(BaseObjectController):
                 content_length = int(req.headers.get('content-length', 0))
                 policy = self._get_auto_policy_from_size(content_length)
 
+        ct_props = {'properties': {}, 'system': {}}
         metadata = self.load_object_metadata(headers)
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         # only send headers if needed
         if SUPPORT_VERSIONING and headers.get(FORCEVERSIONING_HEADER):
             oio_headers[FORCEVERSIONING_HEADER] = \
                 headers.get(FORCEVERSIONING_HEADER)
+        # In case a shard is being created, save the name of the S3 bucket
+        # in a container property. This will be used when aggregating
+        # container statistics to make bucket statistics.
+        if BUCKET_NAME_HEADER in headers:
+            bname = headers[BUCKET_NAME_HEADER]
+            # FIXME(FVE): the segments container is not part of another bucket!
+            # We should not have to strip this here.
+            if bname and bname.endswith(MULTIUPLOAD_SUFFIX):
+                bname = bname[:-len(MULTIUPLOAD_SUFFIX)]
+            ct_props['system'][BUCKET_NAME_PROP] = bname
         try:
             _chunks, _size, checksum, _meta = self._object_create(
                 self.account_name, self.container_name,
                 obj_name=self.object_name, file_or_path=data_source,
                 mime_type=content_type, policy=policy, headers=oio_headers,
                 etag=req.headers.get('etag', '').strip('"'),
-                properties=metadata)
+                properties=metadata, container_properties=ct_props,
+                cache=oio_cache, perfdata=perfdata)
             # TODO(FVE): when oio-sds supports it, do that in a callback
             # passed to object_create (or whatever upload method supports it)
             footer_md = self.load_object_metadata(self._get_footers(req))
             if footer_md:
-                storage.object_set_properties(
+                self.app.storage.object_set_properties(
                     self.account_name, self.container_name, self.object_name,
-                    version=_meta.get('version', None), properties=footer_md)
+                    version=_meta.get('version', None), properties=footer_md,
+                    headers=oio_headers, cache=oio_cache, perfdata=perfdata)
         except exceptions.Conflict:
             raise HTTPConflict(request=req)
         except exceptions.PreconditionFailed:
@@ -675,10 +709,11 @@ class ObjectController(BaseObjectController):
                 _('ERROR Client read timeout (%s)'), err)
             self.app.logger.increment('client_timeouts')
             raise HTTPRequestTimeout(request=req)
-        except exceptions.SourceReadError:
+        except exceptions.SourceReadError as err:
             req.client_disconnect = True
             self.app.logger.warning(
-                _('Client disconnected without sending last chunk'))
+                _('Client disconnected without sending last chunk') + (
+                    ': %s' % str(err)))
             self.app.logger.increment('client_disconnects')
             raise HTTPClientDisconnect(request=req)
         except exceptions.EtagMismatch:
@@ -753,6 +788,8 @@ class ObjectController(BaseObjectController):
     def _delete_object(self, req):
         storage = self.app.storage
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         # only send headers if needed
         if SUPPORT_VERSIONING and req.headers.get(FORCEVERSIONING_HEADER):
             oio_headers[FORCEVERSIONING_HEADER] = \
@@ -761,7 +798,7 @@ class ObjectController(BaseObjectController):
             storage.object_delete(
                 self.account_name, self.container_name, self.object_name,
                 version=req.environ.get('oio.query', {}).get('version'),
-                headers=oio_headers)
+                headers=oio_headers, cache=oio_cache, perfdata=perfdata)
         except exceptions.NoSuchContainer:
             return HTTPNotFound(request=req)
         except exceptions.NoSuchObject:

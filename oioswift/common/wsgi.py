@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2019 OpenIO SDS
+# Copyright (c) 2019-2020 OpenIO SDS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,6 +31,10 @@ def oio_make_env(env, *args, **kwargs):
     for name in PASSTHROUGH_ENV_KEYS:
         if name in env:
             newenv[name] = env[name]
+    newenv['oio.query'] = env.get('oio.query', {}).copy()
+    for name in ('cache', 'ephemeral_object', 'list_mpu', 'perfdata'):
+        oio_name = 'oio.%s' % name
+        newenv[oio_name] = env.get(oio_name)
     return newenv
 
 

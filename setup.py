@@ -41,6 +41,8 @@ setup(
             'copy=oioswift.common.middleware.copy:filter_factory',
             'verb_acl=oioswift.common.middleware.verb_acl:filter_factory',
             'tempauth=oioswift.common.middleware.tempauth:filter_factory',
+            'slo=oioswift.common.middleware.slo:filter_factory',
+            'proxy_logging=oioswift.common.middleware.proxy_logging:filter_factory',
         ],
     },
     scripts=[

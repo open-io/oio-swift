@@ -43,7 +43,7 @@ from oio.common import exceptions
 
 from oioswift.utils import \
     handle_oio_no_such_container, handle_oio_timeout, \
-    handle_service_busy, REQID_HEADER
+    handle_service_busy, REQID_HEADER, BUCKET_NAME_PROP, MULTIUPLOAD_SUFFIX
 
 
 class ContainerController(SwiftContainerController):
@@ -141,6 +141,8 @@ class ContainerController(SwiftContainerController):
             delimiter = '/'
         opts = req.environ.get('oio.query', {})
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         result = self.app.storage.object_list(
             self.account_name, self.container_name, prefix=prefix,
             limit=limit, delimiter=delimiter, marker=marker,
@@ -148,7 +150,7 @@ class ContainerController(SwiftContainerController):
             versions=opts.get('versions', False),
             deleted=opts.get('deleted', False),
             force_master=opts.get('force_master', False),
-            headers=oio_headers)
+            headers=oio_headers, cache=oio_cache, perfdata=perfdata)
 
         resp_headers = self.get_metadata_resp_headers(result)
         resp = self.create_listing(
@@ -167,13 +169,15 @@ class ContainerController(SwiftContainerController):
         ret = Response(request=req, headers=resp_headers,
                        content_type=out_content_type, charset='utf-8')
         versions = kwargs.get('versions', False)
+        slo = kwargs.get('slo', False)
         if out_content_type == 'application/json':
             ret.body = json.dumps(
-                [self.update_data_record(r, versions) for r in container_list])
+                [self.update_data_record(r, versions, slo)
+                 for r in container_list])
         elif out_content_type.endswith('/xml'):
             doc = Element('container', name=container.decode('utf-8'))
             for obj in container_list:
-                record = self.update_data_record(obj, versions)
+                record = self.update_data_record(obj, versions, slo)
                 if 'subdir' in record:
                     name = record['subdir'].decode('utf-8')
                     sub = SubElement(doc, 'subdir', name=name)
@@ -197,7 +201,7 @@ class ContainerController(SwiftContainerController):
 
         return ret
 
-    def update_data_record(self, record, versions=False):
+    def update_data_record(self, record, versions=False, slo=False):
         if 'subdir' in record:
             return {'subdir': record['name']}
 
@@ -223,6 +227,8 @@ class ContainerController(SwiftContainerController):
             response['content_type'] = DELETE_MARKER_CONTENT_TYPE
         if versions:
             response['version'] = record.get('version', 'null')
+        if slo:
+            response['slo'] = props.get("x-static-large-object")
         override_bytes_from_content_type(response)
         return response
 
@@ -245,8 +251,11 @@ class ContainerController(SwiftContainerController):
         out_content_type = get_listing_content_type(req)
         headers['Content-Type'] = out_content_type
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         meta = self.app.storage.container_get_properties(
-            self.account_name, self.container_name, headers=oio_headers)
+            self.account_name, self.container_name, headers=oio_headers,
+            cache=oio_cache, perfdata=perfdata)
         headers.update(self.get_metadata_resp_headers(meta))
         return HTTPNoContent(request=req, headers=headers, charset='utf-8')
 
@@ -281,12 +290,21 @@ class ContainerController(SwiftContainerController):
 
     def get_container_create_resp(self, req, headers):
         properties, system = self.properties_from_headers(headers)
+        # Save the name of the S3 bucket in a container property.
+        # This will be used when aggregating container statistics
+        # to make bucket statistics.
+        bname = self.container_name
+        if bname.endswith(MULTIUPLOAD_SUFFIX):
+            bname = bname[:-len(MULTIUPLOAD_SUFFIX)]
+        system[BUCKET_NAME_PROP] = bname
         # TODO container update metadata
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         created = self.app.storage.container_create(
             self.account_name, self.container_name,
             properties=properties, system=system,
-            headers=oio_headers)
+            headers=oio_headers, cache=oio_cache, perfdata=perfdata)
         if created:
             return HTTPCreated(request=req)
         else:
@@ -376,11 +394,13 @@ class ContainerController(SwiftContainerController):
             return self.PUT(req)
 
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         try:
             self.app.storage.container_set_properties(
                 self.account_name, self.container_name,
                 properties=properties, system=system,
-                headers=oio_headers)
+                headers=oio_headers, cache=oio_cache, perfdata=perfdata)
             resp = HTTPNoContent(request=req)
         except exceptions.NoSuchContainer:
             resp = self.PUT(req)
@@ -388,9 +408,12 @@ class ContainerController(SwiftContainerController):
 
     def get_container_delete_resp(self, req):
         oio_headers = {REQID_HEADER: self.trans_id}
+        oio_cache = req.environ.get('oio.cache')
+        perfdata = req.environ.get('oio.perfdata')
         try:
             self.app.storage.container_delete(
-                self.account_name, self.container_name, headers=oio_headers)
+                self.account_name, self.container_name, headers=oio_headers,
+                cache=oio_cache, perfdata=perfdata)
         except exceptions.ContainerNotEmpty:
             return HTTPConflict(request=req)
         resp = HTTPNoContent(request=req)

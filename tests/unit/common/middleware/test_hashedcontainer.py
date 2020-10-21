@@ -1,4 +1,4 @@
-# Copyright (C) 2016-2018 OpenIO SAS
+# Copyright (C) 2016-2020 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ from oio.cli.common import clientmanager
 
 # Hack PYTHONPATH so "test" is swift's test directory
 sys.path.insert(1, os.path.abspath(os.path.join(__file__, '../../../../..')))  # noqa
-from test.unit.common.middleware.helpers import FakeSwift
+from test.unit.common.middleware.helpers import FakeSwift  # noqa: E402
 
 
 class TestHashedContainer(unittest.TestCase):

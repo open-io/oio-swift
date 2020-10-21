@@ -2,7 +2,7 @@
 
 export OIO_NS="${1:-OPENIO}"
 export OIO_ACCOUNT="${2:-AUTH_demo}"
-MASK_EMPTY_PREFIXES=$(grep support_listing_versioning "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
+MASK_EMPTY_PREFIXES=$(grep mask_empty_prefixes "$GW_CONF" | cut -d= -f2 | sed 's/ //g' )
 
 AWS="aws --endpoint-url http://localhost:5000 --no-verify-ssl"
 
@@ -72,28 +72,28 @@ if [ "$MASK_EMPTY_PREFIXES" == "true" ]; then
     fi
     VAL=$(redis-cli $CMD)
     [ "$VAL" == "$RESULT" ]
-
-    echo "*** Check number of objects ***"
-
-    OBJS=$(${AWS} s3api list-object-versions --bucket ${BUCKET} | grep -c "Key")
-    [ ${OBJS} -eq 3 ]
-
-    echo "*** Suppress everything ***"
-
-    DATA=$(${AWS} s3api list-object-versions --bucket ${BUCKET})
-
-    VERS=$(echo ${DATA} | jq -r ".DeleteMarkers[0].VersionId")
-    ${AWS} s3api delete-object --bucket ${BUCKET} --key path/obj --version-id $VERS
-    VERS=$(echo ${DATA} | jq -r ".Versions[0].VersionId")
-    ${AWS} s3api delete-object --bucket ${BUCKET} --key path/obj --version-id $VERS
-    VERS=$(echo ${DATA} | jq -r ".Versions[1].VersionId")
-    ${AWS} s3api delete-object --bucket ${BUCKET} --key path/obj --version-id $VERS
-
-    echo "*** Check bucket is empty ***"
-
-    DATA=$(${AWS} s3api list-object-versions --bucket ${BUCKET})
-    [ -z "$DATA" ]
 fi
+
+echo "*** Check number of objects ***"
+
+OBJS=$(${AWS} s3api list-object-versions --bucket ${BUCKET} | grep -c "Key")
+[ ${OBJS} -eq 3 ]
+
+echo "*** Suppress everything ***"
+
+DATA=$(${AWS} s3api list-object-versions --bucket ${BUCKET})
+
+VERS=$(echo ${DATA} | jq -r ".DeleteMarkers[0].VersionId")
+${AWS} s3api delete-object --bucket ${BUCKET} --key path/obj --version-id $VERS
+VERS=$(echo ${DATA} | jq -r ".Versions[0].VersionId")
+${AWS} s3api delete-object --bucket ${BUCKET} --key path/obj --version-id $VERS
+VERS=$(echo ${DATA} | jq -r ".Versions[1].VersionId")
+${AWS} s3api delete-object --bucket ${BUCKET} --key path/obj --version-id $VERS
+
+echo "*** Check bucket is empty ***"
+
+DATA=$(${AWS} s3api list-object-versions --bucket ${BUCKET})
+[ -z "$DATA" ]
 
 ${AWS} s3api delete-bucket --bucket ${BUCKET}
 

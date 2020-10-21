@@ -8,7 +8,7 @@ from oio.common.autocontainer import ContainerBuilder
 
 # Hack PYTHONPATH so "test" is swift's test directory
 sys.path.insert(1, os.path.abspath(os.path.join(__file__, '../../../../..')))  # noqa
-from test.unit.common.middleware.helpers import FakeSwift
+from test.unit.common.middleware.helpers import FakeSwift  # noqa: E402
 
 
 class OioRegexContainer(unittest.TestCase):

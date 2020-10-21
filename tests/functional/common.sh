@@ -40,7 +40,6 @@ function compile_sds() {
     -DCMAKE_INSTALL_PREFIX="/tmp/oio" \
     -DLD_LIBDIR="lib" \
     -DCMAKE_BUILD_TYPE="Debug" \
-    -DSTACK_PROTECTOR=1 \
     -DZK_LIBDIR="/usr/lib" \
     -DZK_INCDIR="/usr/include/zookeeper" \
     -DAPACHE2_LIBDIR="/usr/lib/apache2" \
@@ -69,10 +68,46 @@ function configure_aws() {
 [default]
 aws_access_key_id=demo:demo
 aws_secret_access_key=DEMO_PASS
+
+[user1]
+aws_access_key_id=demo:user1
+aws_secret_access_key=USER_PASS
+
+[a2adm]
+aws_access_key_id=account2:admin
+aws_secret_access_key=ADMIN_PASS
+
+[a2u1]
+aws_access_key_id=account2:user1
+aws_secret_access_key=USER_PASS
 EOF
 
   cat <<EOF >"$HOME/.aws/config"
 [default]
+s3 =
+    signature_version = s3
+    max_concurrent_requests = 10
+    max_queue_size = 100
+    multipart_threshold = 15MB
+    multipart_chunksize = 5MB
+
+[profile user1]
+s3 =
+    signature_version = s3
+    max_concurrent_requests = 10
+    max_queue_size = 100
+    multipart_threshold = 15MB
+    multipart_chunksize = 5MB
+
+[profile a2adm]
+s3 =
+    signature_version = s3
+    max_concurrent_requests = 10
+    max_queue_size = 100
+    multipart_threshold = 15MB
+    multipart_chunksize = 5MB
+
+[profile a2u1]
 s3 =
     signature_version = s3
     max_concurrent_requests = 10
@@ -103,7 +138,7 @@ EOF
 }
 
 function configure_oioswift() {
-    sed -i "s/USER/$(id -un)/g" "$1"
+    sed -i "s/%USER%/$(id -un)/g" "$1"
 }
 
 function run_script() {

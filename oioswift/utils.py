@@ -34,6 +34,8 @@ except ImportError:
     REQID_HEADER = 'x-oio-req-id'
 
 
+BUCKET_NAME_PROP = "sys.m2.bucket.name"
+MULTIUPLOAD_SUFFIX = '+segments'
 _FORMAT_MAP = {"xml": 'application/xml', "json": 'application/json',
                "plain": 'text/plain'}
 

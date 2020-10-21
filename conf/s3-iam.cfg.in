@@ -8,7 +8,7 @@ eventlet_debug = true
 sds_default_account = AUTH_demo
 
 [pipeline:main]
-pipeline = catch_errors cache swift3 tempauth proxy-logging copy slo versioned_writes proxy-server
+pipeline = catch_errors proxy-logging cache iam swift3 tempauth proxy-logging copy slo versioned_writes proxy-server
 
 [app:proxy-server]
 use = egg:oioswift#main
@@ -42,10 +42,15 @@ use = egg:swift#memcache
 memcache_servers = 127.0.0.1:11211
 
 [filter:slo]
-use = egg:oioswift#slo
+use = egg:swift#slo
 
 [filter:staticweb]
 use = egg:swift#staticweb
+
+[filter:iam]
+use = egg:swift3#iam
+log_level = DEBUG
+connection = file://%RULES_FILE%
 
 [filter:swift3]
 use = egg:swift3#swift3
@@ -54,6 +59,7 @@ force_swift_request_proxy_log = true
 log_level = DEBUG
 storage_domain = localhost
 s3_acl = true
+s3_acl_openbar = true
 check_bucket_owner = true
 # min_segment_size = 8
 bucket_db_enabled = true
@@ -62,10 +68,15 @@ bucket_db_host = 127.0.0.1:6379
 [filter:tempauth]
 use = egg:oioswift#tempauth
 log_level = DEBUG
+# Main user of the account AUTH_demo
 user_demo_demo = DEMO_PASS .admin
-log_level = DEBUG
+# Unpriviledged user of the account AUTH_demo
+user_demo_user1 = USER_PASS
 
-user_tester2_tester2 = TESTER2 .admin
+# Main user of the account AUTH_account2
+user_account2_admin = ADMIN_PASS .admin
+# Unpriviledged user of the account AUTH_account2
+user_account2_user1 = USER_PASS
 
 [filter:versioned_writes]
 use = egg:oioswift#versioned_writes

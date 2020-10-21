@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # Copyright (c) 2015 OpenStack Foundation
-# Copyright (c) 2018 OpenIO SAS
+# Copyright (c) 2018-2020 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,8 +25,9 @@ from oioswift.common.middleware import copy
 
 # Hack PYTHONPATH so "test" is swift's test directory
 sys.path.insert(1, os.path.abspath(os.path.join(__file__, '../../../../..')))
-from test.unit.common.middleware.helpers import FakeSwift  # noqa: F401
-from test.unit.common.middleware.test_copy import TestServerSideCopyMiddleware  # noqa: F401 E501
+from test.unit.common.middleware.helpers import FakeSwift  # noqa: E402
+from test.unit.common.middleware.test_copy \
+    import TestServerSideCopyMiddleware  # noqa: E402
 
 
 class TestOioServerSideCopyMiddleware(TestServerSideCopyMiddleware):
