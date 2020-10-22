@@ -37,7 +37,8 @@ from swift.common.middleware.slo import DEFAULT_MAX_MANIFEST_SEGMENTS, \
     DEFAULT_MAX_MANIFEST_SIZE, DEFAULT_YIELD_FREQUENCY, \
     parse_and_validate_input, StaticLargeObject, SYSMETA_SLO_ETAG, \
     SYSMETA_SLO_SIZE, SloGetContext
-from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
+from oioswift.common.middleware.versioned_writes import \
+    DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import Request, HTTPBadRequest, HTTPMethodNotAllowed, \
     HTTPRequestEntityTooLarge, HTTPLengthRequired, HTTPOk, HTTPConflict, \
     HTTPUnprocessableEntity, HTTPException, RESPONSE_REASONS, Response

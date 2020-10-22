@@ -15,7 +15,7 @@ from swift.common import swob
 from swift.common.utils import Timestamp
 from oioswift.common.ring import FakeRing
 from oioswift import server as proxy_server
-from tests.unit import FakeStorageAPI, FakeMemcache, debug_logger
+from tests.unit import FakeStorageAPI, debug_logger
 
 
 def fake_stream(length, exception=None):
@@ -99,7 +99,7 @@ class TestObjectController(unittest.TestCase):
             namespace='NS', timeouts={}, logger=self.logger)
 
         self.app = PatchedObjControllerApp(
-            {'sds_namespace': "NS"}, FakeMemcache(), account_ring=FakeRing(),
+            {'sds_namespace': "NS"}, account_ring=FakeRing(),
             container_ring=FakeRing(), storage=self.storage,
             logger=self.logger)
         self.app.container_info = dict(self.container_info)

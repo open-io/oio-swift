@@ -1,5 +1,5 @@
 # Copyright (c) 2010-2012 OpenStack Foundation
-# Copyright (c) 2016-2018 OpenIO SAS
+# Copyright (c) 2016-2020 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,8 @@ except ImportError:
     # Before Queens
     from swift.common.request_helpers import get_listing_content_type
 
-from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
+from oioswift.common.middleware.versioned_writes import \
+    DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import Response, HTTPBadRequest, HTTPNotFound, \
     HTTPNoContent, HTTPConflict, HTTPPreconditionFailed, HTTPForbidden, \
     HTTPCreated

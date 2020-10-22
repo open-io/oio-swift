@@ -16,7 +16,7 @@ CH_VERSIONING=$(python -c "import oio.common.constants as cnt; print(hasattr(cnt
 RET=0
 
 # Launch test with container hierarchy with same configuration file
-for key_format in v1 v2 v3; do
+for key_format in v2 v3; do
     for mask_empty_prefixes in false true; do
 
         # generate configuration file

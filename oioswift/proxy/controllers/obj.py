@@ -25,7 +25,8 @@ from swift.common.utils import (
     close_if_possible, closing_if_possible)
 from swift.common.constraints import check_metadata, check_object_creation
 from swift.common.header_key_dict import HeaderKeyDict
-from swift.common.middleware.versioned_writes import DELETE_MARKER_CONTENT_TYPE
+from oioswift.common.middleware.versioned_writes import \
+    DELETE_MARKER_CONTENT_TYPE
 from swift.common.swob import HTTPAccepted, HTTPBadRequest, HTTPNotFound, \
     HTTPConflict, HTTPPreconditionFailed, HTTPRequestTimeout, \
     HTTPUnprocessableEntity, HTTPClientDisconnect, HTTPCreated, \

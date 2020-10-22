@@ -8,7 +8,7 @@ from swift.common.swob import Request
 from swift.proxy.controllers.base import headers_to_container_info
 from swift.common.request_helpers import get_sys_meta_prefix
 
-from tests.unit import FakeStorageAPI, FakeMemcache, debug_logger
+from tests.unit import FakeStorageAPI, debug_logger
 
 
 class TestContainerController(unittest.TestCase):
@@ -33,7 +33,7 @@ class TestContainerController(unittest.TestCase):
         }
 
         self.app = proxy_server.Application(
-            {'sds_namespace': 'NS'}, FakeMemcache(), account_ring=FakeRing(),
+            {'sds_namespace': 'NS'}, account_ring=FakeRing(),
             container_ring=FakeRing(), storage=self.storage,
             logger=self.logger)
 

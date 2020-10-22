@@ -44,13 +44,13 @@ swift.common.utils.validate_hash_conf = lambda: None
 
 
 class Application(SwiftApplication):
-    def __init__(self, conf, memcache=None, logger=None, account_ring=None,
+    def __init__(self, conf, logger=None, account_ring=None,
                  container_ring=None, storage=None):
         for policy, ring_arg in zip(POLICIES, ring_args):
             if ring_arg is not None:
                 policy.object_ring = FakeRing(**ring_arg)
 
-        SwiftApplication.__init__(self, conf, memcache=memcache, logger=logger,
+        SwiftApplication.__init__(self, conf, logger=logger,
                                   account_ring=account_ring,
                                   container_ring=container_ring)
         if conf is None:

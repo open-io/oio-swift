@@ -1,5 +1,5 @@
 # Copyright (c) 2014 OpenStack Foundation
-# Copyright (c) 2017 OpenIO SAS
+# Copyright (c) 2017-2020 OpenIO SAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,12 @@
 # limitations under the License.
 
 from six.moves.urllib.parse import parse_qs, quote, unquote, urlencode
-from swift.common.middleware import versioned_writes as vw
+try:
+    # Starting from Ussuri
+    from swift.common.middleware.versioned_writes import legacy as vw
+except ImportError:
+    # Before Ussuri
+    from swift.common.middleware import versioned_writes as vw
 from swift.common.swob import Request, HTTPException
 from swift.common.utils import config_true_value, json, \
     register_swift_info, split_path, closing_if_possible, close_if_possible
@@ -24,6 +29,8 @@ from swift.proxy.controllers.base import get_container_info, get_object_info
 from oio.common.easy_value import is_hexa
 
 
+# This alias makes it easier for other modules to import it.
+DELETE_MARKER_CONTENT_TYPE = vw.DELETE_MARKER_CONTENT_TYPE
 VERSIONING_SUFFIX = '+versioning'
 
 
@@ -48,7 +55,7 @@ def get_unversioned_container(container):
 
 
 def is_deleted(obj):
-    return obj.get('content_type') == vw.DELETE_MARKER_CONTENT_TYPE
+    return obj.get('content_type') == DELETE_MARKER_CONTENT_TYPE
 
 
 class OioVersionedWritesContext(vw.VersionedWritesContext):
