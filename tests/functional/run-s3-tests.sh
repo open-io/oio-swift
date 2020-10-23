@@ -53,7 +53,8 @@ run_functional_test s3-default.cfg \
     buckets-listing.sh \
     s3-marker.sh \
     s3-basic-test.py \
-    s3-mpu.py
+    s3-mpu.py \
+    s3-tagging.py
 
 # TODO(FVE): gridinit_cmd stop
 exit $RET
