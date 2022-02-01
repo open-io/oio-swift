@@ -8,7 +8,7 @@ import random
 import json
 import os
 
-ENDPOINT = os.getenv("USE_ENDPOINT", "http://127.0.0.1:5000")
+ENDPOINT = os.getenv("USE_ENDPOINT", "http://localhost:5000")
 AWS = ["aws", "--endpoint", ENDPOINT]
 
 random_chars = string.lowercase + string.digits
@@ -142,9 +142,19 @@ def run_test(bucket, path):
 
 def main():
     run_test(random_str(10),
-             "docker/registry/v2/repositories/hello/_uploads/333633b0-503f-4b2a-9b43-e56ec6445ef3/data")  # noqa
+             "docker/registry/v2/repositories/hello/_uploads/"
+             "333633b0-503f-4b2a-9b43-e56ec6445ef3/data")
+    run_test(random_str(10),
+             "docker/registry/v2/repositories/hello+world/_uploads/"
+             "333633b0-503f-4b2a-9b43-e56ec6445ef3/data")
+    run_test(random_str(10),
+             "docker/registry/v2/repositories/hello/_uploads/"
+             "333633b0-503f-4b2a-9b43-e56ec6445ef3/data+")
     run_test(random_str(10),
              "CBB_DESKTOP-1LC5CCV/C:/Bombay/Logs/titi:/12121212/titi")
+    run_test(random_str(10),
+             "CBB_DESKTOP-1LC5CCV/C:/Bombay/Logs/titi+rominet:/12121212/"
+             "titi+rominet")
     run_test(random_str(10), random_str(10))
 
 
