@@ -25,6 +25,7 @@ from datetime import datetime
 from hashlib import md5
 import mimetypes
 import six
+from six.moves.urllib.parse import urlencode
 import time
 
 from oio.common.json import json
@@ -447,11 +448,14 @@ class OioStaticLargeObject(StaticLargeObject):
             last_yield_time = time.time()
 
             # BEGIN: New OpenIO code
+            params = {
+                'format': 'json',
+                'prefix': seg_prefix,
+                'limit': self.max_manifest_segments
+            }
             sub_req = make_subrequest(
                 req.environ,
-                path='%s?format=json&prefix=%s&limit=%d' %
-                     (segments_container_path, seg_prefix,
-                      self.max_manifest_segments),
+                path='%s?%s' % (segments_container_path, urlencode(params)),
                 method='GET',
                 headers={'x-auth-token': req.headers.get('x-auth-token')},
                 agent='%(orig)s SLO MultipartPUT', swift_source='SLO')
