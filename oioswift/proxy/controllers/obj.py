@@ -217,20 +217,22 @@ class ObjectController(BaseObjectController):
 
         # We can't use _get_info_from_caches as it would use local worker cache
         # first and an update of versioning mode may not be detected.
-        memcache = getattr(self.app, 'memcache', None) or \
-            req.environ.get('swift.cache')
-        if memcache is None:
-            return None
+        oio_cache = req.environ.get('oio.cache')
+        memcache = None
+        if oio_cache is None:
+            memcache = getattr(self.app, 'memcache', None) or \
+                req.environ.get('swift.cache')
 
-        key = "/".join(("versioning", self.account_name, root_container))
-        val = memcache.get(key)
-        if val is not None:
-            if val != '':
-                req.headers[FORCEVERSIONING_HEADER] = val
-            return
+            if memcache is not None:
+                memcache_key = "/".join(
+                    ("versioning", self.account_name, root_container))
+                version_policy = memcache.get(memcache_key)
+                if version_policy is not None:
+                    if version_policy:
+                        req.headers[FORCEVERSIONING_HEADER] = version_policy
+                    return
 
         oio_headers = {REQID_HEADER: self.trans_id}
-        oio_cache = req.environ.get('oio.cache')
         perfdata = req.environ.get('oio.perfdata')
         try:
             meta = self.app.storage.container_get_properties(
@@ -239,10 +241,56 @@ class ObjectController(BaseObjectController):
         except exceptions.NoSuchContainer:
             raise HTTPNotFound(request=req)
 
-        val = meta['system'].get('sys.m2.policy.version', '')
-        memcache.set(key, val)
-        if val:
-            req.headers[FORCEVERSIONING_HEADER] = val
+        version_policy = meta['system'].get('sys.m2.policy.version')
+        if memcache is not None:
+            memcache.set(memcache_key, version_policy or '')
+        if version_policy:
+            req.headers[FORCEVERSIONING_HEADER] = version_policy
+
+    def use_bucket_storage_policy(self, req):
+        """
+        Enforce the storage policy mode of a container just before executing
+        an object operation. This is useful when the current object is not
+        stored in the "main" container but in a shard,
+        where the storage policy mode may not have been set yet.
+        """
+        if not self.app.use_bucket_storage_policy:
+            return None
+
+        root_container = req.headers.get(BUCKET_NAME_HEADER)
+        if root_container is None:
+            return None
+        if root_container.endswith(MULTIUPLOAD_SUFFIX):
+            root_container = root_container[:-len(MULTIUPLOAD_SUFFIX)]
+
+        # We can't use _get_info_from_caches as it would use local worker cache
+        # first and an update of storage policy mode may not be detected.
+        oio_cache = req.environ.get('oio.cache')
+        memcache = None
+        if oio_cache is None:
+            memcache = getattr(self.app, 'memcache', None) or \
+                req.environ.get('swift.cache')
+
+            if memcache is not None:
+                memcache_key = "/".join(
+                    ("storage_policy", self.account_name, root_container))
+                storage_policy = memcache.get(memcache_key)
+                if storage_policy is not None:
+                    return storage_policy or None
+
+        oio_headers = {REQID_HEADER: self.trans_id}
+        perfdata = req.environ.get('oio.perfdata')
+        try:
+            meta = self.app.storage.container_get_properties(
+                self.account_name, root_container, headers=oio_headers,
+                cache=oio_cache, perfdata=perfdata)
+        except exceptions.NoSuchContainer:
+            raise HTTPNotFound(request=req)
+
+        storage_policy = meta['system'].get('sys.m2.policy.storage')
+        if memcache is not None:
+            memcache.set(memcache_key, storage_policy or '')
+        return storage_policy
 
     def get_object_head_resp(self, req):
         storage = self.app.storage
@@ -643,8 +691,6 @@ class ObjectController(BaseObjectController):
     def _store_object(self, req, data_source, headers):
         content_type = req.headers.get('content-type', 'octet/stream')
         policy = None
-        container_info = self.container_info(self.account_name,
-                                             self.container_name, req)
         if 'X-Oio-Storage-Policy' in req.headers:
             policy = req.headers.get('X-Oio-Storage-Policy')
             if not self.app.POLICIES.get_by_name(policy):
@@ -652,6 +698,8 @@ class ObjectController(BaseObjectController):
                     "invalid policy '%s', must be in %s" %
                     (policy, self.app.POLICIES.by_name.keys()))
         else:
+            container_info = self.container_info(self.account_name,
+                                                 self.container_name, req)
             try:
                 policy_index = int(
                     req.headers.get('X-Backend-Storage-Policy-Index',
@@ -661,6 +709,8 @@ class ObjectController(BaseObjectController):
             if policy_index != 0:
                 policy = self.app.POLICIES.get_by_index(policy_index).name
             else:
+                policy = self.use_bucket_storage_policy(req)
+            if policy is None:
                 content_length = int(req.headers.get('content-length', 0))
                 policy = self._get_auto_policy_from_size(content_length)
 
